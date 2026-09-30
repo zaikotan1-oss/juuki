@@ -1,0 +1,10 @@
+{
+  "name": "重機で建てる",
+  "short_name": "重機",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1b2838",
+  "theme_color": "#1b2838"
+}
