@@ -13,4 +13,4 @@
 - まだ: iPad 実機の数字、ダンプ・ブルドーザー・クレーン、目的とクリア、音（仮のエンジン音だけ）
 
 ## 公開
-- GitHub Pages（zaikotan1-oss/juuki）。直したら index.html の `game.js?v=N` を上げて push
+- GitHub Pages https://zaikotan1-oss.github.io/juuki/ （リポジトリ zaikotan1-oss/juuki・2026-10-01 公開）。直したら index.html の `game.js?v=N` を上げて push
