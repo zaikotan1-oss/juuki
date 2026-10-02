@@ -230,14 +230,14 @@ const G = window.G = {};   // 確かめ用の口
   scene.activeCamera = fp;
 
   // ================= 入力（2本レバー＋画面ドラッグで見回し＋キーボード） =================
-  const sticks = { L: { x: 0, y: 0, id: null, el: $("stL") }, R: { x: 0, y: 0, id: null, el: $("stR") } };
+  const sticks = { L: { x: 0, y: 0, id: null, el: $("stL") }, R: { x: 0, y: 0, id: null, el: $("stR") }, D: { x: 0, y: 0, id: null, el: $("stD") } };
   let lookPtr = null;
-  let mode = "work";
   function stickAt(e) {
     const W = innerWidth, H = innerHeight;
     if (e.clientY < H * 0.4) return null;
     if (e.clientX < W * 0.32) return "L";
     if (e.clientX > W * 0.68) return "R";
+    if (e.clientY > H * 0.55) return "D";   // 下の真ん中は走行レバー
     return null;
   }
   function stickCenter(s) { const r = s.el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
@@ -272,12 +272,10 @@ const G = window.G = {};   // 確かめ用の口
   addEventListener("keydown", e => keys.add(e.code)); addEventListener("keyup", e => keys.delete(e.code));
   const kv = (a, b) => (keys.has(a) ? 1 : 0) - (keys.has(b) ? 1 : 0);
 
+  // 前は「作業/走行」の切り替え式だったが、切り替えに気づけず前に進めなかった（2026-10-02 本人）→ 走行レバーを別に置いた
   function setLabels() {
-    if (mode === "work") { $("labL").textContent = "←→ 旋回 / ↑↓ アーム"; $("labR").textContent = "↑↓ ブーム / ←→ バケット"; }
-    else { $("labL").textContent = "↑↓ 前後 / ←→ 曲がる"; $("labR").textContent = "（走行中は使わない）"; }
-    $("bMode").textContent = mode === "work" ? "作業" : "走行"; $("bMode").classList.toggle("on", mode === "drive");
+    $("labL").textContent = "←→ 旋回 / ↑↓ アーム"; $("labR").textContent = "↑↓ ブーム / ←→ バケット"; $("labD").textContent = "走行  ↑↓ 前後 / ←→ 曲がる";
   }
-  $("bMode").onclick = () => { mode = mode === "work" ? "drive" : "work"; setLabels(); };
   $("bView").onclick = () => { view = view === "fp" ? "tp" : "fp"; scene.activeCamera = view === "fp" ? fp : tp; $("bView").textContent = view === "fp" ? "運転席" : "外から"; };
   function setShadow(on) {
     shadowOn = on; sun.shadowEnabled = on;
@@ -354,7 +352,7 @@ const G = window.G = {};   // 確かめ用の口
     const dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);   // 確かめる時は G.fixedDt で固定
     const L = sticks.L, R = sticks.R;
     let moving = 0;
-    if (mode === "work") {
+    {
       const sw = L.x + kv("KeyD", "KeyA"), st = -L.y + kv("KeyS", "KeyW"), bo = -R.y + kv("KeyK", "KeyI"), bu = R.x + kv("KeyL", "KeyJ");
       ex.swing += sw * 0.85 * dt;
       ex.stick = B.Scalar.Clamp(ex.stick + st * 0.7 * dt, ...LIM.stick);
@@ -362,7 +360,7 @@ const G = window.G = {};   // 確かめ用の口
       ex.bucket = B.Scalar.Clamp(ex.bucket + bu * 1.2 * dt, ...LIM.bucket);
       moving = Math.abs(sw) + Math.abs(st) + Math.abs(bo) + Math.abs(bu);
     }
-    const fwd = (mode === "drive" ? L.y : 0) + kv("ArrowUp", "ArrowDown"), turn = (mode === "drive" ? L.x : 0) + kv("ArrowRight", "ArrowLeft");
+    const D = sticks.D, fwd = D.y + kv("ArrowUp", "ArrowDown"), turn = D.x + kv("ArrowRight", "ArrowLeft");
     if (fwd || turn) {
       ex.heading += turn * 0.7 * dt;
       const d = new B.Vector3(Math.sin(ex.heading), 0, Math.cos(ex.heading)).scale(fwd * 3.2 * dt);
@@ -413,5 +411,5 @@ const G = window.G = {};   // 確かめ用の口
   addEventListener("resize", () => engine.resize());
 
   Object.assign(G, { scene, engine, ex, bld, debris, carveAt, reset, spawnDebris, setShadow, sticks,
-    setView: v => { if (v !== view) $("bView").onclick(); }, setMode: m => { if (m !== mode) $("bMode").onclick(); } });
+    setView: v => { if (v !== view) $("bView").onclick(); } });
 })().catch(e => { console.error(e); const m = $("msg"); m.style.display = ""; m.textContent = "起動できませんでした: " + e.message; });
