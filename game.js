@@ -230,14 +230,16 @@ const G = window.G = {};   // 確かめ用の口
   scene.activeCamera = fp;
 
   // ================= 入力（2本レバー＋画面ドラッグで見回し＋キーボード） =================
-  const sticks = { L: { x: 0, y: 0, id: null, el: $("stL") }, R: { x: 0, y: 0, id: null, el: $("stR") }, D: { x: 0, y: 0, id: null, el: $("stD") } };
+  const sticks = { L: { x: 0, y: 0, id: null, el: $("stL") }, R: { x: 0, y: 0, id: null, el: $("stR") } };
+  // 走行はペダル（押している間だけ）。本人の指定（2026-10-02）: 真ん中にアクセルとバック
+  const pedal = { fwd: 0, back: 0, left: 0, right: 0 };
+  let speed = 0, turnRate = 0;
   let lookPtr = null;
   function stickAt(e) {
     const W = innerWidth, H = innerHeight;
     if (e.clientY < H * 0.4) return null;
     if (e.clientX < W * 0.32) return "L";
     if (e.clientX > W * 0.68) return "R";
-    if (e.clientY > H * 0.55) return "D";   // 下の真ん中は走行レバー
     return null;
   }
   function stickCenter(s) { const r = s.el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
@@ -274,7 +276,7 @@ const G = window.G = {};   // 確かめ用の口
 
   // 前は「作業/走行」の切り替え式だったが、切り替えに気づけず前に進めなかった（2026-10-02 本人）→ 走行レバーを別に置いた
   function setLabels() {
-    $("labL").textContent = "←→ 旋回 / ↑↓ アーム"; $("labR").textContent = "↑↓ ブーム / ←→ バケット"; $("labD").textContent = "走行  ↑↓ 前後 / ←→ 曲がる";
+    $("labL").textContent = "←→ 旋回 / ↑↓ アーム"; $("labR").textContent = "↑↓ ブーム / ←→ バケット";
   }
   $("bView").onclick = () => { view = view === "fp" ? "tp" : "fp"; scene.activeCamera = view === "fp" ? fp : tp; $("bView").textContent = view === "fp" ? "運転席" : "外から"; };
   function setShadow(on) {
@@ -290,6 +292,12 @@ const G = window.G = {};   // 確かめ用の口
   $("bReset").onclick = reset;
   shadow.addShadowCaster(cellMesh); shadow.addShadowCaster(debrisSrc);
   setShadow(shadowOn); setLabels();
+  for (const [id, k] of [["pFwd", "fwd"], ["pBack", "back"], ["pLeft", "left"], ["pRight", "right"]]) {
+    const el = $(id);
+    const on = e => { e.preventDefault(); wakeAudio(); pedal[k] = 1; el.classList.add("on"); el.setPointerCapture(e.pointerId); };
+    const off = () => { pedal[k] = 0; el.classList.remove("on"); };
+    el.addEventListener("pointerdown", on); el.addEventListener("pointerup", off); el.addEventListener("pointercancel", off); el.addEventListener("lostpointercapture", off);
+  }
 
   // ================= 音（最初のタップで鳴らせるように） =================
   let ac = null, eng = null;
@@ -360,13 +368,17 @@ const G = window.G = {};   // 確かめ用の口
       ex.bucket = B.Scalar.Clamp(ex.bucket + bu * 1.2 * dt, ...LIM.bucket);
       moving = Math.abs(sw) + Math.abs(st) + Math.abs(bo) + Math.abs(bu);
     }
-    const D = sticks.D, fwd = D.y + kv("ArrowUp", "ArrowDown"), turn = D.x + kv("ArrowRight", "ArrowLeft");
-    if (fwd || turn) {
-      ex.heading += turn * 0.7 * dt;
-      const d = new B.Vector3(Math.sin(ex.heading), 0, Math.cos(ex.heading)).scale(fwd * 3.2 * dt);
-      const np = ex.pos.add(d);
-      if (!blockedAt(np)) ex.pos.copyFrom(np);
-      moving += Math.abs(fwd) + Math.abs(turn);
+    // ペダル: 目標の速さへじわっと近づける（急に止まらない）
+    const want = B.Scalar.Clamp(pedal.fwd - pedal.back + kv("ArrowUp", "ArrowDown"), -1, 1) * (pedal.back && !pedal.fwd ? 2.0 : 3.2);
+    speed += (want - speed) * Math.min(1, dt * (want ? 2.5 : 4));
+    if (Math.abs(speed) < 0.02 && !want) speed = 0;
+    const wantT = B.Scalar.Clamp(pedal.right - pedal.left + kv("ArrowRight", "ArrowLeft"), -1, 1) * 0.7;
+    turnRate += (wantT - turnRate) * Math.min(1, dt * 5);
+    if (speed || Math.abs(turnRate) > 0.005) {
+      ex.heading += turnRate * dt;
+      const np = ex.pos.add(new B.Vector3(Math.sin(ex.heading), 0, Math.cos(ex.heading)).scale(speed * dt));
+      if (!blockedAt(np)) ex.pos.copyFrom(np); else speed = 0;
+      moving += Math.abs(speed) / 3.2 + Math.abs(turnRate);
     }
     applyPose(); syncColliders(false);
     if (eng) eng.o.frequency.value = 38 + Math.min(moving, 2) * 14;
@@ -410,6 +422,6 @@ const G = window.G = {};   // 確かめ用の口
   engine.runRenderLoop(() => scene.render());
   addEventListener("resize", () => engine.resize());
 
-  Object.assign(G, { scene, engine, ex, bld, debris, carveAt, reset, spawnDebris, setShadow, sticks,
+  Object.assign(G, { pedal, scene, engine, ex, bld, debris, carveAt, reset, spawnDebris, setShadow, sticks,
     setView: v => { if (v !== view) $("bView").onclick(); } });
 })().catch(e => { console.error(e); const m = $("msg"); m.style.display = ""; m.textContent = "起動できませんでした: " + e.message; });
