@@ -35,7 +35,8 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 #pFwd{background:#8fe08f} #pBack{background:#f4b2a0}
 #pLeft,#pRight{width:66px;height:80px;font-size:28px}
 #done{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);color:#223;font-size:30px;font-weight:bold;background:#ffd23f;padding:18px 30px;border-radius:18px;text-align:center;box-shadow:0 6px 0 #0005;pointer-events:none}
-#done small{font-size:18px}
+#done .btn{pointer-events:auto;margin-top:12px;font-size:22px;padding:12px 22px}
+#toast{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%);color:#fff;font-size:26px;font-weight:bold;background:#0009;padding:10px 22px;border-radius:14px;pointer-events:none;white-space:nowrap}
 #msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);color:#fff;font-size:22px;background:#000a;padding:14px 22px;border-radius:14px;text-align:center}
 </style>
 </head>
@@ -51,9 +52,10 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 <div id="pedals"><button class="pd" id="pLeft">◀</button><button class="pd" id="pBack">バック</button><button class="pd" id="pFwd">アクセル</button><button class="pd" id="pRight">▶</button></div>
 <div class="stick" id="stR"><div class="lab" id="labR"></div><div class="knob"></div></div>
 <div id="msg">読み込み中…</div>
-<div id="done" style="display:none">さら地になりました！<br><small>次は クレーンで建てる（準備中）</small></div>
+<div id="done" style="display:none">さら地になりました！<br><button class="btn" id="bBuild">クレーンで建てる ▶</button></div>
+<div id="toast" style="display:none"></div>
 <script src="vendor/babylon.js"></script>
 <script src="vendor/HavokPhysics_umd.js"></script>
-<script src="game.js?v=14"></script>
+<script src="game.js?v=16"></script>
 </body>
 </html>

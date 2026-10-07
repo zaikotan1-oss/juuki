@@ -361,7 +361,7 @@ const G = window.G = {};   // 確かめ用の口
     $("bShadow").textContent = on ? "影 ON" : "影 OFF"; $("bShadow").classList.toggle("on", !on);
   }
   $("bShadow").onclick = () => setShadow(!shadowOn);
-  $("bReset").onclick = reset;
+  $("bReset").onclick = () => { if (mode === "build") location.reload(); else reset(); };
   shadow.addShadowCaster(cellMesh); shadow.addShadowCaster(debrisSrc);
   setShadow(shadowOn); setLabels();
   for (const [id, k] of [["pFwd", "fwd"], ["pBack", "back"], ["pLeft", "left"], ["pRight", "right"]]) {
@@ -515,10 +515,173 @@ const G = window.G = {};   // 確かめ用の口
     return false;
   }
 
+  // ================= ラフタークレーン（建築モード） =================
+  // 本人の選択（2026-10-08）: 鉄骨のビル・光る枠に吸い付く・ラフタークレーン・さら地のボタンで移る
+  // 吊り荷は物理なし（フックの下にぶら下げるだけ）。フックは振り子で少し揺れる
+  const cr = { pos: new B.Vector3(0, 0, 3), heading: 0, swing: 0, luff: 0.8, ext: 4, wire: 6, sway: new B.Vector2(0, 0), swayV: new B.Vector2(0, 0) };
+  const CLIM = { luff: [0.12, 1.4], ext: [0, 34], wire: [1.2, 50] };
+  const crRoot = new B.TransformNode("crane", scene);
+  const crRed = mat("crRed", 0.85, 0.14, 0.1), white = mat("white", 0.92, 0.92, 0.9);
+  makeBox("crBody", [2.6, 1.1, 9], crRoot, [0, 1.35, 0], white);
+  makeBox("crStripe", [2.62, 0.25, 9.02], crRoot, [0, 1.2, 0], crRed);
+  for (const z of [3.2, 1.6, -1.6, -3.2]) for (const x of [-1.25, 1.25]) {
+    const w = B.MeshBuilder.CreateCylinder("crWheel", { diameter: 1.4, height: 0.6, tessellation: 18 }, scene);
+    w.parent = crRoot; w.rotation.z = Math.PI / 2; w.position.set(x, 0.7, z); w.material = dark; shadow.addShadowCaster(w);
+  }
+  const crUpper = new B.TransformNode("crUpper", scene); crUpper.parent = crRoot; crUpper.position.y = 1.9;
+  makeBox("crTurn", [2.4, 0.9, 4.2], crUpper, [0.35, 0.45, -1.0], crRed);
+  makeBox("crWeight", [2.4, 1.0, 1.0], crUpper, [0.35, 0.5, -3.4], dark);
+  makeBox("crCab", [1.1, 1.5, 1.7], crUpper, [-0.95, 0.75, 1.2], glass).isPickable = false;
+  makeBox("crCabRoof", [1.15, 0.05, 1.75], crUpper, [-0.95, 1.52, 1.2], glass);   // 屋根はガラス（上を見て吊るので。不透明だと画面の上 1/3 がふさがった）
+  const crSeat = new B.TransformNode("crSeat", scene); crSeat.parent = crUpper; crSeat.position.set(-0.95, 1.15, 1.1);
+  const crBoomJ = new B.TransformNode("crBoomJ", scene); crBoomJ.parent = crUpper; crBoomJ.position.set(0.45, 1.2, -2.4);
+  const BOOM0 = 11;                                         // 一番縮めた時のブームの長さ
+  makeBox("crBoom1", [0.9, 0.9, BOOM0], crBoomJ, [0, 0, BOOM0 / 2], crRed);
+  const crBoom2 = makeBox("crBoom2", [0.62, 0.62, 1], crBoomJ, [0, 0, 0], white);
+  const crTip = new B.TransformNode("crTip", scene); crTip.parent = crBoomJ;
+  makeBox("crSheave", [0.5, 0.7, 0.7], crTip, [0, -0.2, 0], dark);
+  const wireM = B.MeshBuilder.CreateCylinder("wire", { diameter: 0.07, height: 1, tessellation: 6 }, scene); wireM.material = dark;
+  const hook = B.MeshBuilder.CreateBox("hook", { width: 0.5, height: 0.7, depth: 0.4 }, scene); hook.material = yel; shadow.addShadowCaster(hook);
+  const crAll = [crRoot, wireM, hook];
+  for (const n of crAll) n.setEnabled(false);
+
+  // 建てる物: 1 階 = 柱 4 → 梁 4 → 床板 1。建物の位置は解体したビルと同じ（x -4〜4, z 14〜20）
+  const FLOOR_H = 3.6, SC = { x: 0, z: 17 };
+  const steelM = mat("steelM", 0.55, 0.24, 0.17), slabM = mat("slabM", 0.66, 0.66, 0.63);
+  const ghostM = new B.StandardMaterial("ghostM", scene); ghostM.diffuseColor = new B.Color3(0.2, 0.9, 1); ghostM.emissiveColor = new B.Color3(0.1, 0.6, 0.8); ghostM.alpha = 0.35;
+  function planFloor(f) {
+    const y0 = f * FLOOR_H, L = [];
+    for (const x of [-3.8, 3.8]) for (const z of [14.2, 19.8]) L.push({ kind: "柱", size: [0.35, FLOOR_H, 0.35], pos: new B.Vector3(x, y0 + FLOOR_H / 2, z), m: steelM });
+    for (const z of [14.2, 19.8]) L.push({ kind: "梁", size: [7.3, 0.4, 0.3], pos: new B.Vector3(0, y0 + FLOOR_H - 0.2, z), m: steelM });
+    for (const x of [-3.8, 3.8]) L.push({ kind: "梁", size: [0.3, 0.4, 5.3], pos: new B.Vector3(x, y0 + FLOOR_H - 0.2, SC.z), m: steelM });
+    L.push({ kind: "床板", size: [8.2, 0.22, 6.2], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.11, SC.z), m: slabM });
+    return L;
+  }
+  const YARD = new B.Vector3(-7.5, 0, 5.5);               // 建材の置き場（クレーンの左前）
+  const bd = { floor: 0, step: 0, plan: planFloor(0), placed: [], score: 0, hanging: null, yard: null, snap: null, ghost: null, toastT: 0 };
+  function pieceMesh(p, name) {
+    const m = B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene);
+    m.material = p.m; shadow.addShadowCaster(m); m.receiveShadows = true; m.rotationQuaternion = B.Quaternion.Identity();
+    return m;
+  }
+  function nextPiece() {
+    const p = bd.plan[bd.step];
+    if (bd.ghost) bd.ghost.dispose();
+    bd.ghost = B.MeshBuilder.CreateBox("ghost", { width: p.size[0] + 0.06, height: p.size[1] + 0.06, depth: p.size[2] + 0.06 }, scene);
+    bd.ghost.material = ghostM; bd.ghost.position.copyFrom(p.pos); bd.ghost.isPickable = false;
+    // 置き場に寝かせて出す（柱は横倒し）
+    const m = pieceMesh(p, "piece");
+    if (p.kind === "柱") { m.rotationQuaternion = B.Quaternion.RotationAxis(B.Axis.Z, Math.PI / 2); m.position.set(YARD.x, p.size[0] / 2 + 0.15, YARD.z); }
+    else m.position.set(YARD.x, p.size[1] / 2 + 0.15, YARD.z);
+    bd.yard = { p, m };
+  }
+  function toast(t) { const el = $("toast"); el.textContent = t; el.style.display = ""; bd.toastT = 2.5; }
+  function applyCranePose() {
+    crRoot.position.copyFrom(cr.pos); crRoot.rotation.y = cr.heading;
+    crUpper.rotation.y = cr.swing; crBoomJ.rotation.x = -cr.luff;
+    const L = BOOM0 + cr.ext;
+    crBoom2.scaling.z = Math.max(0.5, L - BOOM0 + 1); crBoom2.position.z = (BOOM0 - 1 + L) / 2;
+    crTip.position.z = L;
+  }
+  const _tip = new B.Vector3(), _tipPrev = new B.Vector3(), _tipVel = new B.Vector3(), _tipVelPrev = new B.Vector3(), _up = new B.Vector3(0, 1, 0);
+  let tipInit = false;
+  function hookPos() {
+    const s2 = cr.sway.x * cr.sway.x + cr.sway.y * cr.sway.y;
+    return new B.Vector3(_tip.x + cr.sway.x, _tip.y - Math.sqrt(Math.max(0.01, cr.wire * cr.wire - s2)), _tip.z + cr.sway.y);
+  }
+  function updateBuild(dt) {
+    const L = sticks.L, R = sticks.R;
+    const sw = L.x + kv("KeyD", "KeyA"), ex2 = L.y + kv("KeyW", "KeyS"), ho = R.y + kv("KeyI", "KeyK"), lf = -R.x + kv("KeyJ", "KeyL");
+    cr.swing += sw * 0.4 * dt;
+    cr.ext = B.Scalar.Clamp(cr.ext + ex2 * 3 * dt, ...CLIM.ext);
+    cr.luff = B.Scalar.Clamp(cr.luff + lf * 0.25 * dt, ...CLIM.luff);
+    cr.wire = B.Scalar.Clamp(cr.wire - ho * 4 * dt, ...CLIM.wire);
+    // 走る（ペダル）。建物の周りには入れない
+    const want = B.Scalar.Clamp(pedal.fwd - pedal.back + kv("ArrowUp", "ArrowDown"), -1, 1) * (pedal.back && !pedal.fwd ? 2.0 : 4);
+    speed += (want - speed) * Math.min(1, dt * (want ? 2 : 4)); if (Math.abs(speed) < 0.02 && !want) speed = 0;
+    const wantT = B.Scalar.Clamp(pedal.right - pedal.left + kv("ArrowRight", "ArrowLeft"), -1, 1) * 0.5;
+    turnRate += (wantT - turnRate) * Math.min(1, dt * 5);
+    if (speed || Math.abs(turnRate) > 0.005) {
+      cr.heading += turnRate * dt;
+      const np = cr.pos.add(new B.Vector3(Math.sin(cr.heading), 0, Math.cos(cr.heading)).scale(speed * dt));
+      if (np.x > -9 && np.x < 9 && np.z > 9 && np.z < 25) speed = 0; else cr.pos.copyFrom(np);
+    }
+    applyCranePose();
+    for (const n of [crRoot, crUpper, crBoomJ]) n.computeWorldMatrix(true);
+    _tip.copyFrom(crTip.computeWorldMatrix(true).getTranslation());
+    if (!tipInit) { _tipPrev.copyFrom(_tip); _tipVelPrev.setAll(0); tipInit = true; }
+    // フックの揺れ（振り子）。ブームの先が急に動くと揺れ、少しずつ収まる
+    _tip.subtractToRef(_tipPrev, _tipVel).scaleInPlace(1 / dt);
+    const ax = (_tipVel.x - _tipVelPrev.x) / dt, az = (_tipVel.z - _tipVelPrev.z) / dt;
+    _tipPrev.copyFrom(_tip); _tipVelPrev.copyFrom(_tipVel);
+    const g = 9.81 / Math.max(1, cr.wire);
+    cr.swayV.x += (-g * cr.sway.x - ax * 0.8) * dt; cr.swayV.y += (-g * cr.sway.y - az * 0.8) * dt;
+    cr.swayV.scaleInPlace(Math.max(0, 1 - 1.4 * dt));
+    cr.sway.addInPlace(cr.swayV.scale(dt));
+    const sl = cr.sway.length(), smax = cr.wire * 0.35; if (sl > smax) cr.sway.scaleInPlace(smax / sl);
+    // 地面より下へは下ろせない（吊っている物の下も含めて）
+    const hang = bd.hanging ? bd.hanging.p.size[1] + 0.4 : 0;
+    let hp = hookPos();
+    if (hp.y - 0.35 - hang < 0.05) { cr.wire = Math.max(CLIM.wire[0], cr.wire - (0.05 - (hp.y - 0.35 - hang))); hp = hookPos(); }
+    hook.position.copyFrom(hp);
+    // ワイヤー: ブームの先からフックまで
+    const dir = hp.subtract(_tip), len = dir.length();
+    wireM.position.copyFrom(_tip.add(hp).scaleInPlace(0.5)); wireM.scaling.y = len;
+    wireM.rotationQuaternion = wireM.rotationQuaternion || new B.Quaternion();
+    B.Quaternion.FromUnitVectorsToRef(_up, dir.scale(-1 / len), wireM.rotationQuaternion);
+
+    // 吊る: フックを置き場の建材の真上まで下ろすと掛かる
+    if (!bd.hanging && !bd.snap && bd.yard) {
+      const m = bd.yard.m; m.computeWorldMatrix(true);
+      const top = m.getBoundingInfo().boundingBox.maximumWorld.y;
+      if (Math.hypot(hp.x - m.position.x, hp.z - m.position.z) < 1.4 && hp.y - 0.35 < top + 0.9) { bd.hanging = bd.yard; bd.yard = null; thud(0.3, 1200); }
+    }
+    if (bd.hanging) {
+      const h = bd.hanging;
+      h.m.position.set(hp.x, hp.y - 0.35 - 0.4 - h.p.size[1] / 2, hp.z);
+      B.Quaternion.SlerpToRef(h.m.rotationQuaternion, B.Quaternion.Identity(), Math.min(1, dt * 3), h.m.rotationQuaternion);   // 寝ていた柱が起き上がる
+      // 光る枠の近くまで運ぶとピタッとはまる
+      const d = Math.hypot(h.m.position.x - h.p.pos.x, h.m.position.z - h.p.pos.z), dy = Math.abs(h.m.position.y - h.p.pos.y);
+      if (d < 1.6 && dy < 1.4) {
+        const pts = Math.max(10, Math.round(100 - d * 45 - dy * 25));
+        bd.score += pts; bd.snap = { m: h.m, from: h.m.position.clone(), q: h.m.rotationQuaternion.clone(), to: h.p.pos, t: 0 }; bd.hanging = null;
+        toast(pts >= 90 ? `ぴったり！ +${pts}` : `+${pts}`);
+      }
+    }
+    if (bd.snap) {
+      const s = bd.snap; s.t = Math.min(1, s.t + dt / 0.35);
+      B.Vector3.LerpToRef(s.from, s.to, s.t, s.m.position); B.Quaternion.SlerpToRef(s.q, B.Quaternion.Identity(), s.t, s.m.rotationQuaternion);
+      if (s.t >= 1) {
+        thud(0.5, 700); bd.placed.push(s.m); bd.snap = null; bd.step++;
+        if (bd.step >= bd.plan.length) { bd.floor++; bd.step = 0; bd.plan = planFloor(bd.floor); toast(`${bd.floor}階 完成！`); }
+        nextPiece();
+      }
+    }
+    if (bd.ghost) bd.ghost.visibility = 0.55 + 0.45 * Math.sin(performance.now() / 250);
+    if (bd.toastT > 0) { bd.toastT -= dt; if (bd.toastT <= 0) $("toast").style.display = "none"; }
+    if (eng) eng.o.frequency.value = 38 + Math.min(Math.abs(sw) + Math.abs(ex2) + Math.abs(ho) + Math.abs(lf) + Math.abs(speed) / 4, 2) * 14;
+  }
+  let mode = "demo";
+  function enterBuild() {
+    mode = "build";
+    clearDebris(); for (const c of [...bld.cells.values()]) removeCell(c); rebuildCellMesh();
+    // ショベルは横へ片づけ、ダンプは帰す
+    ex.pos.set(13, 0, 2); ex.heading = -Math.PI / 2; ex.swing = 0; ex.boom = -0.6; ex.stick = 1.6; ex.bucket = 1.5; applyPose(); syncColliders(exParts, true);
+    for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.state = "gone"; truck.z = -200; placeTruck(); syncColliders(truck.parts, true); truck.root.setEnabled(false);
+    for (const n of crAll) n.setEnabled(true);
+    cr.pos.set(0, 0, 3); cr.heading = 0; cr.swing = 0; cr.luff = 0.8; cr.ext = 4; cr.wire = 6; cr.sway.set(0, 0); cr.swayV.set(0, 0); tipInit = false;
+    fp.parent = crSeat; look.yaw = 0; look.pitch = -0.1; tp.radius = 32;
+    $("done").style.display = "none";
+    $("labL").textContent = "←→ 旋回 / ↑↓ ブーム 伸ばす・縮める"; $("labR").textContent = "↑↓ フック 上げ・下げ / ← 起こす → 倒す";
+    nextPiece(); toast("建築モード：建材を吊って、光る枠へ運ぼう");
+  }
+  $("bBuild").onclick = enterBuild;
+
   // ================= 毎フレーム =================
   let fpsAvg = 60, msAvg = 16, hudT = 0;
   scene.onBeforeRenderObservable.add(() => {
     const dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);   // 確かめる時は G.fixedDt で固定
+    if (mode === "build") { updateBuild(dt); frameCommon(dt); return; }
     const L = sticks.L, R = sticks.R;
     const sw = L.x + kv("KeyD", "KeyA"), st = -L.y + kv("KeyS", "KeyW"), bo = -R.y + kv("KeyK", "KeyI"), bu = -R.x + kv("KeyJ", "KeyL");
     const prev = [ex.boom, ex.stick, ex.bucket], low0 = bucketLowest();
@@ -567,9 +730,12 @@ const G = window.G = {};   // 確かめ用の口
     updateGrab();
     updateTruck(dt);
 
+    frameCommon(dt);
+  });
+  function frameCommon(dt) {
     // カメラ
     fp.rotation.set(look.pitch, look.yaw, 0);
-    tp.target.copyFrom(ex.pos.add(new B.Vector3(0, 2.5, 0)));
+    tp.target.copyFrom(mode === "build" ? cr.pos.add(new B.Vector3(0, 6, 6)) : ex.pos.add(new B.Vector3(0, 2.5, 0)));
 
     // 数字
     const f = engine.getFps(); fpsAvg += (f - fpsAvg) * 0.05; msAvg += (engine.getDeltaTime() - msAvg) * 0.05;
@@ -580,6 +746,16 @@ const G = window.G = {};   // 確かめ用の口
       for (const d of debris) { if (!d.ag) continue; d.ag.body.getLinearVelocityToRef(_v); if (_v.lengthSquared() > 0.04) awake++; }
       const pct = Math.round((1 - bld.cells.size / bld.total) * 100), sd = siteDebris();
       const tstate = { wait: "待っている", leave: "出発！", back: "戻ってくる" }[truck.state];
+      if (mode === "build") {
+        const nx = bd.plan[bd.step];
+        $("hud").textContent =
+          `建築 ${bd.floor + 1}階目　${bd.step}/${bd.plan.length}　次: ${nx.kind}\n` +
+          `得点 ${bd.score}　高さ ${(bd.floor * FLOOR_H).toFixed(1)}m\n` +
+          (bd.hanging ? `${bd.hanging.p.kind}を吊っている → 光る枠へ` : "フックを置き場の建材に下ろして吊る") + `\n` +
+          `${api}  ${fpsAvg.toFixed(0)} fps (${msAvg.toFixed(1)} ms)  画面 ${engine.getRenderWidth()}×${engine.getRenderHeight()}`;
+        G.stats = { mode, floor: bd.floor, step: bd.step, score: bd.score, hanging: !!bd.hanging, fps: fpsAvg };
+        return;
+      }
       $("hud").textContent =
         `解体 ${pct}%　がれき ${sd} 個\n` +
         `ダンプ ${Math.min(100, Math.round(truck.amount / TRUCK_CAP * 100))}%（${tstate}）運んだ ${truck.trips} 台\n` +
@@ -590,15 +766,16 @@ const G = window.G = {};   // 確かめ用の口
       // さら地: ビルが残っておらず、範囲のがれきが 10 個以下
       if (!siteDone && bld.cells.size === 0 && sd <= 10) { siteDone = true; $("done").style.display = ""; thud(0.5, 900); }
     }
-  });
+  }
 
   reset();
+  if (Q.has("build")) enterBuild();   // ?build で最初から建築モード（確かめ用）
   $("msg").style.display = "none";
   engine.resize();   // WebGPU は作った時点で canvas の大きさを拾わないことがある（300×150 のままになった）
   engine.runRenderLoop(() => scene.render());
   addEventListener("resize", () => engine.resize());
 
-  Object.assign(G, { bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
