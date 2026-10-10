@@ -34,39 +34,130 @@ const G = window.G = {};   // 確かめ用の口
   engine.setHardwareScalingLevel(1 / DPR);
 
   const scene = new B.Scene(engine);
-  scene.clearColor = new B.Color4(0.62, 0.78, 0.92, 1);
-  scene.fogMode = B.Scene.FOGMODE_LINEAR; scene.fogStart = 80; scene.fogEnd = 220;
-  scene.fogColor = new B.Color3(0.62, 0.78, 0.92);
+  // 画質: 高（既定）／低（?lo か、iPad で重い時に自動で落とす）。本人「実写に近い見た目に」（2026-10-10）
+  let HQ = !Q.has("lo");
+  scene.clearColor = new B.Color4(0.6, 0.66, 0.72, 1);
+  scene.fogMode = B.Scene.FOGMODE_LINEAR; scene.fogStart = 70; scene.fogEnd = 380;
+  scene.fogColor = new B.Color3(0.6, 0.58, 0.55);     // 背景写真の地平線あたりの色
 
   // ---- 物理 ----
   const hk = await HavokPhysics({ locateFile: () => "vendor/HavokPhysics.wasm" });
   const plugin = new B.HavokPlugin(true, hk);
   scene.enablePhysics(new B.Vector3(0, -9.81, 0), plugin);
 
-  // ---- 光と影 ----
-  const hemi = new B.HemisphericLight("hemi", new B.Vector3(0.2, 1, 0.1), scene);
-  hemi.intensity = 0.55; hemi.groundColor = new B.Color3(0.35, 0.33, 0.3);
-  const sun = new B.DirectionalLight("sun", new B.Vector3(-0.5, -1, -0.35), scene);
-  sun.position = new B.Vector3(40, 60, 30); sun.intensity = 1.0;
-  const shadow = new B.ShadowGenerator(Q.has("lo") ? 1024 : 2048, sun);
-  shadow.usePercentageCloserFiltering = true; shadow.bias = 0.002;
+  // ---- 空と光: Poly Haven の HDRI「construction_yard」（CC0）----
+  // 光の当たり方は HDR（256 の小さな立方体で十分）、背景は軽い JPG（HDR を 1024 の立方体にすると iPad のメモリが苦しい）
+  const ENV_ROT = Number(Q.get("envrot") || -2.11);   // 写真を回して、太陽がプレイヤーの斜め後ろから当たる向きに
+  const env = new B.HDRCubeTexture("assets/hdri/construction_yard_2k.hdr", scene, 256, false, true, false, true);
+  env.rotationY = ENV_ROT;
+  scene.environmentTexture = env; scene.environmentIntensity = 1.0;
+  const dome = new B.PhotoDome("bg", "assets/hdri/construction_yard_bg3.jpg", { resolution: 64, size: 1600 }, scene);
+  dome.mesh.rotation.y = ENV_ROT + Number(Q.get("domerot") || 0); dome.material.fogEnabled = false;
+  // 太陽: 写真の中の太陽の位置（高さ 34°）に合わせる。方位は写真の向きに合わせて DOME と同じだけ回す
+  const SUN_EL = 33.8 * Math.PI / 180, SUN_AZ = Number(Q.get("sunaz") || 3.4);   // 写真の太陽の方位（カメラを向けて合わせた。回す前は 5.75）
+  const sunDir = new B.Vector3(-Math.sin(SUN_AZ) * Math.cos(SUN_EL), -Math.sin(SUN_EL), -Math.cos(SUN_AZ) * Math.cos(SUN_EL));
+  const sun = new B.DirectionalLight("sun", sunDir, scene);
+  sun.intensity = 2.1; sun.diffuse = new B.Color3(1, 0.96, 0.9);
+  // 影: 現場（x ±26・z -16〜46）にぴったり合わせた 1 枚の影の地図。
+  // CascadedShadowGenerator と SSAO2 は WebGPU で画面が真っ黒／背景が黒く抜けた（2026-10-10 確かめ）ので使わない
+  const shadow = new B.ShadowGenerator(HQ ? 4096 : 2048, sun);
+  sun.autoUpdateExtends = false; sun.autoCalcShadowZBounds = false;
+  sun.orthoLeft = -40; sun.orthoRight = 40; sun.orthoTop = 40; sun.orthoBottom = -40; sun.shadowMinZ = 1; sun.shadowMaxZ = 220;
+  sun.position = new B.Vector3(0, 0, 15).subtract(sunDir.scale(110));
+  shadow.usePercentageCloserFiltering = true; shadow.filteringQuality = B.ShadowGenerator.QUALITY_HIGH;
+  shadow.bias = 0.002; shadow.normalBias = 0.04;   // 小さいと面に木目のような影のしま（シャドウアクネ）が出た shadow.darkness = 0.12;
   let shadowOn = !Q.has("noshadow");
 
-  const mat = (name, r, g, b) => { const m = new B.StandardMaterial(name, scene); m.diffuseColor = new B.Color3(r, g, b); m.specularColor = new B.Color3(0.08, 0.08, 0.08); return m; };
-
-  // ---- 地面（土の模様を DynamicTexture で） ----
-  const ground = B.MeshBuilder.CreateBox("ground", { width: 240, height: 1, depth: 240 }, scene);
-  ground.position.y = -0.5; ground.receiveShadows = true;
-  {
-    const dt = new B.DynamicTexture("dirt", 512, scene, false, B.Texture.BILINEAR_SAMPLINGMODE), c = dt.getContext();   // ミップマップ有りだと WebGPU で遠くが黒くなった
-    c.fillStyle = "#8a7453"; c.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 5000; i++) { const v = 100 + Math.random() * 60 | 0; c.fillStyle = `rgba(${v},${v * 0.85 | 0},${v * 0.6 | 0},0.5)`; c.fillRect(Math.random() * 512, Math.random() * 512, 3, 3); }
-    c.strokeStyle = "rgba(60,45,30,0.35)"; c.lineWidth = 2;
-    for (let i = 0; i <= 512; i += 64) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, 512); c.moveTo(0, i); c.lineTo(512, i); c.stroke(); }
-    dt.update(); dt.uScale = dt.vScale = 30;
-    const gm = mat("groundM", 1, 1, 1); gm.diffuseTexture = dt; ground.material = gm;
+  // ---- 材質（PBR: 光を本物らしく返す）----
+  // 色は sRGB で書いて、線形に直して渡す
+  const mat = (name, r, g, b, rough = 0.55, metal = 0) => {
+    const m = new B.PBRMaterial(name, scene); m.albedoColor = new B.Color3(r, g, b).toLinearSpace(); m.roughness = rough; m.metallic = metal; return m;
+  };
+  const texCache = {};
+  const TEX_V = 4;   // 素材の画像を作り直したら上げる（ブラウザの保存分を使わせない）
+  const tex = (file, scale) => { const t = new B.Texture("assets/tex/" + file + "?v=" + TEX_V, scene); t.uScale = t.vScale = scale; t.anisotropicFilteringLevel = 8; return t; };
+  // 写真素材（diff=色・nor=凹凸・arm=陰/粗さ/金属）。scale は「1 枚が何回くり返すか」
+  function pbrTex(name, base, scale, tint, diffFile) {
+    const m = new B.PBRMaterial(name, scene);
+    m.albedoTexture = tex(diffFile || base + "_diff.jpg", scale);
+    m.bumpTexture = tex(base + "_nor.jpg", scale); m.invertNormalMapY = true;
+    m.metallicTexture = tex(base + "_arm.jpg", scale);
+    m.useAmbientOcclusionFromMetallicTextureRed = true; m.useRoughnessFromMetallicTextureGreen = true; m.useMetallnessFromMetallicTextureBlue = true;
+    m.metallic = 1; m.roughness = 1;
+    if (tint) m.albedoColor = new B.Color3(...tint);
+    return m;
   }
+
+  // 塗装: 汚れとさびの筋を入れた色の写真（assets/tex/paint_*.jpg は rusty_painted_metal から作った）＋つや
+  const PAINT_COL = { "paint_yellow_diff.jpg": [0.93, 0.66, 0.08], "paint_orange_diff.jpg": [0.86, 0.36, 0.08], "paint_red_diff.jpg": [0.72, 0.09, 0.06], "paint_white_diff.jpg": [0.86, 0.86, 0.83], "paint_primer_diff.jpg": [0.66, 0.27, 0.17], "paint_dark_diff.jpg": [0.32, 0.31, 0.29] };
+  function paintM(name, file, rough, coat = 0.35) {
+    // 汚れの写真を貼ると、引き伸ばされて木目のように見えた（10-10）。色だけ使う
+    const col = PAINT_COL[file] || [0.8, 0.8, 0.8];
+    const m = new B.PBRMaterial(name, scene); m.albedoColor = new B.Color3(...col).toLinearSpace(); m.metallic = 0; m.roughness = rough;
+    if (coat) { m.clearCoat.isEnabled = true; m.clearCoat.intensity = coat; m.clearCoat.roughness = 0.3; }
+    return m;
+  }
+  // まだら模様（白黒）: 地面の重ね塗りの「どこに出すか」に使う。ミップマップ無し（WebGPU で黒くなった）
+  function blotchTex(name, n, seed) {
+    const t = new B.DynamicTexture(name, { width: 256, height: 256 }, scene, false, B.Texture.BILINEAR_SAMPLINGMODE), c = t.getContext();
+    let r = seed; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
+    c.fillStyle = "#000"; c.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < n; i++) {
+      const x = rnd() * 256, y = rnd() * 256, rad = 8 + rnd() * 26, g = c.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, "rgba(255,255,255,0.8)"); g.addColorStop(1, "rgba(255,255,255,0)"); c.fillStyle = g; c.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    t.update(); t.getAlphaFromRGB = true; t.wrapU = t.wrapV = B.Texture.CLAMP_ADDRESSMODE;
+    return t;
+  }
+
+  // ---- 地面: 物理用の箱（見えない）＋見た目の円盤（写真素材）＋外側の輪（だんだん透けて、背景写真の地面になじむ）----
+  const ground = B.MeshBuilder.CreateBox("ground", { width: 240, height: 1, depth: 240 }, scene);
+  ground.position.y = -0.5; ground.isVisible = false;
   new B.PhysicsAggregate(ground, B.PhysicsShapeType.BOX, { mass: 0, friction: 0.9 }, scene);
+  const GR = 70, GR2 = 170;
+  const groundM = pbrTex("groundM", "gravel_ground_01", GR * 2 / 3.5, [1.05, 1.0, 0.93]);
+  const groundVis = B.MeshBuilder.CreateDisc("groundVis", { radius: GR, tessellation: 96 }, scene);
+  groundVis.rotation.x = Math.PI / 2; groundVis.material = groundM; groundVis.receiveShadows = true; groundVis.isPickable = false;
+  {
+    // 外側の輪: 内側は不透明、外へ行くほど透ける。模様は内側と同じ大きさでつながる
+    const pos = [], uv = [], col = [], idx = [], N = 96;
+    for (let i = 0; i <= N; i++) {
+      const a = i / N * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
+      for (const [r, al] of [[GR - 0.01, 1], [GR + 25, 0.85], [GR2, 0]]) {
+        pos.push(c * r, 0.002, sn * r); uv.push((c * r) / (GR * 2) + 0.5, (sn * r) / (GR * 2) + 0.5); col.push(1, 1, 1, al);
+      }
+    }
+    for (let i = 0; i < N; i++) for (let k = 0; k < 2; k++) { const a = i * 3 + k, b = (i + 1) * 3 + k; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+    const vd = new B.VertexData(); vd.positions = pos; vd.uvs = uv; vd.colors = col; vd.indices = idx;
+    vd.normals = []; B.VertexData.ComputeNormals(pos, idx, vd.normals);
+    const ring = new B.Mesh("groundRing", scene); vd.applyToMesh(ring); ring.hasVertexAlpha = true;
+    const rm = groundM.clone("groundRingM"); rm.backFaceCulling = false; ring.material = rm; ring.isPickable = false; ring.receiveShadows = true;
+  }
+  for (const [nm, base, sc, y, n, seed, tint] of [["gDirt", "dry_ground_rocks", GR * 2 / 4.5, 0.004, 26, 7, [1.2, 1.15, 1.08]], ["gMud", "muddy_tracks", GR * 2 / 5, 0.008, 10, 99, [1.3, 1.22, 1.12]]]) {
+    const m = pbrTex(nm + "M", base, sc, tint); m.opacityTexture = blotchTex(nm + "T", n, seed); m.zOffset = -1 - y * 200; m.backFaceCulling = false;
+    const d = B.MeshBuilder.CreateDisc(nm, { radius: GR * 0.62, tessellation: 64 }, scene); d.rotation.x = Math.PI / 2; d.position.y = y;
+    d.material = m; d.receiveShadows = true; d.isPickable = false;
+    // 模様の画像は円盤いっぱい、まだらは円盤全体に 1 枚
+    m.opacityTexture.uScale = m.opacityTexture.vScale = 1;
+    for (const t of [m.albedoTexture, m.bumpTexture, m.metallicTexture]) t.uScale = t.vScale = sc * 0.62;
+  }
+  // 小石（見た目だけ。物理なし）と、隅の土の山
+  {
+    const rock = B.MeshBuilder.CreateIcoSphere("rocks", { radius: 0.5, subdivisions: 1, flat: true }, scene);
+    rock.material = pbrTex("rockM", "concrete_debris", 0.5, [0.75, 0.68, 0.6]); rock.receiveShadows = true; rock.isPickable = false;
+    const ms = []; let r = 12345; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 420; i++) {
+      const x = -22 + rnd() * 44, z = -12 + rnd() * 52; if (x > -7 && x < 7 && z > 11 && z < 23) continue;
+      const sz = 0.05 + Math.pow(rnd(), 3) * 0.35;
+      ms.push(B.Matrix.Compose(new B.Vector3(sz * (0.8 + rnd() * 0.6), sz * (0.5 + rnd() * 0.4), sz * (0.8 + rnd() * 0.6)), B.Quaternion.RotationYawPitchRoll(rnd() * 6, rnd() * 0.5, rnd() * 0.5), new B.Vector3(x, sz * 0.12, z)));
+    }
+    const buf = new Float32Array(ms.length * 16); ms.forEach((m, i) => m.copyToArray(buf, i * 16)); rock.thinInstanceSetBuffer("matrix", buf, 16, true);
+    const moundM = pbrTex("moundM", "dry_ground_rocks", 3, [0.92, 0.88, 0.84]);
+    for (const [x, z, sx, sz, ry] of [[-18, -8, 7, 4, 0.3], [18.5, -6, 5, 6, 1.1], [19, 18, 4, 7, 0.2], [-19.5, 16, 4, 6, -0.4]]) {
+      const m = B.MeshBuilder.CreateSphere("mound", { diameter: 1, segments: 12 }, scene); m.scaling.set(sx, 2.2, sz); m.position.set(x, -0.15, z); m.rotation.y = ry;
+      m.material = moundM; m.receiveShadows = true; m.isPickable = false; shadow.addShadowCaster(m);
+    }
+  }
 
   // ================= ビル（格子） =================
   const BW = 8, BD = 6, FLOORS = 3, FH = 3;      // 建物の大きさ(m)
@@ -75,9 +166,29 @@ const G = window.G = {};   // 確かめ用の口
   const cellShape = new B.PhysicsShapeBox(B.Vector3.Zero(), B.Quaternion.Identity(), new B.Vector3(CELL, CELL, CELL), scene);
   cellShape.material = { friction: 0.8, restitution: 0 };
   const key = (x, y, z) => x + "," + y + "," + z;
-  const cellMesh = B.MeshBuilder.CreateBox("cellSrc", { size: CELL * 0.999 }, scene);
-  cellMesh.material = mat("cellM", 1, 1, 1); cellMesh.receiveShadows = true;
-  cellMesh.alwaysSelectAsActiveMesh = true;
+  // 見た目: 見えている面だけを 1 枚のメッシュに組む（模様は世界の座標で貼るので、格子の境目で切れない）
+  const cellMesh = new B.Mesh("bld", scene);
+  const bldM = pbrTex("bldM", "dirty_concrete", 1, [1.0, 0.97, 0.92], "dirty_concrete_soft_diff.jpg");   // しみの濃さを半分にした写真 bldM.backFaceCulling = false;
+  cellMesh.material = bldM; cellMesh.receiveShadows = true;
+  // 壊れた断面（元は隣に壁があった面）は別のメッシュ: 荒いコンクリート＋飛び出した鉄筋
+  const brokeMesh = new B.Mesh("bldBroken", scene);
+  const brokeM = pbrTex("brokeM", "concrete_debris", 1, [0.85, 0.83, 0.8]); brokeM.backFaceCulling = false;
+  brokeMesh.material = brokeM; brokeMesh.receiveShadows = true;
+  const rebar = B.MeshBuilder.CreateCylinder("rebar", { diameter: 0.022, height: 1, tessellation: 5 }, scene);
+  rebar.material = mat("rebarM", 0.3, 0.17, 0.1, 0.75, 0.6); rebar.isPickable = false; rebar.receiveShadows = true;
+  // 窓枠（アルミ）
+  const frame = B.MeshBuilder.CreateBox("winFrame", { size: 1 }, scene);
+  frame.material = mat("frameM", 0.42, 0.43, 0.44, 0.35, 0.85); frame.isPickable = false; frame.receiveShadows = true;
+  const _yUp = new B.Vector3(0, 1, 0), _rq = new B.Quaternion();
+  function setThin(mesh, list) {
+    if (!list.length) { mesh.setEnabled(false); return; }
+    const buf = new Float32Array(list.length * 16); list.forEach((m, i) => m.copyToArray(buf, i * 16));
+    mesh.thinInstanceSetBuffer("matrix", buf, 16, true); mesh.setEnabled(true);
+  }
+  const paneMesh = new B.Mesh("panes", scene);
+  const paneM = new B.PBRMaterial("paneM", scene); paneM.albedoColor = new B.Color3(0.015, 0.02, 0.025); paneM.metallic = 0; paneM.roughness = 0.03; paneM.alpha = 0.88; paneM.backFaceCulling = false;   // 空が映り込む古いガラス
+  paneMesh.material = paneM;
+  const winSet = new Set();      // 窓の穴（格子の座標）。上下の壁が残っている間だけガラスを出す
 
   function cellWorld(x, y, z) { return new B.Vector3(bld.origin.x + (x + 0.5) * CELL, bld.origin.y + (y + 0.5) * CELL, bld.origin.z + (z + 0.5) * CELL); }
   function addCell(x, y, z, kind) {
@@ -89,7 +200,7 @@ const G = window.G = {};   // 確かめ用の口
   }
   function buildBuilding() {
     for (const c of bld.cells.values()) { c.body.dispose(); c.node.dispose(); }
-    bld.cells.clear();
+    bld.cells.clear(); winSet.clear();
     const W = BW / CELL, D = BD / CELL, H = FH / CELL;           // 16 × 12、1 階 6 段
     for (let f = 0; f < FLOORS; f++) {
       for (let r = 0; r < H; r++) {
@@ -102,28 +213,95 @@ const G = window.G = {};   // 確かめ用の口
           if (!edge) continue;
           // 窓: 各階の 2〜3 段目、柱以外の壁を 2 格子おきにあける
           const along = (z === 0 || z === D - 1) ? x : z;
-          if (r >= 2 && r <= 3 && !pillar && (Math.floor(along / 2) % 2 === 1)) continue;
+          if (r >= 2 && r <= 3 && !pillar && (Math.floor(along / 2) % 2 === 1)) { winSet.add(key(x, y, z) + (z === 0 || z === D - 1 ? ",z" : ",x")); continue; }
           // 1 階の正面（z=0）の真ん中は入口
           if (f === 0 && z === 0 && x >= W / 2 - 3 && x <= W / 2 + 2 && r < 4 && !pillar) continue;
           addCell(x, y, z, pillar ? "pillar" : "wall");
         }
       }
     }
+    // 屋上の縁の立ち上がり（パラペット）: 一番上の床の外周に 1 段
+    for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) if (x === 0 || z === 0 || x === W - 1 || z === D - 1) addCell(x, FLOORS * H, z, "wall");
     bld.total = bld.cells.size;
+    bld.orig = new Set(bld.cells.keys());
     rebuildCellMesh();
   }
-  const KIND_COL = { wall: [0.82, 0.8, 0.74], slab: [0.6, 0.6, 0.6], pillar: [0.72, 0.7, 0.66] };
+  const KIND_COL = { wall: [1, 0.98, 0.94], slab: [0.78, 0.78, 0.78], pillar: [0.9, 0.88, 0.85] };   // 写真素材に掛ける色（壁・床・柱で少し変える）
+  const FACE = [
+    { n: [1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] }, { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
+    { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] }, { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+    { n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, { n: [0, 0, -1], u: [1, 0, 0], v: [0, 1, 0] }];
+  const TEXM = 4;     // 写真素材 1 枚が何 m 四方か
   function rebuildCellMesh() {
-    const n = bld.cells.size, mats = new Float32Array(Math.max(1, n) * 16), cols = new Float32Array(Math.max(1, n) * 4);
-    let i = 0;
+    const pos = [], nor = [], uv = [], col = [], idx = [], h = CELL / 2;
+    const bp = [], bn = [], bu = [], bc = [], bi = [], bars = [];
     for (const c of bld.cells.values()) {
-      B.Matrix.Translation(c.p.x, c.p.y, c.p.z).copyToArray(mats, i * 16);
-      const k = KIND_COL[c.kind], s = 0.94 + ((c.x * 7 + c.y * 13 + c.z * 5) % 7) * 0.012;
-      cols.set([k[0] * s, k[1] * s, k[2] * s, 1], i * 4); i++;
+      const k = KIND_COL[c.kind], vary = 0.94 + ((c.x * 7 + c.y * 13 + c.z * 5) % 7) * 0.012;
+      for (const f of FACE) {
+        const nk = key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2]);
+        if (bld.cells.has(nk)) continue;     // 隣が埋まっている面は見えない
+        if (bld.orig && bld.orig.has(nk)) {   // 壊れた断面
+          const b2 = bp.length / 3;
+          for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+            const px = c.p.x + (f.n[0] + f.u[0] * su + f.v[0] * sv) * h, py = c.p.y + (f.n[1] + f.u[1] * su + f.v[1] * sv) * h, pz = c.p.z + (f.n[2] + f.u[2] * su + f.v[2] * sv) * h;
+            bp.push(px, py, pz); bn.push(...f.n); bu.push((px * f.u[0] + py * f.u[1] + pz * f.u[2]) / 1.4, (px * f.v[0] + py * f.v[1] + pz * f.v[2]) / 1.4);
+            bc.push(k[0] * vary, k[1] * vary, k[2] * vary, 1);
+          }
+          bi.push(b2, b2 + 1, b2 + 2, b2, b2 + 2, b2 + 3);
+          // 鉄筋: 面ごとに 0〜2 本、少し曲がって飛び出す（位置は格子の座標から決まるので毎回同じ）
+          const hsh = Math.abs((c.x * 73856093) ^ (c.y * 19349663) ^ (c.z * 83492791) ^ (f.n[0] * 3 + f.n[1] * 5 + f.n[2] * 7)) % 1000;
+          const nb = hsh % 3; if (bars.length < 1600)
+          for (let j = 0; j < nb; j++) {
+            const o1 = ((hsh >> (j * 2)) % 5 - 2) * 0.09, o2 = (((hsh * 7) >> j) % 5 - 2) * 0.09, L = 0.15 + ((hsh * (j + 3)) % 30) / 100;
+            const dir = new B.Vector3(f.n[0] + f.u[0] * o2 * 1.5 + f.v[0] * -0.25 * j, f.n[1] + f.u[1] * o2 * 1.5 + f.v[1] * -0.25 * j, f.n[2] + f.u[2] * o2 * 1.5 + f.v[2] * -0.25 * j).normalize();
+            const base = new B.Vector3(c.p.x + (f.n[0] * h + (f.u[0] * o1 + f.v[0] * o2)), c.p.y + (f.n[1] * h + (f.u[1] * o1 + f.v[1] * o2)), c.p.z + (f.n[2] * h + (f.u[2] * o1 + f.v[2] * o2)));
+            B.Quaternion.FromUnitVectorsToRef(_yUp, dir, _rq);
+            bars.push(B.Matrix.Compose(new B.Vector3(1, L, 1), _rq, base.add(dir.scale(L / 2 - 0.03))));
+          }
+          continue;
+        }
+        const b = pos.length / 3;
+        for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          const px = c.p.x + (f.n[0] + f.u[0] * su + f.v[0] * sv) * h, py = c.p.y + (f.n[1] + f.u[1] * su + f.v[1] * sv) * h, pz = c.p.z + (f.n[2] + f.u[2] * su + f.v[2] * sv) * h;
+          pos.push(px, py, pz); nor.push(...f.n);
+          uv.push((px * f.u[0] + py * f.u[1] + pz * f.u[2]) / TEXM, (px * f.v[0] + py * f.v[1] + pz * f.v[2]) / TEXM);
+          // 内側（壊して見えた所・床の裏）は少し暗く
+          const inner = f.n[1] < 0 ? 0.7 : 1;
+          col.push(k[0] * vary * inner, k[1] * vary * inner, k[2] * vary * inner, 1);
+        }
+        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      }
     }
-    cellMesh.thinInstanceSetBuffer("matrix", mats, 16, false);
-    cellMesh.thinInstanceSetBuffer("color", cols, 4, false);
-    cellMesh.thinInstanceCount = n;
+    const vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx;
+    // 空の形を渡すと WebGPU の影の描画が止まる（古い数のまま描こうとする）ので、空なら隠すだけ
+    if (idx.length) { vd.applyToMesh(cellMesh, false); cellMesh.setEnabled(true); } else cellMesh.setEnabled(false);
+    if (bi.length) { const bv = new B.VertexData(); bv.positions = bp; bv.normals = bn; bv.uvs = bu; bv.colors = bc; bv.indices = bi; bv.applyToMesh(brokeMesh, false); brokeMesh.setEnabled(true); } else brokeMesh.setEnabled(false);
+    setThin(rebar, bars);
+    const frames = [];
+    // 窓ガラス: 窓の穴の上と下の壁が残っている時だけ
+    const pp = [], pn = [], pi = [];
+    for (const w of winSet) {
+      const [x, y, z, ax] = w.split(","), X = +x, Y = +y, Z = +z;
+      if (!bld.cells.has(key(X, Y - 1, Z)) && !bld.cells.has(key(X, Y + 1, Z))) continue;
+      if (!bld.cells.has(key(X, Y + 1, Z)) && !bld.cells.has(key(X, Y + 2, Z)) && !bld.cells.has(key(X, Y - 1, Z))) continue;
+      const p = cellWorld(X, Y, Z), b = pp.length / 3;
+      const u = ax === "z" ? [h, 0, 0] : [0, 0, h], n = ax === "z" ? [0, 0, 1] : [1, 0, 0];
+      // 窓枠: 格子 1 つ（0.5m 四方）の上下左右に細い枠
+      const T = 0.05, Dp = 0.12;
+      for (const [ox, oy, w, hh] of [[0, h - T / 2, CELL, T], [0, -h + T / 2, CELL, T], [h - T / 2, 0, T, CELL], [-h + T / 2, 0, T, CELL]])
+        frames.push(B.Matrix.Compose(ax === "z" ? new B.Vector3(w, hh, Dp) : new B.Vector3(Dp, hh, w), B.Quaternion.Identity(), new B.Vector3(p.x + (ax === "z" ? ox : 0), p.y + oy, p.z + (ax === "z" ? 0 : ox))));
+      // 窓の下の水切り（外へ少し出る）
+      if (bld.cells.has(key(X, Y - 1, Z)) && !winSet.has(key(X, Y - 1, Z) + "," + ax)) {
+        const out = (ax === "z" ? (Z === 0 ? -1 : 1) : (X === 0 ? -1 : 1)) * 0.3;
+        frames.push(B.Matrix.Compose(ax === "z" ? new B.Vector3(CELL + 0.02, 0.05, 0.22) : new B.Vector3(0.22, 0.05, CELL + 0.02), B.Quaternion.Identity(), new B.Vector3(p.x + (ax === "x" ? out : 0), p.y - h - 0.02, p.z + (ax === "z" ? out : 0))));
+      }
+      if ((X * 7 + Y * 3 + Z * 5) % 5 === 0) continue;     // 割れてガラスの無い窓
+      for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { pp.push(p.x + u[0] * su, p.y + sv * h, p.z + u[2] * su); pn.push(...n); }
+      pi.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    if (pp.length) { const pv = new B.VertexData(); pv.positions = pp; pv.normals = pn; pv.indices = pi; pv.applyToMesh(paneMesh, false); paneMesh.setEnabled(true); }
+    else paneMesh.setEnabled(false);
+    setThin(frame, frames);
   }
   function removeCell(c) { c.body.dispose(); c.node.dispose(); bld.cells.delete(key(c.x, c.y, c.z)); }
 
@@ -141,8 +319,19 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ================= 破片 =================
-  const debrisSrc = B.MeshBuilder.CreateBox("debrisSrc", { size: 1 }, scene);
-  debrisSrc.material = mat("debrisM", 0.7, 0.68, 0.63); debrisSrc.isVisible = false;
+  // がれきの塊: 角ばった不規則な形（正二十面体の頂点をずらす）。当たり判定は箱のまま
+  const debrisSrc = B.MeshBuilder.CreateIcoSphere("debrisSrc", { radius: 0.6, subdivisions: 1, flat: true, updatable: true }, scene);
+  {
+    const ps = debrisSrc.getVerticesData(B.VertexBuffer.PositionKind), off = {}; let r = 777; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < ps.length; i += 3) {
+      const k = ps[i].toFixed(3) + "," + ps[i + 1].toFixed(3) + "," + ps[i + 2].toFixed(3);
+      const f = off[k] || (off[k] = 0.72 + rnd() * 0.45);
+      ps[i] = Math.max(-0.55, Math.min(0.55, ps[i] * f)); ps[i + 1] = Math.max(-0.55, Math.min(0.55, ps[i + 1] * f)); ps[i + 2] = Math.max(-0.55, Math.min(0.55, ps[i + 2] * f));
+    }
+    debrisSrc.updateVerticesData(B.VertexBuffer.PositionKind, ps);
+    const ns = []; B.VertexData.ComputeNormals(ps, debrisSrc.getIndices(), ns); debrisSrc.updateVerticesData(B.VertexBuffer.NormalKind, ns);
+  }
+  debrisSrc.material = pbrTex("debrisM", "concrete_debris", 0.35); debrisSrc.isVisible = false;
   debrisSrc.registerInstancedBuffer("color", 4); debrisSrc.instancedBuffers.color = new B.Color4(1, 1, 1, 1);
   const debris = [];                       // {m, ag, held}
   const units = m => Math.max(1, Math.round(m.scaling.x * m.scaling.y * m.scaling.z / 0.45));
@@ -194,15 +383,52 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ================= 部品づくり（見た目の箱＋必要なら ANIMATED の当たり） =================
-  const yel = mat("yel", 0.95, 0.72, 0.1), dark = mat("dark", 0.15, 0.15, 0.16), steel = mat("steel", 0.32, 0.32, 0.34);
-  const glass = mat("glass", 0.3, 0.45, 0.55); glass.alpha = 0.35;
-  const orange = mat("orange", 0.9, 0.42, 0.12), bedM = mat("bed", 0.45, 0.47, 0.5);
+  const yel = paintM("yel", "paint_yellow_diff.jpg", 0.45), dark = mat("dark", 0.09, 0.09, 0.1, 0.8), steel = pbrTex("steel", "metal_plate", 1, [0.55, 0.55, 0.57]);
+  const glass = mat("glass", 0.05, 0.06, 0.07, 0.03); glass.alpha = 0.55; glass.environmentIntensity = 1.5; glass.backFaceCulling = true;   // 外からは空が映る色付きガラス。中（裏面）からは見えない                              // 映り込みのあるガラス
+  const rubber = mat("rubber", 0.05, 0.05, 0.05, 0.92), chrome = mat("chrome", 0.8, 0.8, 0.82, 0.25, 1);
+  const orange = paintM("orange", "paint_orange_diff.jpg", 0.42, 0.5), bedM = pbrTex("bed", "metal_plate", 1.5, [0.75, 0.75, 0.78]);
   function makeBox(name, size, parent, pos, m, list) {
     const b = B.MeshBuilder.CreateBox(name, { width: size[0], height: size[1], depth: size[2] }, scene);
     b.parent = parent; b.position.set(pos[0], pos[1], pos[2]); b.material = m;
     shadow.addShadowCaster(b); b.receiveShadows = true;
     if (list) list.push({ mesh: b, size });
     return b;
+  }
+  const PRISM_WIND = 1;   // Babylon（左手系）の表の向きに合わせる
+  function prism(name, prof, w, parent, x0, m) {
+    const pos = [], nor = [], uv = [], idx = [], n = prof.length;
+    let cz = 0, cy = 0; for (const [z, y] of prof) { cz += z / n; cy += y / n; }
+    for (const [sx, nx] of [[x0, -1], [x0 + w, 1]]) {           // 両側の面（中心からの扇）
+      const b = pos.length / 3; pos.push(sx, cy, cz); nor.push(nx, 0, 0); uv.push(cy / 3, cz / 3);
+      for (const [z, y] of prof) { pos.push(sx, y, z); nor.push(nx, 0, 0); uv.push(y / 3, z / 3); }   // 汚れの筋が縦（雨だれの向き）になるように
+      for (let i = 0; i < n; i++) { const a = b + 1 + i, c = b + 1 + (i + 1) % n; if (nx < 0) idx.push(b, a, c); else idx.push(b, c, a); }
+    }
+    for (let i = 0; i < n; i++) {                                    // まわりの帯
+      const [z1, y1] = prof[i], [z2, y2] = prof[(i + 1) % n], L = Math.hypot(z2 - z1, y2 - y1), nz = (y2 - y1) / L, ny = -(z2 - z1) / L, b = pos.length / 3;
+      pos.push(x0, y1, z1, x0 + w, y1, z1, x0 + w, y2, z2, x0, y2, z2);
+      for (let k = 0; k < 4; k++) nor.push(0, ny, nz);
+      uv.push(0, 0, w / 3, 0, w / 3, L / 3, 0, L / 3);
+      idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    // 三角形の巻き方向を、決めた法線にそろえる（両面にすると裏向きの面と重なって黒ずんだ）
+    for (let i = 0; i < idx.length; i += 3) {
+      const [a, b, c] = [idx[i] * 3, idx[i + 1] * 3, idx[i + 2] * 3];
+      const ux = pos[b] - pos[a], uy = pos[b + 1] - pos[a + 1], uz = pos[b + 2] - pos[a + 2], vx = pos[c] - pos[a], vy = pos[c + 1] - pos[a + 1], vz = pos[c + 2] - pos[a + 2];
+      const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+      if ((cx * nor[a] + cy * nor[a + 1] + cz * nor[a + 2]) * PRISM_WIND > 0) { const t = idx[i + 1]; idx[i + 1] = idx[i + 2]; idx[i + 2] = t; }
+    }
+    const vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.indices = idx;
+    const mesh = new B.Mesh(name, scene); vd.applyToMesh(mesh); mesh.parent = parent; mesh.material = m;
+    shadow.addShadowCaster(mesh); mesh.receiveShadows = true; mesh.isPickable = false;
+    return mesh;
+  }
+  // a→b を結ぶ角材（親の座標で。X 軸まわりに傾けるだけ）
+  function beam(name, a, b, wd, ht, parent, m) {
+    const dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dy, dz);
+    const bx = B.MeshBuilder.CreateBox(name, { width: wd, height: ht, depth: L }, scene);
+    bx.parent = parent; bx.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); bx.rotation.x = -Math.atan2(dy, dz);
+    bx.material = m; shadow.addShadowCaster(bx); bx.receiveShadows = true; bx.isPickable = false;
+    return bx;
   }
   function makeColliders(list) {
     for (const pt of list) {
@@ -214,6 +440,49 @@ const G = window.G = {};   // 確かめ用の口
       pt.node = n; pt.body = body;
     }
   }
+  // ---- 見た目だけの部品（当たりなし）----
+  function cyl(name, d, h, parent, pos, rot, m, tess = 20) {
+    const c = B.MeshBuilder.CreateCylinder(name, { diameter: d, height: h, tessellation: tess }, scene);
+    c.parent = parent; c.position.set(...pos); if (rot) c.rotation.set(...rot); c.material = m; shadow.addShadowCaster(c); c.receiveShadows = true; c.isPickable = false;
+    return c;
+  }
+  function deco(name, size, parent, pos, m, rot) { const b = makeBox(name, size, parent, pos, m); b.isPickable = false; if (rot) b.rotation.set(...rot); return b; }
+  // タイヤ＋ホイール（横向き）。side = +1 右 / -1 左（ホイールの面を外へ）
+  function wheel(name, d, w, parent, pos, side) {
+    const t = cyl(name, d, w, parent, pos, [0, 0, Math.PI / 2], rubber, 28);
+    cyl(name + "R", d * 0.58, w + 0.02, parent, [pos[0] + side * 0.01, pos[1], pos[2]], [0, 0, Math.PI / 2], wheelM, 24);
+    cyl(name + "H", d * 0.2, w + 0.06, parent, [pos[0] + side * 0.03, pos[1], pos[2]], [0, 0, Math.PI / 2], chrome, 12);
+    return t;
+  }
+  // 油圧シリンダー: 2 点の間に 太い筒（根元側）と 銀色のロッド（先側）。毎コマ置き直す
+  const pistons = [];
+  function piston(name, aNode, bNode, d, barrelM) {
+    const barrel = B.MeshBuilder.CreateCylinder(name + "B", { diameter: d, height: 1, tessellation: 16 }, scene); barrel.material = barrelM;
+    const rod = B.MeshBuilder.CreateCylinder(name + "R", { diameter: d * 0.45, height: 1, tessellation: 12 }, scene); rod.material = chrome;
+    for (const m of [barrel, rod]) { shadow.addShadowCaster(m); m.isPickable = false; m.rotationQuaternion = new B.Quaternion(); }
+    pistons.push({ aNode, bNode, barrel, rod, len: 0 });
+  }
+  const _up0 = new B.Vector3(0, 1, 0);
+  function updatePistons() {
+    for (const p of pistons) {
+      const a = p.aNode.getAbsolutePosition().clone(), b = p.bNode.getAbsolutePosition().clone(), d = b.subtract(a), L = d.length();
+      if (!p.len) p.len = L * 0.58;                       // 筒の長さは最初の長さで決める
+      const dir = d.scale(1 / Math.max(1e-4, L)), bl = Math.min(p.len, L * 0.92);
+      B.Quaternion.FromUnitVectorsToRef(_up0, dir, p.barrel.rotationQuaternion); p.rod.rotationQuaternion.copyFrom(p.barrel.rotationQuaternion);
+      p.barrel.position.copyFrom(a.add(dir.scale(bl / 2))); p.barrel.scaling.y = bl;
+      p.rod.position.copyFrom(a.add(dir.scale(bl)).add(b).scale(0.5)); p.rod.scaling.y = Math.max(0.05, L - bl);
+    }
+  }
+  const anchor = (name, parent, pos) => { const n = new B.TransformNode(name, scene); n.parent = parent; n.position.set(...pos); return n; };
+  // 履帯の模様（黒い鉄の板に、横向きの爪＝グローサー）
+  const trackTex = new B.DynamicTexture("trackTex", { width: 64, height: 256 }, scene, false, B.Texture.BILINEAR_SAMPLINGMODE);   // ミップマップ有りは WebGPU で黒くなり、にじみ処理で画面中に広がった
+  { const c = trackTex.getContext(); c.fillStyle = "#1c1c1c"; c.fillRect(0, 0, 64, 256); for (let y = 0; y < 256; y += 32) { c.fillStyle = "#3a3936"; c.fillRect(0, y, 64, 9); c.fillStyle = "#0a0a0a"; c.fillRect(0, y + 9, 64, 3); } trackTex.update(); }
+  const trackM = new B.PBRMaterial("trackM", scene); trackM.albedoTexture = trackTex; trackM.metallic = 0.6; trackM.roughness = 0.75;
+  const wheelM = mat("wheelM", 0.55, 0.55, 0.53, 0.45, 0.8), lampM = mat("lampM", 1, 0.95, 0.8, 0.2); lampM.emissiveColor = new B.Color3(0.6, 0.55, 0.4);
+  const grilleM = mat("grilleM", 0.06, 0.06, 0.06, 0.6, 0.5);
+  const cabFrameM = mat("cabFrameM", 0.17, 0.17, 0.18, 0.45, 0.3);     // 運転席の枠（つやのある濃い灰色）
+  const bkM = paintM("bkM", "paint_yellow_diff.jpg", 0.55, 0.15);          // バケットも車体と同じ黄色（爪と刃は鉄）
+
   const _s = new B.Vector3(), _q = new B.Quaternion(), _p = new B.Vector3();
   function syncColliders(list, teleport) {
     for (const pt of list) {
@@ -228,12 +497,31 @@ const G = window.G = {};   // 確かめ用の口
   const LIM = { boom: [-1.05, 0.6], stick: [0.35, 2.6], bucket: [-0.9, 2.6] };
   const root = new B.TransformNode("exRoot", scene);
   const exParts = [];
-  makeBox("trackL", [0.8, 0.9, 4.2], root, [-1.2, 0.45, 0], dark);
-  makeBox("trackR", [0.8, 0.9, 4.2], root, [1.2, 0.45, 0], dark);
+  // 履帯: 上下の板と、前後の丸い端（遊動輪・駆動輪）、下転輪
+  for (const sx of [-1.2, 1.2]) {
+    const tm = trackM;
+    for (const [y, nm] of [[0.86, "T"], [0.04, "B"]]) { const b = deco("track" + nm, [0.75, 0.08, 3.5], root, [sx, y, 0], dark); b.material = tm; }
+    for (const z of [1.75, -1.75]) { cyl("trackEnd", 0.9, 0.75, root, [sx, 0.45, z], [0, 0, Math.PI / 2], tm, 24); cyl("idler", 0.62, 0.8, root, [sx, 0.45, z], [0, 0, Math.PI / 2], steel, 20); }
+    deco("trackFrame", [0.5, 0.42, 3.3], root, [sx * 0.94, 0.45, 0], yel);
+    for (let i = 0; i < 5; i++) cyl("roller", 0.24, 0.6, root, [sx, 0.2, -1.2 + i * 0.6], [0, 0, Math.PI / 2], steel, 14);
+  }
   makeBox("under", [1.8, 0.6, 3.0], root, [0, 0.7, 0], dark, exParts);
   const upper = new B.TransformNode("upper", scene); upper.parent = root; upper.position.y = 1.0;
-  makeBox("house", [2.6, 1.1, 3.2], upper, [0.2, 0.55, -0.5], yel, exParts);
-  makeBox("counter", [2.6, 0.9, 0.8], upper, [0.2, 0.45, -2.3], dark);
+  makeBox("house", [2.6, 1.1, 3.2], upper, [0.2, 0.55, -0.5], yel, exParts).isVisible = false;
+  // 横から見た形: 前は低い床（運転席が乗る）、後ろはエンジンの盛り上がり、角は斜めに落とす
+  prism("houseShape", [[1.1, 0.05], [1.2, 0.5], [1.1, 1.1], [-0.65, 1.1], [-0.9, 1.38], [-1.85, 1.38], [-2.05, 1.15], [-2.1, 0.05], [-1.9, -0.05], [0.95, -0.05]], 2.6, upper, -1.1, yel);
+  // 後ろの丸いカウンターウェイト・エンジンフードと格子・排気管・手すり・旋回の台
+  { const cw = cyl("counter", 2.7, 1.0, upper, [0.2, 0.55, -2.0], null, yel, 32); cw.scaling.z = 0.42; }
+  for (let i = 0; i < 5; i++) deco("grille", [0.03, 0.12, 0.9], upper, [1.51, 0.55 + i * 0.15, -1.45], grilleM);
+  cyl("exhaust", 0.12, 0.6, upper, [1.1, 1.65, -1.6], null, grilleM, 12);
+  for (const z of [0.9, -0.5]) cyl("railPost", 0.04, 0.5, upper, [1.4, 1.35, z], null, grilleM, 8);
+  cyl("rail", 0.04, 1.4, upper, [1.4, 1.6, 0.2], [Math.PI / 2, 0, 0], grilleM, 8);
+  cyl("turntable", 2.2, 0.25, upper, [0, -0.05, 0], null, dark, 32);
+  // 運転席の柱・窓枠・ステップ
+  for (const [x, z] of [[-1.28, 1.08], [-0.22, 1.08], [-1.28, -0.38], [-0.22, -0.38]]) deco("cabPillar", [0.06, 1.62, 0.06], upper, [x, 1.9, z], cabFrameM);
+  deco("cabSill", [1.12, 0.07, 1.52], upper, [-0.75, 1.13, 0.35], dark);
+  deco("step", [0.35, 0.05, 0.5], upper, [-1.45, 0.2, 0.7], steel);
+  cyl("boomLamp", 0.16, 0.12, upper, [0.45, 1.85, 1.1], [Math.PI / 2, 0, 0], lampM, 12);
   // 運転席（左前）。窓は透けるので中から外が見える
   const cab = makeBox("cab", [1.1, 1.6, 1.5], upper, [-0.75, 1.9, 0.35], glass); cab.isPickable = false;
   makeBox("cabRoof", [1.15, 0.08, 1.55], upper, [-0.75, 2.72, 0.35], yel);
@@ -241,22 +529,36 @@ const G = window.G = {};   // 確かめ用の口
   // 腕: ブーム → アーム → バケット（関節ごとに TransformNode。どれも X 軸まわりに回すだけ）
   const boomJ = new B.TransformNode("boomJ", scene); boomJ.parent = upper; boomJ.position.set(0.45, 1.3, 0.9);
   const BOOM_L = 5.6, STICK_L = 3.0;
-  makeBox("boom", [0.5, 0.6, BOOM_L], boomJ, [0, 0, BOOM_L / 2], yel, exParts);
+  makeBox("boom", [0.5, 0.6, BOOM_L], boomJ, [0, 0, BOOM_L / 2], yel, exParts).isVisible = false;
+  beam("boomA", [0, -0.05, -0.25], [0, 0.72, 2.6], 0.52, 0.66, boomJ, yel);
+  beam("boomB", [0, 0.72, 2.45], [0, 0.05, BOOM_L + 0.2], 0.48, 0.56, boomJ, yel);
+  cyl("boomKnee", 0.62, 0.52, boomJ, [0, 0.72, 2.55], [0, 0, Math.PI / 2], yel, 20);
+  cyl("boomPin", 0.3, 0.7, boomJ, [0, 0, 0], [0, 0, Math.PI / 2], steel, 16);
   const stickJ = new B.TransformNode("stickJ", scene); stickJ.parent = boomJ; stickJ.position.z = BOOM_L;
   makeBox("stick", [0.4, 0.45, STICK_L], stickJ, [0, 0, STICK_L / 2], yel, exParts);
+  deco("stickTail", [0.38, 0.5, 0.8], stickJ, [0, 0.2, -0.3], yel);
+  cyl("stickPin", 0.26, 0.62, stickJ, [0, 0, 0], [0, 0, Math.PI / 2], steel, 16);
   const bucketJ = new B.TransformNode("bucketJ", scene); bucketJ.parent = stickJ; bucketJ.position.z = STICK_L;
   // バケット: 口は自分の -Y 側。背板(y=0)・先の板(z=L)・左右の板。口を上に向ける＝すくう、下に向ける＝あける
   {
     const { W, H, L } = BUCKET, t = 0.1;
-    makeBox("bkBack", [W, t, L], bucketJ, [0, 0, L / 2], steel, exParts);
-    makeBox("bkEnd", [W, H, t], bucketJ, [0, -H / 2, L], steel, exParts);
-    makeBox("bkSideL", [t, H, L], bucketJ, [-W / 2, -H / 2, L / 2], steel, exParts);
-    makeBox("bkSideR", [t, H, L], bucketJ, [W / 2, -H / 2, L / 2], steel, exParts);
-    for (let i = 0; i < 5; i++) makeBox("tooth" + i, [0.12, 0.12, 0.25], bucketJ, [-W / 2 + 0.2 + i * (W - 0.4) / 4, -H + 0.06, L + 0.1], dark);
+    makeBox("bkBack", [W, t, L], bucketJ, [0, 0, L / 2], bkM, exParts);
+    makeBox("bkEnd", [W, H, t], bucketJ, [0, -H / 2, L], bkM, exParts);
+    makeBox("bkSideL", [t, H, L], bucketJ, [-W / 2, -H / 2, L / 2], bkM, exParts);
+    makeBox("bkSideR", [t, H, L], bucketJ, [W / 2, -H / 2, L / 2], bkM, exParts);
+    for (let i = 0; i < 5; i++) makeBox("tooth" + i, [0.14, 0.13, 0.32], bucketJ, [-W / 2 + 0.2 + i * (W - 0.4) / 4, -H + 0.06, L + 0.14], steel);
+    deco("bkLip", [W + 0.02, 0.06, 0.16], bucketJ, [0, -H + 0.03, L], steel);
+    for (const sx of [-1, 1]) deco("bkCutter", [0.04, H * 0.8, 0.3], bucketJ, [sx * (W / 2 + 0.03), -H * 0.55, L - 0.1], steel);
+    deco("bkRib", [W * 0.9, 0.05, 0.06], bucketJ, [0, 0.07, L * 0.5], steel);
   }
   const tip = new B.TransformNode("tip", scene); tip.parent = bucketJ; tip.position.set(0, -BUCKET.H, BUCKET.L);
   const tipMid = new B.TransformNode("tipMid", scene); tipMid.parent = bucketJ; tipMid.position.set(0, -BUCKET.H * 0.5, BUCKET.L * 0.6);
   makeColliders(exParts);
+  cyl("bucketPin", 0.24, BUCKET.W - 0.1, bucketJ, [0, 0, 0], [0, 0, Math.PI / 2], steel, 16);
+  // 油圧シリンダー: ブーム 2 本・アーム 1 本・バケット 1 本
+  for (const sx of [-0.33, 0.33]) piston("boomCyl", anchor("bA", upper, [0.45 + sx, 0.55, 0.6]), anchor("bB", boomJ, [sx, 0.3, 2.2]), 0.2, yel);
+  piston("armCyl", anchor("aA", boomJ, [0, 1.05, 2.5]), anchor("aB", stickJ, [0, 0.45, -0.6]), 0.2, yel);
+  piston("bkCyl", anchor("kA", stickJ, [0, 0.32, 0.5]), anchor("kB", bucketJ, [0, 0.3, 0.2]), 0.17, yel);
   // バケットの一番低い所（地面に潜らせないため）
   const GROUND_MIN = 0.05;
   const bkPts = [[0, -BUCKET.H, BUCKET.L], [-BUCKET.W / 2, -BUCKET.H, BUCKET.L], [BUCKET.W / 2, -BUCKET.H, BUCKET.L], [0, 0, BUCKET.L], [0, -BUCKET.H, 0], [0, 0.3, 0]].map(a => new B.Vector3(...a));
@@ -270,6 +572,8 @@ const G = window.G = {};   // 確かめ用の口
     root.position.copyFrom(ex.pos); root.rotation.y = ex.heading;
     upper.rotation.y = ex.swing;
     boomJ.rotation.x = ex.boom; stickJ.rotation.x = ex.stick; bucketJ.rotation.x = ex.bucket;
+    for (const n of [root, upper, boomJ, stickJ, bucketJ]) n.computeWorldMatrix(true);
+    updatePistons();
   }
 
   // ================= ダンプ =================
@@ -280,17 +584,39 @@ const G = window.G = {};   // 確かめ用の口
   {
     const r = truck.root, P = truck.parts;
     makeBox("tChassis", [2.3, 0.6, 7.2], r, [0, 0.95, -0.6], dark, P);
-    makeBox("tCab", [2.4, 1.9, 1.8], r, [0, 2.1, 2.1], orange, P);
-    makeBox("tGlass", [2.2, 0.8, 0.05], r, [0, 2.55, 3.0], glass);
-    makeBox("tFloor", [2.4, 0.15, 4.4], r, [0, 1.35, -1.6], bedM, P);
-    makeBox("tWallL", [0.12, 1.1, 4.4], r, [-1.2, 1.95, -1.6], bedM, P);
-    makeBox("tWallR", [0.12, 1.1, 4.4], r, [1.2, 1.95, -1.6], bedM, P);
-    makeBox("tWallF", [2.4, 1.5, 0.12], r, [0, 2.15, 0.6], bedM, P);
-    makeBox("tWallB", [2.4, 1.1, 0.12], r, [0, 1.95, -3.8], bedM, P);
-    for (const z of [2.0, -1.0, -2.6]) for (const x of [-1.15, 1.15]) {
-      const w = B.MeshBuilder.CreateCylinder("wheel", { diameter: 1.1, height: 0.45, tessellation: 16 }, scene);
-      w.parent = r; w.rotation.z = Math.PI / 2; w.position.set(x, 0.55, z); w.material = dark; shadow.addShadowCaster(w);
+    makeBox("tCab", [2.4, 1.9, 1.8], r, [0, 2.1, 2.1], orange, P).isVisible = false;
+    prism("tCabShape", [[3.0, 1.15], [3.0, 2.88], [2.85, 3.06], [1.3, 3.06], [1.2, 2.9], [1.2, 1.15]], 2.4, r, -1.2, orange);
+    // 窓のゴム枠（周りだけ。板にすると窓が真っ黒に見えた）
+    for (const [w, hh, x, y] of [[2.3, 0.06, 0, 2.95], [2.3, 0.06, 0, 2.15], [0.06, 0.86, -1.15, 2.55], [0.06, 0.86, 1.15, 2.55], [0.05, 0.8, 0, 2.55]]) deco("tGlassFrame", [w, hh, 0.04], r, [x, y, 3.02], dark);
+    const cabIn = mat("cabIn", 0.12, 0.12, 0.12, 0.8);
+    deco("tCabBack", [2.3, 1.7, 0.05], r, [0, 2.1, 1.28], cabIn); deco("tCabFloor", [2.3, 0.05, 1.7], r, [0, 1.2, 2.1], cabIn);
+    deco("tDash", [2.2, 0.32, 0.35], r, [0, 2.05, 2.8], dark);
+    for (const sx of [-0.55, 0.55]) { deco("tSeat", [0.55, 0.5, 0.5], r, [sx, 1.65, 1.7], dark); deco("tSeatBack", [0.55, 0.7, 0.12], r, [sx, 2.15, 1.45], dark); }
+    { const sw = B.MeshBuilder.CreateTorus("tWheelSteer", { diameter: 0.45, thickness: 0.04, tessellation: 20 }, scene); sw.parent = r; sw.position.set(0.55, 2.3, 2.55); sw.rotation.x = 1.1; sw.material = dark; sw.isPickable = false; }
+    for (const sx of [-1, 1]) {
+      deco("tDoorSeam", [0.02, 1.35, 0.025], r, [sx * 1.205, 2.05, 1.45], dark); deco("tDoorSeam", [0.02, 1.35, 0.025], r, [sx * 1.205, 2.05, 2.75], dark);
+      deco("tHandle", [0.03, 0.05, 0.22], r, [sx * 1.215, 2.2, 1.65], chrome);
+      deco("tStep", [0.32, 0.06, 0.55], r, [sx * 1.3, 0.95, 2.2], bedM); deco("tStep", [0.32, 0.06, 0.55], r, [sx * 1.3, 1.45, 2.2], bedM);
+      deco("tFender", [0.55, 0.06, 1.35], r, [sx * 1.15, 1.17, 2.0], dark);
+      deco("tFender", [0.55, 0.06, 3.1], r, [sx * 1.15, 1.17, -1.8], dark);
+      deco("tBedRail", [0.16, 0.1, 4.45], r, [sx * 1.22, 2.53, -1.6], bedM);
     }
+    // ダンプの運転台は中まで詰まった形なので、窓は透けない濃いガラス（空が映る）にする
+    const tGlassM = mat("tGlassM", 0.025, 0.03, 0.035, 0.04); tGlassM.environmentIntensity = 1.6;
+    deco("tGlass", [2.2, 0.75, 0.05], r, [0, 2.55, 3.01], tGlassM);
+    for (const sx of [-1.21, 1.21]) deco("tSideGlass", [0.04, 0.7, 1.0], r, [sx, 2.55, 2.35], tGlassM);
+    deco("tGrille", [1.6, 0.6, 0.05], r, [0, 1.55, 3.02], grilleM);
+    deco("tBumper", [2.5, 0.3, 0.3], r, [0, 1.0, 3.1], dark);
+    for (const sx of [-0.95, 0.95]) { deco("tLamp", [0.35, 0.18, 0.05], r, [sx, 1.35, 3.04], lampM); deco("tMirrorArm", [0.4, 0.04, 0.04], r, [sx * 1.4, 2.6, 2.9], dark); deco("tMirror", [0.06, 0.4, 0.22], r, [sx * 1.55, 2.5, 2.9], dark); }
+    for (const sx of [-1.27, 1.27]) for (let i = 0; i < 4; i++) deco("tRib", [0.06, 1.1, 0.12], r, [sx, 1.95, 0.2 - i * 1.25], bedM);
+    deco("tBedTop", [2.5, 0.08, 0.15], r, [0, 2.52, -3.8], bedM);
+    cyl("tTank", 0.6, 1.2, r, [-1.05, 0.9, 0.6], [Math.PI / 2, 0, 0], chrome, 18);
+    makeBox("tFloor", [2.4, 0.15, 4.4], r, [0, 1.35, -1.6], bedM, P);
+    makeBox("tWallL", [0.12, 1.1, 4.4], r, [-1.2, 1.95, -1.6], orange, P);
+    makeBox("tWallR", [0.12, 1.1, 4.4], r, [1.2, 1.95, -1.6], orange, P);
+    makeBox("tWallF", [2.4, 1.5, 0.12], r, [0, 2.15, 0.6], orange, P);
+    makeBox("tWallB", [2.4, 1.1, 0.12], r, [0, 1.95, -3.8], orange, P);
+    for (const z of [2.0, -1.0, -2.6]) for (const x of [-1.15, 1.15]) wheel("tWheel", 1.1, 0.45, r, [x, 0.55, z], Math.sign(x));
     makeColliders(P);
   }
   const BED = { x: 1.12, z0: -3.72, z1: 0.52, y0: 1.4, y1: 4.2 };      // 荷台の内側（ダンプの中の座標）
@@ -526,31 +852,65 @@ const G = window.G = {};   // 確かめ用の口
     tgt: new B.Vector3(-7.5, 7, 5.5) };   // tgt = フックをここへ持っていきたい（本人が動かすのはこれ）
   const CLIM = { luff: [0.12, 1.4], ext: [0, 34], wire: [1.2, 50] };
   const crRoot = new B.TransformNode("crane", scene);
-  const crRed = mat("crRed", 0.85, 0.14, 0.1), white = mat("white", 0.92, 0.92, 0.9);
-  const crGlass = mat("crGlass", 0.5, 0.65, 0.75); crGlass.alpha = 0.12;   // 運転席のガラスは薄く（色が濃いとフックが暗く沈んだ）
-  makeBox("crBody", [2.6, 1.1, 9], crRoot, [0, 1.35, 0], white);
-  makeBox("crStripe", [2.62, 0.25, 9.02], crRoot, [0, 1.2, 0], crRed);
-  for (const z of [3.2, 1.6, -1.6, -3.2]) for (const x of [-1.25, 1.25]) {
-    const w = B.MeshBuilder.CreateCylinder("crWheel", { diameter: 1.4, height: 0.6, tessellation: 18 }, scene);
-    w.parent = crRoot; w.rotation.z = Math.PI / 2; w.position.set(x, 0.7, z); w.material = dark; shadow.addShadowCaster(w);
+  const crRed = paintM("crRed", "paint_red_diff.jpg", 0.38, 0.6), white = paintM("white", "paint_white_diff.jpg", 0.4, 0.6);
+  const crRoofGlass = mat("crRoofGlass", 0.2, 0.25, 0.28, 0.05); crRoofGlass.alpha = 0.12;   // 屋根は上を見て吊るので薄く
+  const crGlass = mat("crGlass", 0.06, 0.08, 0.09, 0.03); crGlass.alpha = 0.5; crGlass.backFaceCulling = true;   // 運転席のガラスは薄く（色が濃いとフックが暗く沈んだ）
+  makeBox("crBody", [2.6, 1.1, 9], crRoot, [0, 1.35, 0], white).isVisible = false;
+  prism("crBodyShape", [[4.5, 0.82], [4.62, 1.5], [4.25, 1.9], [-4.25, 1.9], [-4.62, 1.5], [-4.5, 0.82]], 2.6, crRoot, -1.3, white);
+  for (const sx of [-1, 1]) for (const z of [2.4, -2.4]) deco("crFender", [0.42, 0.07, 3.0], crRoot, [sx * 1.42, 1.48, z], dark);
+  for (const sx of [-1, 1]) {
+    deco("crDeck", [0.25, 0.05, 6.5], crRoot, [sx * 1.42, 1.92, 0], steel);
+    for (const z of [-0.6, 0.6]) { deco("crBox", [0.12, 0.55, 1.0], crRoot, [sx * 1.33, 1.2, z], mat("crBoxM", 0.25, 0.26, 0.27, 0.5, 0.4)); deco("crBoxLatch", [0.03, 0.06, 0.12], crRoot, [sx * 1.4, 1.38, z], chrome); }
+    deco("crSkirt", [0.04, 0.3, 8.6], crRoot, [sx * 1.31, 0.92, 0], dark);
+    for (const z of [3.9, -3.9]) deco("crStep", [0.3, 0.05, 0.4], crRoot, [sx * 1.42, 0.75, z * 0.83], steel);
   }
+  makeBox("crStripe", [2.62, 0.25, 9.02], crRoot, [0, 1.2, 0], crRed);
+  for (const z of [3.2, 1.6, -1.6, -3.2]) for (const x of [-1.25, 1.25]) wheel("crWheel", 1.4, 0.6, crRoot, [x, 0.7, z], Math.sign(x));
+  // アウトリガー（張り出した脚）: 横へ伸びた梁＋縦の脚＋地面の板
+  for (const z of [3.9, -3.9]) for (const sx of [-1, 1]) {
+    deco("crOutBeam", [2.2, 0.45, 0.5], crRoot, [sx * 2.2, 1.1, z], white);
+    deco("crJack", [0.4, 1.05, 0.4], crRoot, [sx * 3.2, 0.6, z], crRed);
+    cyl("crJackRod", 0.22, 0.4, crRoot, [sx * 3.2, 0.2, z], null, chrome, 12);
+    cyl("crPad", 0.8, 0.08, crRoot, [sx * 3.2, 0.04, z], null, dark, 20);
+  }
+  deco("crBumper", [2.7, 0.35, 0.3], crRoot, [0, 1.0, 4.6], dark);
+  for (const sx of [-0.95, 0.95]) deco("crLamp", [0.3, 0.16, 0.05], crRoot, [sx, 1.45, 4.52], lampM);
   const crUpper = new B.TransformNode("crUpper", scene); crUpper.parent = crRoot; crUpper.position.y = 1.9;
-  makeBox("crTurn", [2.4, 0.9, 4.2], crUpper, [0.35, 0.45, -1.0], crRed);
+  makeBox("crTurn", [2.4, 0.9, 4.2], crUpper, [0.35, 0.45, -1.0], crRed).isVisible = false;
+  prism("crTurnShape", [[1.1, 0.02], [1.1, 0.62], [0.8, 0.9], [-2.7, 0.9], [-3.1, 0.55], [-3.1, 0.02]], 2.4, crUpper, -0.85, crRed);
   makeBox("crWeight", [2.4, 1.0, 1.0], crUpper, [0.35, 0.5, -3.4], dark);
   makeBox("crCab", [1.1, 1.5, 1.7], crUpper, [-0.95, 0.75, 1.2], crGlass).isPickable = false;
-  makeBox("crCabRoof", [1.15, 0.05, 1.75], crUpper, [-0.95, 1.52, 1.2], crGlass).isPickable = false;   // 屋根もガラス（上を見て吊るので）
+  makeBox("crCabRoof", [1.15, 0.05, 1.75], crUpper, [-0.95, 1.52, 1.2], crRoofGlass).isVisible = false;   // 上を見て吊るので屋根は無し（縁の線が空に見えた）
+  for (const [x, z] of [[-1.48, 2.03], [-0.42, 2.03], [-1.48, 0.37], [-0.42, 0.37]]) deco("crPillar", [0.05, 1.5, 0.05], crUpper, [x, 0.75, z], cabFrameM);
+  deco("crCabBase", [1.12, 0.08, 1.72], crUpper, [-0.95, 0.02, 1.2], white);   // 屋根もガラス（上を見て吊るので）
   const crSeat = new B.TransformNode("crSeat", scene); crSeat.parent = crUpper; crSeat.position.set(-0.95, 1.15, 1.1);
   const crBoomJ = new B.TransformNode("crBoomJ", scene); crBoomJ.parent = crUpper; crBoomJ.position.set(0.45, 1.2, -2.4);
   const BOOM0 = 11, PIV = { x: 0.45, y: 1.9 + 1.2, z: -2.4 };   // 一番縮めた時のブームの長さ／ブームの根元（クレーンの中の座標）
-  makeBox("crBoom1", [0.9, 0.9, BOOM0], crBoomJ, [0, 0, BOOM0 / 2], crRed);
-  const crBoom2 = makeBox("crBoom2", [0.62, 0.62, 1], crBoomJ, [0, 0, 0], white);
+  makeBox("crBoom1", [0.9, 0.9, BOOM0], crBoomJ, [0, 0, BOOM0 / 2], crRed).isVisible = false;
+  const crBoom2 = makeBox("crBoom2", [0.62, 0.62, 1], crBoomJ, [0, 0, 0], white); crBoom2.isVisible = false;
+  // 見た目のブーム: 太い順に 4 段の六角形の筒。伸ばした分を内側の 3 段で等分して出す。筒の口には濃い色の帯
+  const SEC = [{ d: 0.98, L: BOOM0, m: crRed }, { d: 0.82, L: 9.2, m: white }, { d: 0.68, L: 9.2, m: white }, { d: 0.55, L: 9.2, m: white }].map((c, i) => {
+    const t = B.MeshBuilder.CreateCylinder("crSec" + i, { diameter: c.d, height: c.L, tessellation: 6 }, scene);
+    t.parent = crBoomJ; t.rotation.x = Math.PI / 2; t.rotation.y = Math.PI / 6; t.scaling.x = 0.82; t.material = c.m;
+    shadow.addShadowCaster(t); t.receiveShadows = true; t.isPickable = false;
+    const col = B.MeshBuilder.CreateCylinder("crCollar" + i, { diameter: c.d + 0.06, height: 0.22, tessellation: 6 }, scene);
+    col.parent = crBoomJ; col.rotation.x = Math.PI / 2; col.rotation.y = Math.PI / 6; col.scaling.x = 0.82; col.material = i ? dark : crRed; col.isPickable = false; shadow.addShadowCaster(col);
+    return { ...c, t, col };
+  });
+  function placeBoomSecs(ext) {
+    SEC.forEach((c, i) => { const a = i ? 0.6 * i + ext * i / 3 : 0; c.t.position.z = a + c.L / 2; c.col.position.z = a + c.L - 0.11; });
+  }
+  // 起伏シリンダー: 旋回台からブームの腹へ
+  piston("crLuff", anchor("lA", crUpper, [0.45, 0.35, 0.2]), anchor("lB", crBoomJ, [0, -0.5, 4.2]), 0.42, white);
+  const crLuff = pistons[pistons.length - 1];
   const crTip = new B.TransformNode("crTip", scene); crTip.parent = crBoomJ;
-  makeBox("crSheave", [0.5, 0.7, 0.7], crTip, [0, -0.2, 0], dark);
+  makeBox("crSheave", [0.46, 0.8, 0.9], crTip, [0, -0.15, -0.15], white);
+  for (const sx of [-0.25, 0.25]) cyl("crPulley", 0.75, 0.06, crTip, [sx, -0.25, 0.1], [0, 0, Math.PI / 2], dark, 20);
   // ロープ（太め・2 本）とフック（黄色いブロック＋鉤）。前は細い 1 本と小さな箱で、ほぼ見えなかった
-  const ropeM = mat("ropeM", 0.12, 0.12, 0.13);
+  const ropeM = mat("ropeM", 0.1, 0.1, 0.11, 0.5, 0.8);
   const wireM = B.MeshBuilder.CreateCylinder("wire", { diameter: 0.11, height: 1, tessellation: 8 }, scene); wireM.material = ropeM;
   const wireM2 = B.MeshBuilder.CreateCylinder("wire2", { diameter: 0.11, height: 1, tessellation: 8 }, scene); wireM2.material = ropeM;
-  const hookM = mat("hookM", 1, 0.78, 0.1); hookM.emissiveColor = new B.Color3(0.35, 0.25, 0);
+  const hookM = mat("hookM", 1, 0.75, 0.05, 0.4); hookM.emissiveColor = new B.Color3(0.25, 0.17, 0);
   const hook = new B.TransformNode("hook", scene);
   const hookBlock = B.MeshBuilder.CreateBox("hookBlock", { width: 0.75, height: 0.9, depth: 0.5 }, scene); hookBlock.parent = hook; hookBlock.material = hookM; shadow.addShadowCaster(hookBlock);
   const hookStripe = B.MeshBuilder.CreateBox("hookStripe", { width: 0.77, height: 0.18, depth: 0.52 }, scene); hookStripe.parent = hook; hookStripe.position.y = 0.1; hookStripe.material = dark;
@@ -560,12 +920,12 @@ const G = window.G = {};   // 確かめ用の口
   const markM = new B.StandardMaterial("markM", scene); markM.diffuseColor = new B.Color3(1, 0.55, 0.1); markM.emissiveColor = new B.Color3(0.6, 0.3, 0); markM.alpha = 0.6;
   const mark = B.MeshBuilder.CreateDisc("mark", { radius: 0.9, tessellation: 32 }, scene); mark.rotation.x = Math.PI / 2; mark.material = markM; mark.isPickable = false;
   const markLine = B.MeshBuilder.CreateCylinder("markLine", { diameter: 0.05, height: 1, tessellation: 6 }, scene); markLine.material = markM; markLine.isPickable = false;
-  const crAll = [crRoot, wireM, wireM2, hook, mark, markLine];
+  const crAll = [crRoot, wireM, wireM2, hook, mark, markLine, crLuff.barrel, crLuff.rod];
   for (const n of crAll) n.setEnabled(false);
 
   // 建てる物: 1 階 = 柱 4 → 梁 4 → 床板 1。建物の位置は解体したビルと同じ（x -4〜4, z 14〜20）
   const FLOOR_H = 3.6, SC = { x: 0, z: 17 };
-  const steelM = mat("steelM", 0.55, 0.24, 0.17), slabM = mat("slabM", 0.66, 0.66, 0.63);
+  const steelM = paintM("steelM", "paint_primer_diff.jpg", 0.6, 0), slabM = pbrTex("slabM", "concrete_floor_02", 2.5);   // さび止め塗装の鉄骨・コンクリートの床板
   const ghostM = new B.StandardMaterial("ghostM", scene); ghostM.diffuseColor = new B.Color3(0.2, 0.9, 1); ghostM.emissiveColor = new B.Color3(0.1, 0.6, 0.8); ghostM.alpha = 0.35;
   const ghostOk = new B.StandardMaterial("ghostOk", scene); ghostOk.diffuseColor = new B.Color3(0.3, 1, 0.3); ghostOk.emissiveColor = new B.Color3(0.15, 0.8, 0.15); ghostOk.alpha = 0.6;
   function planFloor(f) {
@@ -579,8 +939,14 @@ const G = window.G = {};   // 確かめ用の口
   const YARD = new B.Vector3(-7.5, 0, 5.5);               // 建材の置き場（クレーンの左前）
   const SNAP = { xz: 2.0, y: 1.8 };                       // 枠のこの範囲に入るとピタッとはまる
   const bd = { floor: 0, step: 0, plan: planFloor(0), placed: [], score: 0, hanging: null, yard: null, snap: null, ghost: null, toastT: 0, near: false };
+  // 柱と梁は H 形（フランジ 2 枚＋ウェブ 1 枚）。床板はただの板
+  function hBeam(name, size) {
+    const ax = size.indexOf(Math.max(...size)), L = size[ax], o = [0, 1, 2].filter(i => i !== ax), W = size[o[0]], Hh = size[o[1]], t = 0.035;
+    const part = (a, b, off) => { const d = [0, 0, 0]; d[ax] = L; d[o[0]] = a; d[o[1]] = b; const m = B.MeshBuilder.CreateBox(name, { width: d[0], height: d[1], depth: d[2] }, scene); m.position.set(0, 0, 0); if (off) m.position[["x", "y", "z"][o[1]]] = off; return m; };
+    return B.Mesh.MergeMeshes([part(W, t, Hh / 2 - t / 2), part(W, t, -(Hh / 2 - t / 2)), part(t, Hh - 2 * t, 0)], true);
+  }
   function pieceMesh(p, name) {
-    const m = B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene);
+    const m = p.kind === "床板" ? B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene) : hBeam(name, p.size);
     m.material = p.m; shadow.addShadowCaster(m); m.receiveShadows = true; m.rotationQuaternion = B.Quaternion.Identity();
     return m;
   }
@@ -603,6 +969,9 @@ const G = window.G = {};   // 確かめ用の口
     const L = BOOM0 + cr.ext;
     crBoom2.scaling.z = Math.max(0.5, L - BOOM0 + 1); crBoom2.position.z = (BOOM0 - 1 + L) / 2;
     crTip.position.z = L;
+    placeBoomSecs(cr.ext);
+    for (const n of [crRoot, crUpper, crBoomJ]) n.computeWorldMatrix(true);
+    updatePistons();
   }
   // 逆算: フックを tgt に持っていくための 旋回・起伏・伸縮・ロープの長さ
   function solveCrane(t, hang) {
@@ -838,6 +1207,115 @@ const G = window.G = {};   // 確かめ用の口
     }
   }
 
+  // ---- 仕上げの画面処理 ----
+  const pipe = new B.DefaultRenderingPipeline("pipe", !Q.has("nohdr"), scene, Q.has("nopp") ? [] : [fp, tp]);
+  pipe.imageProcessingEnabled = true;
+  pipe.imageProcessing.toneMappingEnabled = true; pipe.imageProcessing.toneMappingType = B.ImageProcessingConfiguration.TONEMAPPING_ACES;
+  pipe.imageProcessing.exposure = 1.0; pipe.imageProcessing.contrast = 1.28;
+  pipe.imageProcessing.colorCurvesEnabled = true; pipe.imageProcessing.colorCurves = new B.ColorCurves(); pipe.imageProcessing.colorCurves.globalSaturation = -14;
+  scene.environmentIntensity = 0.85;
+  pipe.imageProcessing.vignetteEnabled = true; pipe.imageProcessing.vignetteWeight = 1.2;
+  pipe.fxaaEnabled = true; pipe.samples = 1;
+  pipe.bloomEnabled = true; pipe.bloomThreshold = 0.85; pipe.bloomWeight = 0.12; pipe.bloomKernel = 48;
+  pipe.sharpenEnabled = true; pipe.sharpen.edgeAmount = 0.18;
+  let ssao = null;
+  function setQuality(hq) {
+    HQ = hq;
+    if (hq && !ssao && Q.has("ssao")) {   // SSAO は WebGPU で背景が黒く抜けるので、?ssao の時だけ（WebGL で試す用）
+      ssao = new B.SSAO2RenderingPipeline("ssao", scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [fp, tp]);
+      ssao.radius = 1.2; ssao.totalStrength = 1.1; ssao.samples = 12; ssao.maxZ = 120; ssao.expensiveBlur = false;
+    } else if (!hq && ssao) { ssao.dispose(); ssao = null; }
+    pipe.bloomEnabled = hq; pipe.sharpenEnabled = hq;
+    engine.setHardwareScalingLevel(1 / (hq ? DPR : Math.min(DPR, 1.5)));
+    $("bQuality").textContent = hq ? "画質 高" : "画質 低";
+  }
+  $("bQuality").onclick = () => { setQuality(!HQ); autoQ.off = true; };
+  setQuality(HQ);
+  // 重い時は自動で画質を落とす（最初の 6 秒の平均が 32fps を切ったら）
+  const autoQ = { t: 0, n: 0, sum: 0, off: Q.has("hq") };
+  scene.onAfterRenderObservable.add(() => {
+    if (autoQ.off || G.fixedDt || !scene.isReady() || document.hidden) return;
+    autoQ.t += engine.getDeltaTime() / 1000; autoQ.n++;
+    // 8 秒で何コマ描けたか。60 コマ未満は「描画を止められていた」（窓が裏など）とみなして判断しない
+    if (autoQ.t > 8) { const fps = autoQ.n / autoQ.t; if (autoQ.n >= 60 && HQ && fps < 30) { setQuality(false); toast("重いので画質を下げました"); } if (autoQ.n >= 60) autoQ.off = true; else { autoQ.t = 0; autoQ.n = 0; } }
+  });
+
+  // ---- 小物: 金網フェンス・コンクリートの車止め・ドラム缶（Poly Haven の 3D モデル・CC0）----
+  async function loadProp(name) {
+    const c = await B.SceneLoader.LoadAssetContainerAsync("assets/models/" + name + "/", name + ".gltf", scene);
+    return c;
+  }
+  // 仮囲い: 工事現場を 3m の白い波板で囲う（x ±24・z -14〜42）。手前の真ん中（|x|<6）は出入り口
+  {
+    const wall = (x0, z0, x1, z1) => {
+      const len = Math.hypot(x1 - x0, z1 - z0), m = pbrTex("hoardM", "box_profile_metal_sheet", 1, [1, 1, 1], "hoard_diff.jpg");
+      for (const t of [m.albedoTexture, m.bumpTexture, m.metallicTexture]) { t.uScale = len / 2.4; t.vScale = 1.25; }
+      const b = B.MeshBuilder.CreateBox("hoard", { width: len, height: 3, depth: 0.06 }, scene);
+      b.position.set((x0 + x1) / 2, 1.5, (z0 + z1) / 2); b.rotation.y = -Math.atan2(z1 - z0, x1 - x0); b.material = m; b.receiveShadows = true; b.isPickable = false; shadow.addShadowCaster(b);
+      // 支柱
+      for (let t = 0; t <= len; t += 3) { const q = B.MeshBuilder.CreateBox("hoardPost", { width: 0.06, height: 3.1, depth: 0.06 }, scene); q.position.set(x0 + (x1 - x0) * t / len, 1.55, z0 + (z1 - z0) * t / len); q.material = steel; q.isPickable = false; }
+    };
+    wall(-24, 42, 24, 42); wall(-24, -14, -24, 42); wall(24, -14, 24, 42); wall(-24, -14, -6, -14); wall(6, -14, 24, -14);
+  }
+  {
+    const t = new B.DynamicTexture("rutT", { width: 64, height: 256 }, scene, false, B.Texture.BILINEAR_SAMPLINGMODE), c = t.getContext();
+    c.clearRect(0, 0, 64, 256); c.fillStyle = "rgba(40,30,22,0.55)"; c.fillRect(0, 0, 64, 256);
+    for (let y = 0; y < 256; y += 21) { c.fillStyle = "rgba(25,18,12,0.75)"; c.fillRect(0, y, 64, 7); }
+    const g = c.createLinearGradient(0, 0, 64, 0); g.addColorStop(0, "rgba(0,0,0,1)"); t.update(); t.hasAlpha = true; t.wrapV = B.Texture.WRAP_ADDRESSMODE;
+    const rm = new B.StandardMaterial("rutM", scene); rm.diffuseTexture = t; rm.useAlphaFromDiffuseTexture = true; rm.specularColor = B.Color3.Black(); rm.zOffset = -3;
+    const rut = (x0, z0, x1, z1, w) => {
+      const L = Math.hypot(x1 - x0, z1 - z0), m = B.MeshBuilder.CreateGround("rut", { width: w, height: L }, scene);
+      m.position.set((x0 + x1) / 2, 0.012, (z0 + z1) / 2); m.rotation.y = Math.atan2(x1 - x0, z1 - z0); m.isPickable = false; m.receiveShadows = true;
+      const mm = rm.clone("rutM"); mm.diffuseTexture = t.clone(); mm.diffuseTexture.vScale = L / 1.6; m.material = mm;
+    };
+    for (const sx of [-1.2, 1.2]) { rut(sx, -10, sx + 0.3, 9, 0.75); rut(sx - 3, 8, sx + 2, 11, 0.7); }
+    for (const sx of [-1.0, 1.0]) rut(-6.8 + sx, -14, -6.8 + sx, 4, 0.4);
+  }
+  {
+    const coneM = paintM("coneM", "paint_orange_diff.jpg", 0.5, 0.2);
+    const cone = (x, z) => {
+      const c = B.MeshBuilder.CreateCylinder("cone", { diameterTop: 0.05, diameterBottom: 0.3, height: 0.7, tessellation: 16 }, scene); c.position.set(x, 0.39, z); c.material = coneM;
+      const b = B.MeshBuilder.CreateCylinder("coneBand", { diameterTop: 0.13, diameterBottom: 0.19, height: 0.14, tessellation: 16 }, scene); b.position.set(x, 0.5, z); b.material = white;
+      const f = B.MeshBuilder.CreateBox("coneFoot", { width: 0.4, height: 0.04, depth: 0.4 }, scene); f.position.set(x, 0.02, z); f.material = dark;
+      for (const m of [c, b, f]) { m.isPickable = false; m.receiveShadows = true; shadow.addShadowCaster(m); }
+    };
+    for (const [x, z] of [[-6.5, -13.2], [-5, -12.4], [5, -12.4], [6.5, -13.2], [-16, 30], [-15, 31.5], [12, 34], [13.2, 33]]) cone(x, z);
+    // 鉄骨の束（置き場の奥）: 下に角材を 2 本、その上に 3×2 本
+    for (const z of [32.5, 36.5]) { const t = B.MeshBuilder.CreateBox("dunnage", { width: 2.2, height: 0.15, depth: 0.15 }, scene); t.position.set(-18, 0.075, z); t.material = pbrTex("dunM", "brown_mud_dry", 0.3, [0.9, 0.7, 0.5]); t.isPickable = false; shadow.addShadowCaster(t); }
+    for (let row = 0; row < 2; row++) for (let i = 0; i < 3; i++) {
+      const b = hBeam("stockBeam", [0.3, 0.3, 6]); b.material = steelM; b.position.set(-18.6 + i * 0.6, 0.3 + row * 0.31, 34.5); b.isPickable = false; b.receiveShadows = true; shadow.addShadowCaster(b);
+    }
+  }
+  // 接地の影: 重機の真下をぼんやり暗く（影の地図では出ない「地面に置いてある感じ」）
+  {
+    const t = new B.DynamicTexture("blobT", { width: 128, height: 128 }, scene, false, B.Texture.BILINEAR_SAMPLINGMODE), c = t.getContext();
+    const g = c.createRadialGradient(64, 64, 10, 64, 64, 64); g.addColorStop(0, "rgba(0,0,0,0.75)"); g.addColorStop(0.6, "rgba(0,0,0,0.35)"); g.addColorStop(1, "rgba(0,0,0,0)");
+    c.fillStyle = g; c.fillRect(0, 0, 128, 128); t.update(); t.hasAlpha = true;
+    const bm = new B.StandardMaterial("blobM", scene); bm.diffuseTexture = t; bm.useAlphaFromDiffuseTexture = true; bm.disableLighting = true; bm.emissiveColor = B.Color3.Black(); bm.zOffset = -4;
+    for (const [par, w, d] of [[root, 3.6, 4.8], [truck.root, 3.2, 8], [crRoot, 3.4, 10.5]]) {
+      const b = B.MeshBuilder.CreateGround("blob", { width: w, height: d }, scene); b.parent = par; b.position.y = 0.03; b.material = bm; b.isPickable = false;
+    }
+  }
+  (async () => {
+    try {
+      const put = (c, x, z, ry, y = 0) => {
+        const inst = c.instantiateModelsToScene(n => n, false);
+        const r = inst.rootNodes[0]; r.position.set(x, y, z); r.rotationQuaternion = null; r.rotation.y = ry || 0;
+        for (const m of r.getChildMeshes()) { shadow.addShadowCaster(m); m.receiveShadows = true; m.isPickable = false; }
+        return r;
+      };
+      const crate = await loadProp("wooden_crate_01"), pcrate = await loadProp("plastic_crate_01"), can = await loadProp("metal_jerrycan"), bar2 = await loadProp("concrete_road_barrier_02");
+      for (const [x, z, r, y] of [[-21, 22, 0.1, 0], [-21.9, 22.3, 0.5, 0], [-21.4, 22.1, 0.9, 0.62], [20.5, 30, 0.2, 0], [21.2, 31, 1.2, 0]]) put(crate, x, z, r, y);
+      for (const [x, z, r] of [[-20.6, 24, 0.3], [-20, 24.1, 1.0], [19.5, 3, 0.6]]) put(pcrate, x, z, r);
+      for (const [x, z, r] of [[-11.6, 3.4, 0.4], [-11.2, 3.5, 1.6], [17.4, 7.2, 2.2]]) put(can, x, z, r);
+      for (const [x, z, r] of [[-22.5, 6, Math.PI / 2], [-22.5, 9.5, Math.PI / 2], [22.5, 12, Math.PI / 2]]) put(bar2, x, z, r);
+      const bar = await loadProp("concrete_road_barrier");
+      for (const [x, z, r] of [[-7, -12, 0], [-3.5, -12, 0], [7, -12, 0], [10.5, -12, 0], [-14, 8, Math.PI / 2], [-14, 11, Math.PI / 2], [16, 26, 0.3]]) put(bar, x, z, r);
+      const barrel = await loadProp("barrel_03");
+      for (const [x, z] of [[-12, 1], [-12.9, 1.6], [-12.3, 2.4], [17, 6], [17.8, 6.4], [18, 34], [-19, 30], [-18.2, 30.6]]) put(barrel, x, z, Math.random() * 6);
+    } catch (e) { console.warn("小物の読み込み失敗", e); }
+  })();
+
   reset();
   if (Q.has("build")) enterBuild();   // ?build で最初から建築モード（確かめ用）
   $("msg").style.display = "none";
@@ -845,7 +1323,7 @@ const G = window.G = {};   // 確かめ用の口
   engine.runRenderLoop(() => scene.render());
   addEventListener("resize", () => engine.resize());
 
-  Object.assign(G, { enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { get pipe() { return pipe; }, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
