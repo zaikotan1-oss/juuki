@@ -35,7 +35,9 @@ const G = window.G = {};   // 確かめ用の口
 
   const scene = new B.Scene(engine);
   // 画質: 高（既定）／低（?lo か、iPad で重い時に自動で落とす）。本人「実写に近い見た目に」（2026-10-10）
-  let HQ = !Q.has("lo");
+  // タブレット・スマホ（指で触る機械）は最初から低画質で始める。重すぎて止まって見えた（10-11 iPad で「全然動かない」）
+  const TOUCH = (navigator.maxTouchPoints || 0) > 1;
+  let HQ = Q.has("hq") || (!Q.has("lo") && !TOUCH);
   scene.clearColor = new B.Color4(0.6, 0.66, 0.72, 1);
   scene.fogMode = B.Scene.FOGMODE_LINEAR; scene.fogStart = 70; scene.fogEnd = 380;
   scene.fogColor = new B.Color3(0.6, 0.58, 0.55);     // 背景写真の地平線あたりの色
@@ -74,7 +76,7 @@ const G = window.G = {};   // 確かめ用の口
     const m = new B.PBRMaterial(name, scene); m.albedoColor = new B.Color3(r, g, b).toLinearSpace(); m.roughness = rough; m.metallic = metal; return m;
   };
   const texCache = {};
-  const TEX_V = 4;   // 素材の画像を作り直したら上げる（ブラウザの保存分を使わせない）
+  const TEX_V = 5;   // 素材の画像を作り直したら上げる（ブラウザの保存分を使わせない）
   const tex = (file, scale) => { const t = new B.Texture("assets/tex/" + file + "?v=" + TEX_V, scene); t.uScale = t.vScale = scale; t.anisotropicFilteringLevel = 8; return t; };
   // 写真素材（diff=色・nor=凹凸・arm=陰/粗さ/金属）。scale は「1 枚が何回くり返すか」
   function pbrTex(name, base, scale, tint, diffFile) {
@@ -1226,18 +1228,31 @@ const G = window.G = {};   // 確かめ用の口
       ssao.radius = 1.2; ssao.totalStrength = 1.1; ssao.samples = 12; ssao.maxZ = 120; ssao.expensiveBlur = false;
     } else if (!hq && ssao) { ssao.dispose(); ssao = null; }
     pipe.bloomEnabled = hq; pipe.sharpenEnabled = hq;
-    engine.setHardwareScalingLevel(1 / (hq ? DPR : Math.min(DPR, 1.5)));
+    engine.setHardwareScalingLevel(1 / (hq ? DPR : (TOUCH ? 1 : Math.min(DPR, 1.5))));
     $("bQuality").textContent = hq ? "画質 高" : "画質 低";
   }
   $("bQuality").onclick = () => { setQuality(!HQ); autoQ.off = true; };
   setQuality(HQ);
-  // 重い時は自動で画質を落とす（最初の 6 秒の平均が 32fps を切ったら）
-  const autoQ = { t: 0, n: 0, sum: 0, off: Q.has("hq") };
+  // 重い時は自動で画質を落とす。4 秒ごとに平均 fps を見て、28 を切っていたら 1 段下げる（高 → 低 → 最低）
+  // 1 コマに 0.5 秒以上かかった区間は「窓が裏で描画を止められていた」とみなして数えない
+  const autoQ = { t: 0, n: 0, level: HQ ? 0 : 1, ok: 0, off: Q.has("hq"), t0: performance.now() };
+  function lowest() {
+    autoQ.level = 2; setShadow(false);
+    engine.setHardwareScalingLevel(TOUCH ? 1.4 : 1.2); pipe.fxaaEnabled = true;
+    toast("重いので画質を一番低くしました（影なし）");
+  }
   scene.onAfterRenderObservable.add(() => {
-    if (autoQ.off || G.fixedDt || !scene.isReady() || document.hidden) return;
-    autoQ.t += engine.getDeltaTime() / 1000; autoQ.n++;
-    // 8 秒で何コマ描けたか。60 コマ未満は「描画を止められていた」（窓が裏など）とみなして判断しない
-    if (autoQ.t > 8) { const fps = autoQ.n / autoQ.t; if (autoQ.n >= 60 && HQ && fps < 30) { setQuality(false); toast("重いので画質を下げました"); } if (autoQ.n >= 60) autoQ.off = true; else { autoQ.t = 0; autoQ.n = 0; } }
+    // scene.isReady() は隠してあるクレーンの目印が「未準備」のまま残り、ずっと false だった（そのせいで一度も働いていなかった）
+    if (autoQ.off || G.fixedDt || document.hidden || performance.now() - autoQ.t0 < 3000) return;
+    const dt = engine.getDeltaTime() / 1000;
+    if (dt > 0.5) { autoQ.t = 0; autoQ.n = 0; return; }
+    autoQ.t += dt; autoQ.n++;
+    if (autoQ.t < 4) return;
+    const fps = autoQ.n / autoQ.t; autoQ.t = 0; autoQ.n = 0;
+    if (fps >= 28) { if (++autoQ.ok >= 3) autoQ.off = true; return; }
+    if (autoQ.level === 0) { autoQ.level = 1; setQuality(false); toast("重いので画質を下げました"); }
+    else if (autoQ.level === 1) lowest();
+    else autoQ.off = true;
   });
 
   // ---- 小物: 金網フェンス・コンクリートの車止め・ドラム缶（Poly Haven の 3D モデル・CC0）----
