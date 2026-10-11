@@ -77,3 +77,10 @@
   画像を作り直したら assets/lite も作り直す（作り方は 10-11 の会話の通り PIL で縮小）
 - 10-11 追記3: 軽い版でも iPhone で「起動できませんでした: Unable to create texture」。推測（裏付けなし）: 直前の GPU 停止のあと Safari がこのページの WebGL を止めている／環境 HDR の下ごしらえ（float の描画先）が重い。
   → 軽い版は HDRCubeTexture を 64・prefilterOnLoad なし。起動失敗の文に [GPU可/GPU停止中/GPUなし] を付け、可でなければ「タブを閉じて新しいタブで」と出す
+
+## 2026-10-12 ゲームとしての評価ループ（3 人とも A で完了）
+- 物差し: scratchpad の RESEARCH.md（観点 8 つ: 一撃の手応え・入り・進み具合・テンポ・目的と達成・進行と報酬・物理の安定・9 歳）。A = 平均 8.0 以上かつ 7 未満なし
+- 点の動き: r0 3.9/4.6/4.75（C）→ r1 7.75/7.6/7.6（B）→ r2 8.25/8.0/8.1（A）
+- 入れた物: crash()（ドーン＋ザザッ＋ガラガラ）・shake()（trauma 方式）・dust()（粒は renderingGroup 1、地面の後に描く）・popup()（0.5 秒ためて「ドドーン!! +N」）・25% ごとの合図・目標の札 goalText と 2 本の棒・荷台の上の緑の矢印・ステージ 3 つ（STAGES・localStorage juuki_prog）・パワーアップ 3 種（POW/BIGB/FASTT）・結果の札 showResult（★・紙吹雪）・残り 40 個で完成（sweepRest）・暴れ止め calmDebris・あけた瓦礫は物理を切って放物線で荷台へ（flying）・ダンプ 24 で出発
+- 通しの台本: tools/bot.js（BOT.playStage）。下手な台本で 1 面 13 分。人の実測はまだ
+- 確かめの罠: この PC は他の作業で GPU メモリが一杯だと描画が 100ms 超になる → `?lite`＋`BOT.scale=16`＋影なしで回す。Object.assign は get を値で写す（G の変わる値は関数で）
