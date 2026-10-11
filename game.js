@@ -1392,6 +1392,39 @@ const G = window.G = {};   // 確かめ用の口
   engine.runRenderLoop(() => scene.render());
   addEventListener("resize", () => engine.resize());
 
+  // ---- 見張り: iPad で「一瞬映ってすぐ灰色（ボタンだけ残る）」が出た（10-11）。PC では再現しないので、
+  // 1 秒ごとに画面の 9 点を読んで、全部ほぼ同じ色（＝何も映っていない）なら段階的に軽くして立て直し、何をしたか画面に出す
+  const watch = { t: 0, bad: 0, stage: 0, last: null, buf: new Uint8Array(4) };
+  const camOk = () => { const p = fp.globalPosition; return isFinite(p.x) && isFinite(p.y) && isFinite(p.z); };
+  engine.onEndFrameObservable.add(() => {
+    if (G.fixedDt) return;
+    // カメラ・重機の位置が数でなくなったら（NaN）、最後の正常な状態へ戻す
+    if (!camOk() || !isFinite(ex.pos.x + ex.heading + ex.swing + ex.boom + ex.stick + ex.bucket + look.yaw + look.pitch + speed + turnRate)) {
+      const L = watch.last;
+      if (L) { ex.pos.copyFrom(L.pos); Object.assign(ex, { heading: L.heading, swing: L.swing, boom: L.boom, stick: L.stick, bucket: L.bucket }); }
+      look.yaw = 0; look.pitch = 0.12; speed = 0; turnRate = 0;
+      showErr("位置が壊れたので戻しました（NaN）[" + api + "]", true);
+      return;
+    }
+    watch.last = { pos: ex.pos.clone(), heading: ex.heading, swing: ex.swing, boom: ex.boom, stick: ex.stick, bucket: ex.bucket };
+    const now = performance.now(); if (now - watch.t < 1000 || api !== "WebGL2") return; watch.t = now;
+    const gl = engine._gl; if (!gl) return;
+    const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight; let mn = [255, 255, 255], mx = [0, 0, 0];
+    for (const fx of [0.2, 0.5, 0.8]) for (const fy of [0.25, 0.5, 0.75]) {
+      gl.readPixels(Math.floor(W * fx), Math.floor(H * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, watch.buf);
+      for (let k = 0; k < 3; k++) { mn[k] = Math.min(mn[k], watch.buf[k]); mx[k] = Math.max(mx[k], watch.buf[k]); }
+    }
+    const flat = mx[0] - mn[0] < 16 && mx[1] - mn[1] < 16 && mx[2] - mn[2] < 16;   // 灰色だけの時でも周辺減光で 10 ほど差が出る
+    G.watch = { flat, rgb: mx.join(","), stage: watch.stage };
+    if (!flat) { watch.bad = 0; return; }
+    if (++watch.bad < 3) return;
+    watch.bad = 0; watch.stage++;
+    const what = "何も映っていない [" + api + " 画面 " + W + "×" + H + " 色 " + mx.join(",") + "]";
+    if (watch.stage === 1) { pipe.dispose(); showErr(what + " → 画面の仕上げ処理を外しました", true); }
+    else if (watch.stage === 2) { setShadow(false); scene.getEngine().setHardwareScalingLevel(1.5); showErr(what + " → 影を消して解像度を下げました", true); }
+    else if (watch.stage === 3) { dome.setEnabled(false); showErr(what + " → 背景の写真を外しました。この文を教えてください", true); }
+  });
+
   Object.assign(G, { get pipe() { return pipe; }, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
