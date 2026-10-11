@@ -69,6 +69,8 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
   try {
     const man = await (await fetch("assets/manifest.json?v=" + Date.now())).json();
     window.JUUKI_TEXV = man.texV;
+    const T = (navigator.maxTouchPoints || 0) > 1, U = new URLSearchParams(location.search), lite = (T && !U.has("full")) || U.has("lite");
+    man.files = man.files.filter(f => f[0].startsWith("assets/lite/") ? lite : /^assets\/(tex|models)\/|bg3\.jpg/.test(f[0]) ? !lite : true);   // 軽い版は assets/lite の画像だけ先に読む
     const all = man.files.reduce((a, f) => a + f[1], 0); let got = 0; show(0, all);
     const queue = man.files.slice().sort((a, b) => b[1] - a[1]);
     const worker = async () => {
@@ -84,7 +86,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "準備中…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=50"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=51"]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();

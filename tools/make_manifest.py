@@ -9,7 +9,7 @@ for top in ['vendor', 'assets']:
         for f in sorted(fs):
             p = os.path.relpath(os.path.join(d, f), ROOT).replace(os.sep, '/')
             if p.endswith(('.md', 'manifest.json')): continue
-            url = p + (f'?v={TEX_V}' if p.startswith('assets/tex/') else '')
+            url = p + (f'?v={TEX_V}' if p.startswith(('assets/tex/', 'assets/lite/tex/')) else '')
             files.append([url, os.path.getsize(os.path.join(ROOT, p))])
 json.dump({'texV': TEX_V, 'files': files}, open(os.path.join(ROOT, 'assets', 'manifest.json'), 'w'), separators=(',', ':'))
 print(len(files), 'files', round(sum(s for _, s in files) / 1e6, 1), 'MB')

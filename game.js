@@ -22,6 +22,8 @@ const G = window.G = {};   // 確かめ用の口
   // ---- エンジン: WebGPU が使えれば使う（?gl=1 で WebGL を強制） ----
   // タブレット（指で触る機械）は WebGL2。iPad の WebGPU で、読み込み後に景色が灰色のまま描かれなくなった（10-11）。?gpu で WebGPU を試せる
   const TABLET = (navigator.maxTouchPoints || 0) > 1;
+  // 軽い版: iPhone で「描画が止まりました（GPU のメモリ不足）」が出た（10-11）。スマホ・タブレットは画像を 1/4（assets/lite）・影と仕上げを軽く。?full で元の重さ
+  const LITE = (TABLET && !Q.has("full")) || Q.has("lite"), AS = LITE ? "assets/lite/" : "assets/";
   let engine, api = "WebGL2";
   try {
     if (!Q.has("gl") && !(TABLET && !Q.has("gpu")) && navigator.gpu && await B.WebGPUEngine.IsSupportedAsync) {
@@ -57,10 +59,10 @@ const G = window.G = {};   // 確かめ用の口
   // ---- 空と光: Poly Haven の HDRI「construction_yard」（CC0）----
   // 光の当たり方は HDR（256 の小さな立方体で十分）、背景は軽い JPG（HDR を 1024 の立方体にすると iPad のメモリが苦しい）
   const ENV_ROT = Number(Q.get("envrot") || -2.11);   // 写真を回して、太陽がプレイヤーの斜め後ろから当たる向きに
-  const env = new B.HDRCubeTexture("assets/hdri/construction_yard_2k.hdr", scene, 256, false, true, false, true);
+  const env = new B.HDRCubeTexture("assets/hdri/construction_yard_2k.hdr", scene, LITE ? 128 : 256, false, true, false, true);
   env.rotationY = ENV_ROT;
   scene.environmentTexture = env; scene.environmentIntensity = 1.0;
-  const dome = new B.PhotoDome("bg", "assets/hdri/construction_yard_bg3.jpg", { resolution: 64, size: 1600 }, scene);
+  const dome = new B.PhotoDome("bg", AS + "hdri/construction_yard_bg3.jpg", { resolution: 64, size: 1600 }, scene);
   dome.mesh.rotation.y = ENV_ROT + Number(Q.get("domerot") || 0); dome.material.fogEnabled = false;
   // 太陽: 写真の中の太陽の位置（高さ 34°）に合わせる。方位は写真の向きに合わせて DOME と同じだけ回す
   const SUN_EL = 33.8 * Math.PI / 180, SUN_AZ = Number(Q.get("sunaz") || 3.4);   // 写真の太陽の方位（カメラを向けて合わせた。回す前は 5.75）
@@ -69,7 +71,7 @@ const G = window.G = {};   // 確かめ用の口
   sun.intensity = 2.1; sun.diffuse = new B.Color3(1, 0.96, 0.9);
   // 影: 現場（x ±26・z -16〜46）にぴったり合わせた 1 枚の影の地図。
   // CascadedShadowGenerator と SSAO2 は WebGPU で画面が真っ黒／背景が黒く抜けた（2026-10-10 確かめ）ので使わない
-  const shadow = new B.ShadowGenerator(HQ ? 4096 : 2048, sun);
+  const shadow = new B.ShadowGenerator(LITE ? 1024 : HQ ? 4096 : 2048, sun);
   sun.autoUpdateExtends = false; sun.autoCalcShadowZBounds = false;
   sun.orthoLeft = -40; sun.orthoRight = 40; sun.orthoTop = 40; sun.orthoBottom = -40; sun.shadowMinZ = 1; sun.shadowMaxZ = 220;
   sun.position = new B.Vector3(0, 0, 15).subtract(sunDir.scale(110));
@@ -84,7 +86,7 @@ const G = window.G = {};   // 確かめ用の口
   };
   const texCache = {};
   const TEX_V = window.JUUKI_TEXV || 5;   // 数は tools/make_manifest.py の TEX_V が正   // 素材の画像を作り直したら上げる（ブラウザの保存分を使わせない）
-  const tex = (file, scale) => { const t = new B.Texture("assets/tex/" + file + "?v=" + TEX_V, scene); t.uScale = t.vScale = scale; t.anisotropicFilteringLevel = 8; return t; };
+  const tex = (file, scale) => { const t = new B.Texture(AS + "tex/" + file + "?v=" + TEX_V, scene); t.uScale = t.vScale = scale; t.anisotropicFilteringLevel = LITE ? 4 : 8; return t; };
   // 写真素材（diff=色・nor=凹凸・arm=陰/粗さ/金属）。scale は「1 枚が何回くり返すか」
   function pbrTex(name, base, scale, tint, diffFile) {
     const m = new B.PBRMaterial(name, scene);
@@ -1264,7 +1266,7 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ---- 仕上げの画面処理 ----
-  const pipe = new B.DefaultRenderingPipeline("pipe", !Q.has("nohdr"), scene, Q.has("nopp") ? [] : [fp, tp]);
+  const pipe = new B.DefaultRenderingPipeline("pipe", !Q.has("nohdr") && !LITE, scene, Q.has("nopp") ? [] : [fp, tp]);
   pipe.imageProcessingEnabled = true;
   pipe.imageProcessing.toneMappingEnabled = true; pipe.imageProcessing.toneMappingType = B.ImageProcessingConfiguration.TONEMAPPING_ACES;
   pipe.imageProcessing.exposure = 1.0; pipe.imageProcessing.contrast = 1.28;
@@ -1311,7 +1313,7 @@ const G = window.G = {};   // 確かめ用の口
 
   // ---- 小物: 金網フェンス・コンクリートの車止め・ドラム缶（Poly Haven の 3D モデル・CC0）----
   async function loadProp(name) {
-    const c = await B.SceneLoader.LoadAssetContainerAsync("assets/models/" + name + "/", name + ".gltf", scene);
+    const c = await B.SceneLoader.LoadAssetContainerAsync(AS + "models/" + name + "/", name + ".gltf", scene);
     return c;
   }
   // 仮囲い: 工事現場を 3m の白い波板で囲う（x ±24・z -14〜42）。手前の真ん中（|x|<6）は出入り口
