@@ -11,7 +11,7 @@ const $ = id => document.getElementById(id);
 
 const CELL = 0.5;          // 格子の大きさ(m)。本人「細かく壊れるように」（2026-10-07）で 1m→0.5m
 const MAX_DEBRIS = 500;    // 破片の上限。超えたら古い物から消す（掴んでいる物は消さない）
-const CARVE_R = 0.75;      // バケット先端の削る半径
+const CARVE_R = 0.9;       // バケットの当たり点ごとの削る半径（10-11 本人「ちょっとぶつかっただけで崩れるくらい甘く」）
 const BUCKET = { W: 1.9, H: 1.05, L: 1.55 };   // 本人「バケットを大きく」で 1.1×0.7×1.25 から拡大
 const HOLD_MAX = 40;       // バケットに一度に掴める数
 const TRUCK_CAP = 40;      // ダンプ 1 台に積める量（小さい破片 1・2m の板 4 くらい。units() で数える）
@@ -561,6 +561,10 @@ const G = window.G = {};   // 確かめ用の口
   for (const sx of [-0.33, 0.33]) piston("boomCyl", anchor("bA", upper, [0.45 + sx, 0.55, 0.6]), anchor("bB", boomJ, [sx, 0.3, 2.2]), 0.2, yel);
   piston("armCyl", anchor("aA", boomJ, [0, 1.05, 2.5]), anchor("aB", stickJ, [0, 0.45, -0.6]), 0.2, yel);
   piston("bkCyl", anchor("kA", stickJ, [0, 0.32, 0.5]), anchor("kB", bucketJ, [0, 0.3, 0.2]), 0.17, yel);
+  // 壊す当たり点: バケットの先・角・背中、アームの先と中ほど
+  const HIT_PTS_B = [[0, -BUCKET.H, BUCKET.L], [-BUCKET.W / 2, -BUCKET.H, BUCKET.L], [BUCKET.W / 2, -BUCKET.H, BUCKET.L], [-BUCKET.W / 2, 0, BUCKET.L], [BUCKET.W / 2, 0, BUCKET.L],
+    [0, -BUCKET.H * 0.5, BUCKET.L * 0.6], [0, 0.1, BUCKET.L * 0.4], [0, 0.2, 0]].map(a => new B.Vector3(...a));
+  const HIT_PTS_S = [[0, 0, STICK_L * 0.85], [0, 0, STICK_L * 0.45]].map(a => new B.Vector3(...a));
   // バケットの一番低い所（地面に潜らせないため）
   const GROUND_MIN = 0.05;
   const bkPts = [[0, -BUCKET.H, BUCKET.L], [-BUCKET.W / 2, -BUCKET.H, BUCKET.L], [BUCKET.W / 2, -BUCKET.H, BUCKET.L], [0, 0, BUCKET.L], [0, -BUCKET.H, 0], [0, 0.3, 0]].map(a => new B.Vector3(...a));
@@ -732,9 +736,28 @@ const G = window.G = {};   // 確かめ用の口
       const c = bld.cells.get(key(x, y, z)); if (!c) continue;
       if (B.Vector3.Distance(c.p, p) > r) continue;
       carvedToDebris(c, c.p.subtract(p).normalize().scale(2.0)); n++;
+      chainAbove(c.x, c.y, c.z, 0);
     }
     if (n) { dirty = true; thud(0.2 + n * 0.04); }
     return n;
+  }
+  // 連鎖: 削った格子の真上と斜め上は、少し遅れて確率で崩れる（上へ 5 段まで）。「ガラガラ崩れていく」感じ
+  const chain = [];
+  function chainAbove(x, y, z, depth) {
+    if (depth >= 5) return;
+    for (const [dx, dz, pr] of [[0, 0, 0.75], [1, 0, 0.3], [-1, 0, 0.3], [0, 1, 0.3], [0, -1, 0.3]])
+      if (Math.random() < pr) chain.push({ x: x + dx, y: y + 1, z: z + dz, depth: depth + 1, t: 0.08 + Math.random() * 0.12 });
+  }
+  function updateChain(dt) {
+    let n = 0;
+    for (let i = chain.length - 1; i >= 0; i--) {
+      const q = chain[i]; q.t -= dt; if (q.t > 0) continue;
+      chain.splice(i, 1);
+      const c = bld.cells.get(key(q.x, q.y, q.z)); if (!c) continue;
+      carvedToDebris(c, new B.Vector3((Math.random() - 0.5) * 1.5, -0.5, (Math.random() - 0.5) * 1.5)); n++;
+      chainAbove(q.x, q.y, q.z, q.depth);
+    }
+    if (n) { dirty = true; thud(0.12 + n * 0.03, 300); }
   }
 
   // ================= 掴む・あける =================
@@ -745,6 +768,15 @@ const G = window.G = {};   // 確かめ用の口
     return -B.Vector3.TransformNormal(B.Axis.Y, m).normalize().y;
   }
   let lastBucket = 0;
+  // バケットの中の置き場（バケットの座標。背板 y=0 側から口へ向かって積む。最後の 4 つは口からはみ出す山盛り）
+  const SLOTS = [];
+  for (let k = 0; k < 3; k++) for (const z of [0.3, 0.75, 1.2]) for (const x of [-0.63, -0.21, 0.21, 0.63]) SLOTS.push(new B.Vector3(x, -0.25 - k * 0.38, z));
+  for (const [x, z] of [[-0.21, 0.55], [0.21, 0.55], [-0.21, 1.0], [0.21, 1.0]]) SLOTS.push(new B.Vector3(x, -1.32, z));
+  const slotUsed = new Array(SLOTS.length).fill(null);
+  function updateHeld(dt) {   // 掴んだ破片を置き場へすっと寄せる
+    const a = Math.min(1, dt * 12);
+    for (let i = 0; i < SLOTS.length; i++) { const d = slotUsed[i]; if (d) B.Vector3.LerpToRef(d.m.position, SLOTS[i], a, d.m.position); }
+  }
   function updateGrab() {
     const up = bucketOpenUp();
     // すくう動き（バケットを巻き込んでいる最中）は、口の前の広めの範囲も掴む。板で押しのけてしまい 1 個しか入らなかったため
@@ -757,7 +789,10 @@ const G = window.G = {};   // 確かめ用の口
         if (d.held) continue;
         B.Vector3.TransformCoordinatesToRef(d.m.position, _inv, _lp);
         if (Math.abs(_lp.x) < W / 2 + m && _lp.y > -H - 0.25 - m && _lp.y < 0.05 && _lp.z > -0.1 && _lp.z < L + 0.15 + m) {
-          physOff(d); d.m.setParent(bucketJ); d.held = true; held++;
+          const si = slotUsed.indexOf(null); if (si < 0) break;
+          physOff(d); d.m.setParent(bucketJ); d.held = true; held++; d.slot = si; slotUsed[si] = d;
+          // 大きすぎる塊はバケットに入る大きさに割れた扱い（離した後もこの大きさ）
+          d.m.scaling.set(Math.min(d.m.scaling.x, 0.44), Math.min(d.m.scaling.y, 0.42), Math.min(d.m.scaling.z, 0.44));
           if (held >= HOLD_MAX) break;
         }
       }
@@ -765,21 +800,30 @@ const G = window.G = {};   // 確かめ用の口
       // 自分で「あける」操作をして口が下を向いたら離す。ブームを上げただけで口が下を向き、運ぶ途中で落ちていたため
       // 少しずつこぼす（一度に全部だと荷台からあふれる）
       let n = 0;
-      for (const d of debris) {
-        if (!d.held) continue;
+      // 口に近い（山盛りの）物から順に、1 コマ 4 個ずつ
+      for (let si = SLOTS.length - 1; si >= 0 && n < 4; si--) {
+        const d = slotUsed[si]; if (!d) continue;
+        slotUsed[si] = null; d.slot = -1;
         d.m.setParent(null); d.held = false; held--;
-        // 口のすぐ外へ出してから落とす（中に残すと板に乗ったまま滑り落ちなかった）
-        const mouth = B.Vector3.TransformCoordinates(new B.Vector3((Math.random() - 0.5) * BUCKET.W * 0.7, -BUCKET.H - 0.45, BUCKET.L * (0.3 + Math.random() * 0.5)), bucketJ.getWorldMatrix());
+        // 口のすぐ外へ、置き場の並びのまま出す（重ならないので弾け飛ばない）
+        const sp = SLOTS[si];
+        const mouth = B.Vector3.TransformCoordinates(new B.Vector3(sp.x, -BUCKET.H - 0.3 - (si % 3) * 0.12, sp.z), bucketJ.getWorldMatrix());
         d.m.position.copyFrom(mouth);
-        // 荷台の近くで開いたら、荷台の真ん中へ寄せて落とす（補助）
-        // 落ちるまでの時間から、荷台の真ん中（少しばらす）に落ちる横の速さを決める
-        const c = bedCenter(), p = d.m.position, v = new B.Vector3(0, 0, 0);
-        if (truck.state === "wait" && Math.hypot(p.x - c.x, p.z - c.z) < 4.5 && p.y > c.y + 0.5) {
-          const t = Math.sqrt(2 * (p.y - c.y - 0.6) / 9.81);
-          v.x = (c.x + (Math.random() - 0.5) * 1.2 - p.x) / t; v.z = (c.z + (Math.random() - 0.5) * 2.6 - p.z) / t;
+        // 荷台の近く（6.5m 以内）で開いたら、荷台の中のばらけた場所に落ちる速さで投げる（補助）
+        const p = d.m.position, v = new B.Vector3(0, 0, 0);
+        if (truck.state === "wait") {
+          const m = truck.root.computeWorldMatrix(true);
+          const tgt = B.Vector3.TransformCoordinates(new B.Vector3((Math.random() - 0.5) * 1.5, BED.y0 + 0.35, BED.z0 + 0.6 + Math.random() * (BED.z1 - BED.z0 - 1.2)), m);
+          if (Math.hypot(p.x - tgt.x, p.z - tgt.z) < 6.5) {
+            // 山なりに投げる: 一番高い所が荷台の縁より 0.5m 上になるように（低い所で離しても縁を越えて中へ落ちる）
+            const g = 9.81, rimY = B.Vector3.TransformCoordinates(new B.Vector3(0, 2.6, 0), m).y, peak = Math.max(p.y, rimY + 0.5);
+            const vy = Math.sqrt(2 * g * (peak - p.y)), t = vy / g + Math.sqrt(2 * Math.max(0.05, peak - tgt.y) / g);
+            v.set((tgt.x - p.x) / t, vy, (tgt.z - p.z) / t);
+          }
         }
-        physOn(d, v);
-        if (++n >= 6) break;
+        physOn(d, v); d.restT = 0;
+        d.ag.body.setLinearDamping(0.05); d.ag.body.setAngularDamping(0.6);
+        n++;
       }
       if (n) thud(0.15 + n * 0.03, 350);
     }
@@ -796,9 +840,10 @@ const G = window.G = {};   // 確かめ用の口
         for (let i = debris.length - 1; i >= 0; i--) {
           const d = debris[i]; if (d.held || !d.ag) continue;
           B.Vector3.TransformCoordinatesToRef(d.m.position, _inv, _lp);
-          if (Math.abs(_lp.x) < BED.x && _lp.z > BED.z0 && _lp.z < BED.z1 && _lp.y > BED.y0 && _lp.y < BED.y1) {
+          if (Math.abs(_lp.x) < BED.x && _lp.z > BED.z0 && _lp.z < BED.z1 && _lp.y > BED.y0 && _lp.y < BED.y0 + 1.6) {
             d.ag.body.getLinearVelocityToRef(_v);
-            if (_v.lengthSquared() > 4) continue;            // まだ勢いよく動いている物は待つ
+            if (_v.lengthSquared() > 0.09) { d.restT = 0; continue; }       // 落ち着くまで待つ
+            d.restT = (d.restT || 0) + 0.2; if (d.restT < 0.4) continue;
             physOff(d); d.m.setParent(truck.root); debris.splice(i, 1); truck.load.push(d.m); truck.amount += units(d.m);
           }
         }
@@ -826,7 +871,7 @@ const G = window.G = {};   // 確かめ用の口
   function reset() {
     clearDebris(); buildBuilding();
     for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips = 0; truck.state = "wait"; truck.z = TRUCK_HOME.z;
-    held = 0; siteDone = false; $("done").style.display = "none";
+    held = 0; slotUsed.fill(null); chain.length = 0; siteDone = false; $("done").style.display = "none";
     ex.pos.set(0, 0, 2); ex.heading = 0; ex.swing = 0; ex.boom = -0.35; ex.stick = 1.3; ex.bucket = 0.6;
     look.yaw = 0; look.pitch = 0.12;
     applyPose(); syncColliders(exParts, true); placeTruck(); syncColliders(truck.parts, true);
@@ -1156,11 +1201,13 @@ const G = window.G = {};   // 確かめ用の口
     if (eng) eng.o.frequency.value = 38 + Math.min(moving, 2) * 14;
 
     // バケットの先で削る（何か掴んでいる間は削らない＝運んでいる途中で壁を崩さない）
-    if (!held) {
-      tip.computeWorldMatrix(true); tipMid.computeWorldMatrix(true);
-      carveAt(tip.getAbsolutePosition(), CARVE_R);
-      carveAt(tipMid.getAbsolutePosition(), CARVE_R * 0.8);
+    // バケット全体と腕の先のどこかが壁に触れたら削る（止まっていても・何か掴んでいても）
+    {
+      const bm = bucketJ.getWorldMatrix(), sm = stickJ.getWorldMatrix(), { W, H, L } = BUCKET;
+      for (const q of HIT_PTS_B) carveAt(B.Vector3.TransformCoordinates(q, bm), CARVE_R);
+      for (const q of HIT_PTS_S) carveAt(B.Vector3.TransformCoordinates(q, sm), CARVE_R * 0.8);
     }
+    updateHeld(dt); updateChain(dt);
     // 削った後、少し置いてから「支えのない塊」を落とす（揺れの間）
     if (dirty) { collapseTimer += dt; if (collapseTimer > 0.25) {
       dirty = false; collapseTimer = 0;
