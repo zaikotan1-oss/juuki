@@ -76,7 +76,7 @@ const G = window.G = {};   // 確かめ用の口
     const m = new B.PBRMaterial(name, scene); m.albedoColor = new B.Color3(r, g, b).toLinearSpace(); m.roughness = rough; m.metallic = metal; return m;
   };
   const texCache = {};
-  const TEX_V = 5;   // 素材の画像を作り直したら上げる（ブラウザの保存分を使わせない）
+  const TEX_V = window.JUUKI_TEXV || 5;   // 数は tools/make_manifest.py の TEX_V が正   // 素材の画像を作り直したら上げる（ブラウザの保存分を使わせない）
   const tex = (file, scale) => { const t = new B.Texture("assets/tex/" + file + "?v=" + TEX_V, scene); t.uScale = t.vScale = scale; t.anisotropicFilteringLevel = 8; return t; };
   // 写真素材（diff=色・nor=凹凸・arm=陰/粗さ/金属）。scale は「1 枚が何回くり返すか」
   function pbrTex(name, base, scale, tint, diffFile) {
