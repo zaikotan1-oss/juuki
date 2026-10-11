@@ -20,15 +20,22 @@ const G = window.G = {};   // 確かめ用の口
 (async function main() {
   const canvas = $("cv");
   // ---- エンジン: WebGPU が使えれば使う（?gl=1 で WebGL を強制） ----
+  // タブレット（指で触る機械）は WebGL2。iPad の WebGPU で、読み込み後に景色が灰色のまま描かれなくなった（10-11）。?gpu で WebGPU を試せる
+  const TABLET = (navigator.maxTouchPoints || 0) > 1;
   let engine, api = "WebGL2";
   try {
-    if (!Q.has("gl") && navigator.gpu && await B.WebGPUEngine.IsSupportedAsync) {
+    if (!Q.has("gl") && !(TABLET && !Q.has("gpu")) && navigator.gpu && await B.WebGPUEngine.IsSupportedAsync) {
       engine = new B.WebGPUEngine(canvas, { antialias: true, stencil: true });
       await engine.initAsync();
       api = "WebGPU";
     }
   } catch (e) { console.warn("WebGPU 失敗→WebGL", e); engine = null; }
   if (!engine) engine = new B.Engine(canvas, true, { stencil: true }, false);
+  // 描画が止まった時（GPU のメモリ不足など）は理由を画面に出す。灰色のまま黙らないように
+  const showErr = (t, keep) => { const m = $("msg"); m.style.display = ""; m.textContent = t; if (!keep) setTimeout(() => { if (m.textContent === t) m.style.display = "none"; }, 8000); };
+  engine.onContextLostObservable.add(() => showErr("描画が止まりました（GPU のメモリ不足かも）。ページを開き直してください [" + api + "]", true));
+  window.addEventListener("error", e => showErr("エラー: " + (e.message || e) + " [" + api + "]"));
+  window.addEventListener("unhandledrejection", e => showErr("エラー: " + ((e.reason && e.reason.message) || e.reason) + " [" + api + "]"));
   // 解像度: 端末の細かさ（iPad は 2）まで使う。本人「解像度を上げて」（2026-10-07）。?lo で 1 倍に戻す
   const DPR = Q.has("lo") ? 1 : Math.min(window.devicePixelRatio || 1, 2);
   engine.setHardwareScalingLevel(1 / DPR);

@@ -2,7 +2,7 @@
 # 素材を足した・作り直した時はこれを実行する。写真素材を作り直したら TEX_V を 1 上げる（ブラウザの保存分を使わせない）
 import json, os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TEX_V = 5
+TEX_V = 6
 files = []
 for top in ['vendor', 'assets']:
     for d, _, fs in os.walk(os.path.join(ROOT, top)):
