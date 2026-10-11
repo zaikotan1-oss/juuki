@@ -136,5 +136,36 @@
     }
     BOT.rec(G.isDone() ? "さら地！" : "打ち切り"); return BOT.t - t0;
   };
+  // ---- 建築の台本: フックを目標の点へ（左レバー=遠近と左右、右レバー=上下）。人と同じくレバーを倒して動かす ----
+  BOT.hookTo = async (P, tol = 0.35, maxSec = 20) => {
+    const cr = G.cr, c = cr.pos;
+    for (let i = 0; i < maxSec * 60; i++) {
+      const t = cr.tgt, rt = Math.hypot(t.x - c.x, t.z - c.z), rp = Math.hypot(P.x - c.x, P.z - c.z);
+      let ea = Math.atan2(P.x - c.x, P.z - c.z) - Math.atan2(t.x - c.x, t.z - c.z); while (ea > Math.PI) ea -= 2 * Math.PI; while (ea < -Math.PI) ea += 2 * Math.PI;
+      const er = rp - rt, es = ea * rt, ey = P.y - t.y, k = (v, g) => Math.max(-1, Math.min(1, v * g));
+      L.y = k(er, 0.8); L.x = k(es, 0.8); R.y = k(ey, 0.8);
+      if (Math.abs(er) < tol && Math.abs(es) < tol && Math.abs(ey) < tol) break;
+      await BOT.step(1);
+    }
+    clear();
+  };
+  BOT.placeOne = async () => {
+    const bd = G.bd; if (bd.done) return false;
+    // 置き場の建材の上へ → 下げて吊る
+    const y = bd.yard; if (!y) { await BOT.step(30); return true; }
+    const ym = y.m.position, top = ym.y + 0.5;
+    await BOT.hookTo(new B.Vector3(ym.x, Math.max(G.cr.tgt.y, top + 4), ym.z), 0.4);
+    for (let i = 0; i < 300 && !bd.hanging; i++) { R.y = -1; await BOT.step(1); } clear();
+    BOT.rec("吊った");
+    // 枠の上まで上げて運び、下ろして手を離す
+    const p = bd.hanging.p, hy = p.pos.y + 0.75 + p.size[1] / 2;
+    await BOT.hookTo(new B.Vector3(G.cr.tgt.x, Math.max(hy + 3, G.cr.tgt.y), G.cr.tgt.z), 0.5);
+    await BOT.hookTo(new B.Vector3(p.pos.x, hy + 3, p.pos.z), 0.3);
+    await BOT.hookTo(new B.Vector3(p.pos.x, hy, p.pos.z), 0.15);
+    for (let i = 0; i < 120 && bd.hanging; i++) await BOT.step(1);   // 手を離して止まるとはまる
+    await BOT.step(30); BOT.rec("はまった");
+    return true;
+  };
+  BOT.playBuild = async (maxSec = 900) => { const t0 = BOT.t; while (BOT.t - t0 < maxSec && !G.bd.done) { if (!(await BOT.placeOne())) break; } BOT.rec(G.bd.done ? "ビル完成！" : "打ち切り"); return BOT.t - t0; };
   window.BOT_READY = true;
 })();

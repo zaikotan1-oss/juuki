@@ -76,7 +76,7 @@ const G = window.G = {};   // 確かめ用の口
   sun.orthoLeft = -40; sun.orthoRight = 40; sun.orthoTop = 40; sun.orthoBottom = -40; sun.shadowMinZ = 1; sun.shadowMaxZ = 220;
   sun.position = new B.Vector3(0, 0, 15).subtract(sunDir.scale(110));
   shadow.usePercentageCloserFiltering = true; shadow.filteringQuality = B.ShadowGenerator.QUALITY_HIGH;
-  shadow.bias = 0.002; shadow.normalBias = 0.04;   // 小さいと面に木目のような影のしま（シャドウアクネ）が出た shadow.darkness = 0.12;
+  shadow.bias = 0.002; shadow.normalBias = 0.04; shadow.darkness = 0.12;   // bias が小さいと面に木目のような影のしま（シャドウアクネ）が出た
   let shadowOn = !Q.has("noshadow");
 
   // ---- 材質（PBR: 光を本物らしく返す）----
@@ -767,6 +767,21 @@ const G = window.G = {};   // 確かめ用の口
       c.connect(hf).connect(cg).connect(OUT()); c.start(st, Math.random() * 0.9); c.stop(st + 0.05);
     }
   }
+  // 鉄骨がはまる音: 金属の倍音（カーン）＋少し遅れてボルト締め（カン、カン）
+  function clang(pw) {
+    if (!ac || ac.state !== "running") return;
+    const t = ac.currentTime;
+    for (const [f, a, d] of [[420, 0.22, 1.1], [1130, 0.14, 0.7], [2210, 0.08, 0.45], [3370, 0.05, 0.3]]) {
+      const o = ac.createOscillator(), g = ac.createGain(); o.type = "sine"; o.frequency.value = f * (0.97 + Math.random() * 0.06);
+      g.gain.setValueAtTime(a * pw, t); g.gain.exponentialRampToValueAtTime(0.0008, t + d); o.connect(g).connect(OUT()); o.start(t); o.stop(t + d + 0.05);
+    }
+    for (const k of [0.32, 0.5]) {
+      const c = ac.createBufferSource(), hf = ac.createBiquadFilter(), cg = ac.createGain(), st = t + k;
+      c.buffer = NB(); hf.type = "bandpass"; hf.frequency.value = 2600; hf.Q.value = 6;
+      cg.gain.setValueAtTime(0.25, st); cg.gain.exponentialRampToValueAtTime(0.001, st + 0.06);
+      c.connect(hf).connect(cg).connect(OUT()); c.start(st, Math.random()); c.stop(st + 0.07);
+    }
+  }
   // ごほうびの音（ドレミ）。notes は半音の数（0=ド）
   function chime(notes, step = 0.11, vol = 0.16) {
     if (!ac || ac.state !== "running") return;
@@ -794,7 +809,7 @@ const G = window.G = {};   // 確かめ用の口
     const ps = new B.ParticleSystem("dust" + i, LITE ? 160 : 300, scene);
     ps.particleTexture = dustTex; ps.emitter = new B.Vector3(0, -50, 0);
     ps.minEmitBox = new B.Vector3(-0.5, -0.4, -0.5); ps.maxEmitBox = new B.Vector3(0.5, 0.4, 0.5);
-    ps.color1 = new B.Color4(0.6, 0.55, 0.48, 0.3); ps.color2 = new B.Color4(0.5, 0.46, 0.4, 0.22);   // 濃いと運転席から当たりが見えない（10-12 評価 r1） ps.colorDead = new B.Color4(0.56, 0.52, 0.46, 0);
+    ps.color1 = new B.Color4(0.6, 0.55, 0.48, 0.3); ps.color2 = new B.Color4(0.5, 0.46, 0.4, 0.22); ps.colorDead = new B.Color4(0.56, 0.52, 0.46, 0);   // 濃いと運転席から当たりが見えない（10-12 評価 r1）。colorDead を行の後ろのコメントに入れてしまい、既定の黒へ変わって黒い煙になっていた
     ps.addSizeGradient(0, 0.6, 1.1); ps.addSizeGradient(1, 1.8, 3.0);
     ps.minLifeTime = 0.7; ps.maxLifeTime = 1.5; ps.emitRate = 0; ps.manualEmitCount = 0;
     ps.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ps.gravity = new B.Vector3(0, 0.2, 0);
@@ -1065,7 +1080,7 @@ const G = window.G = {};   // 確かめ用の口
     const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
     $("rStars").textContent = stars(n);
     $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.trips}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "") + (first && STAGES[stage + 1] ? `\n🔓 つぎの ステージ: ${STAGES[stage + 1].name}` : "");
-    $("bNext").style.display = STAGES[stage + 1] ? "" : "none";
+    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = ""; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
     $("done").style.display = "";
     chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
   }
@@ -1218,7 +1233,8 @@ const G = window.G = {};   // 確かめ用の口
   }
   const YARD = new B.Vector3(-7.5, 0, 5.5);               // 建材の置き場（クレーンの左前）
   const SNAP = { xz: 2.0, y: 1.8 };                       // 枠のこの範囲に入るとピタッとはまる
-  const bd = { floor: 0, step: 0, plan: planFloor(0), placed: [], score: 0, hanging: null, yard: null, snap: null, ghost: null, toastT: 0, near: false };
+  const bd = { floor: 0, step: 0, plan: planFloor(0), placed: [], score: 0, hanging: null, yard: null, snap: null, ghost: null, toastT: 0, near: false, goal: 2, t: 0, streak: 0, perfect: 0, done: false };
+  const CRANE_SPD = () => (prog.build && prog.build[0] ? 1.4 : 1);   // 建築 1 つめクリア: フックが 1.4 倍速
   // 柱と梁は H 形（フランジ 2 枚＋ウェブ 1 枚）。床板はただの板
   function hBeam(name, size) {
     const ax = size.indexOf(Math.max(...size)), L = size[ax], o = [0, 1, 2].filter(i => i !== ax), W = size[o[0]], Hh = size[o[1]], t = 0.035;
@@ -1289,16 +1305,18 @@ const G = window.G = {};   // 確かめ用の口
     const t = cr.tgt, hang = bd.hanging ? bd.hanging.p.size[1] + 0.75 : 0, t0 = t.clone();
     const dx = t.x - cr.pos.x, dz = t.z - cr.pos.z, r = Math.max(3, Math.hypot(dx, dz));
     let ang = Math.atan2(dx, dz);
-    const nr = B.Scalar.Clamp(r + fwd * 5 * dt, 5, 38);
-    ang += side * 5 * dt / nr;                          // 左右は「横に 5m/秒」になるように角度で動かす
+    const csp = CRANE_SPD();
+    const nr = B.Scalar.Clamp(r + fwd * 5 * csp * dt, 5, 38);
+    ang += side * 5 * csp * dt / nr;                          // 左右は「横に 5m/秒」になるように角度で動かす
     t.x = cr.pos.x + Math.sin(ang) * nr; t.z = cr.pos.z + Math.cos(ang) * nr;
-    t.y = B.Scalar.Clamp(t.y + lift * 4 * dt, 0.9 + hang, 45);
+    t.y = B.Scalar.Clamp(t.y + lift * 4 * csp * dt, 0.9 + hang, 45);
+    if (!bd.done) bd.t += dt;
     const tgtSpeed = B.Vector3.Distance(t, t0) / dt;      // 本人がフックを動かしている速さ
     // 関節は逆算した値へ、重機らしい速さで追いかける
     const s = solveCrane(t, hang);
-    cr.swing = cr.swing + B.Scalar.Clamp(angDiff(cr.swing, s.swing), -0.9 * dt, 0.9 * dt);
-    cr.luff = approach(cr.luff, s.luff, 0.6 * dt);
-    cr.ext = approach(cr.ext, s.ext, 8 * dt);
+    cr.swing = cr.swing + B.Scalar.Clamp(angDiff(cr.swing, s.swing), -0.9 * csp * dt, 0.9 * csp * dt);
+    cr.luff = approach(cr.luff, s.luff, 0.6 * csp * dt);
+    cr.ext = approach(cr.ext, s.ext, 8 * csp * dt);
     applyCranePose();
     for (const n of [crRoot, crUpper, crBoomJ]) n.computeWorldMatrix(true);
     _tip.copyFrom(crTip.computeWorldMatrix(true).getTranslation());
@@ -1325,7 +1343,7 @@ const G = window.G = {};   // 確かめ用の口
     if (!bd.hanging && !bd.snap && bd.yard) {
       const m = bd.yard.m; m.computeWorldMatrix(true);
       const top = m.getBoundingInfo().boundingBox.maximumWorld.y;
-      if (Math.hypot(hp.x - m.position.x, hp.z - m.position.z) < 1.8 && hp.y - 0.95 < top + 1.2) { bd.hanging = bd.yard; bd.yard = null; thud(0.3, 1200); toast("吊った！ 光る枠の上へ運ぼう"); }
+      if (Math.hypot(hp.x - m.position.x, hp.z - m.position.z) < 1.8 && hp.y - 0.95 < top + 1.2) { bd.hanging = bd.yard; bd.yard = null; thud(0.3, 1200); chime([7], 0.1, 0.1); popup("つった！", "load"); }
     }
     bd.near = false;
     if (bd.hanging) {
@@ -1337,17 +1355,24 @@ const G = window.G = {};   // 確かめ用の口
       bd.near = d < SNAP.xz; bd.dist = d; bd.dy = dy;
       // 通り過ぎただけでははまらない。レバーを離して止めた時（またはほぼ真上でゆっくり）にはまる
       if (d < SNAP.xz && Math.abs(dy) < SNAP.y && (tgtSpeed < 0.3 || (d < 0.5 && Math.abs(dy) < 0.5 && tgtSpeed < 2.5))) {
-        const pts = Math.max(30, Math.round(100 - d * 25 - Math.abs(dy) * 15));
-        bd.score += pts; bd.snap = { m: h.m, from: h.m.position.clone(), q: h.m.rotationQuaternion.clone(), to: h.p.pos, t: 0 }; bd.hanging = null;
-        toast(pts >= 85 ? `ぴったり！ +${pts}` : `はまった！ +${pts}`);
+        let pts = Math.max(40, Math.round(100 - d * 14 - Math.abs(dy) * 8));   // 25/15 では真上で止めても 77〜80 で「ぴったり」がほぼ出なかった（10-12 台本）
+        const good = pts >= 85; bd.streak = good ? bd.streak + 1 : 0; if (good) bd.perfect++;
+        if (bd.streak >= 2) pts += 20 * (bd.streak - 1);          // 続けてぴったりだと上乗せ
+        bd.score += pts; bd.snap = { m: h.m, from: h.m.position.clone(), q: h.m.rotationQuaternion.clone(), to: h.p.pos, t: 0, good }; bd.hanging = null;
+        popup((good ? "ぴったり！ +" : "はまった！ +") + pts + (bd.streak >= 2 ? `（${bd.streak}れんぞく）` : ""), good ? "mid" : "");
       }
     }
     if (bd.snap) {
       const s2 = bd.snap; s2.t = Math.min(1, s2.t + dt / 0.35);
       B.Vector3.LerpToRef(s2.from, s2.to, s2.t, s2.m.position); B.Quaternion.SlerpToRef(s2.q, B.Quaternion.Identity(), s2.t, s2.m.rotationQuaternion);
       if (s2.t >= 1) {
-        thud(0.5, 700); bd.placed.push(s2.m); bd.snap = null; bd.step++;
-        if (bd.step >= bd.plan.length) { bd.floor++; bd.step = 0; bd.plan = planFloor(bd.floor); toast(`${bd.floor}階 完成！`); }
+        clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.1 : 0.15); dust(s2.to, s2.good ? 14 : 8);
+        bd.placed.push(s2.m); bd.snap = null; bd.step++;
+        if (bd.step >= bd.plan.length) {
+          bd.floor++; bd.step = 0; bd.score += 150; chime([0, 4, 7, 12], 0.12); shake(0.25); popup(`${bd.floor}かい かんせい！ +150`, "big");
+          if (bd.floor >= bd.goal) { buildDone(); return; }
+          bd.plan = planFloor(bd.floor);
+        }
         nextPiece();
         cr.tgt.y = Math.max(cr.tgt.y, bd.floor * FLOOR_H + 5);   // 置いたらフックを少し上げて、次へ向かいやすく
       }
@@ -1379,8 +1404,36 @@ const G = window.G = {};   // 確かめ用の口
     if (eng) eng.o.frequency.value = 38 + Math.min(Math.abs(fwd) + Math.abs(side) + Math.abs(lift), 2) * 14;
   }
   let mode = "demo";
+  function updateBuildGoal() {
+    const n = bd.plan.length, k = bd.floor * n + bd.step, all = bd.goal * n, pct = Math.round(k / all * 100);
+    const nx = bd.plan[bd.step];
+    $("gStage").textContent = `けんちく　${bd.goal}かいだてを たてよう`;
+    $("gText").textContent = bd.done ? "🎉 ビル かんせい！" : bd.hanging ? `🏗 ${nx.kind}を 光る わくの 上へ はこぼう` : `🪝 おきばの ${nx.kind}を つろう（右レバーを ↓）`;
+    $("gBld").style.width = pct + "%"; $("gBldT").textContent = `たてた ${pct}%　（${bd.floor + (bd.done ? 0 : 1)}かいめ ${bd.step}/${n}）`;
+    $("gTr").style.width = Math.min(100, bd.streak * 20) + "%"; $("gTrT").textContent = bd.streak ? `ぴったり ${bd.streak}れんぞく` : "ぴったりで おくと ボーナス";
+    $("gScore").textContent = "★ " + bd.score;
+  }
+  // 決めた階数まで建てたら完成: 屋上に旗・紙吹雪・結果の札
+  function buildDone() {
+    bd.done = true; if (bd.ghost) { bd.ghost.dispose(); bd.ghost = null; }
+    const top = bd.goal * FLOOR_H + 0.3;
+    const pole = B.MeshBuilder.CreateCylinder("flagPole", { diameter: 0.08, height: 3 }, scene); pole.position.set(3.4, top + 1.5, 19.4); pole.material = steel;
+    const flag = B.MeshBuilder.CreatePlane("flag", { width: 1.6, height: 1.0 }, scene); flag.position.set(4.2, top + 2.5, 19.4);
+    const fm = new B.StandardMaterial("flagM", scene); fm.diffuseColor = new B.Color3(1, 0.2, 0.15); fm.emissiveColor = new B.Color3(0.5, 0.08, 0.05); fm.backFaceCulling = false; flag.material = fm;
+    scene.onBeforeRenderObservable.add(() => { flag.rotation.y = Math.sin(performance.now() / 300) * 0.25; });
+    const st = STAGES[stage], n = bd.t <= st.floors * 150 ? 3 : bd.t <= st.floors * 240 ? 2 : 1;
+    prog.build = prog.build || []; const first = !prog.build[stage]; prog.build[stage] = Math.max(prog.build[stage] || 0, n); saveProg();
+    const mm = Math.floor(bd.t / 60), ss = String(Math.floor(bd.t % 60)).padStart(2, "0");
+    $("done").querySelector(".rT").textContent = "ビル かんせい！";
+    $("rStars").textContent = stars(n);
+    $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${bd.goal * bd.plan.length}　とくてん ${bd.score}` + (first && stage === 0 ? "\n🔓 パワーアップ: クレーンが はやくなる" : "");
+    $("bNext").style.display = "none"; $("bBuild").style.display = "none"; $("done").style.display = "";
+    $("hint").style.display = "none";
+    confettiPS.emitter = new B.Vector3(0, top + 4, 17); chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti(); shake(0.3);
+  }
   function enterBuild() {
-    $("goal").style.display = "none"; $("stages").style.display = "none";
+    bd.goal = STAGES[stage].floors; bd.t = 0; bd.streak = 0; bd.perfect = 0; bd.done = false; bd.score = 0;
+    $("goal").style.display = ""; $("stages").style.display = "none";   // 建築でも左上に目標と進み具合
     mode = "build";
     clearDebris(); for (const c of [...bld.cells.values()]) removeCell(c); rebuildCellMesh();
     // ショベルは横へ片づけ、ダンプは帰す
@@ -1393,11 +1446,11 @@ const G = window.G = {};   // 確かめ用の口
     fp.parent = crSeat; fp.fov = 1.25; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = 32;
     $("done").style.display = "none"; $("pedals").style.display = "none"; $("hint").style.display = "";   // クレーンは止めたまま届くのでペダルは隠す
     $("labL").textContent = "フックを動かす ↑遠く ↓近く ←→左右"; $("labR").textContent = "↑ 上げる / ↓ 下げる";
-    nextPiece(); toast("右レバーを↓で下げて、建材を吊ろう");
+    nextPiece(); popup("けんちく スタート！ " + bd.goal + "かいだてを たてよう", "mile");
   }
-  $("bBuild").onclick = () => { $("done").style.display = "none"; $("goal").style.display = "none"; enterBuild(); };
+  $("bBuild").onclick = () => { $("done").style.display = "none"; enterBuild(); };
   $("bNext").onclick = () => { $("done").style.display = "none"; startStage(stage + 1); };
-  $("bAgain").onclick = () => { $("done").style.display = "none"; showStages("ステージを えらぼう"); };
+  $("bAgain").onclick = () => { if (mode === "build") { location.href = location.pathname + "?stage=" + (stage + 1); return; } $("done").style.display = "none"; showStages("ステージを えらぼう"); };
 
   // ================= 毎フレーム =================
   let fpsAvg = 60, msAvg = 16, hudT = 0;
@@ -1477,6 +1530,7 @@ const G = window.G = {};   // 確かめ用の口
       const tstate = { wait: "待っている", leave: "出発！", back: "戻ってくる" }[truck.state];
       if (mode === "build") {
         const nx = bd.plan[bd.step];
+        updateBuildGoal();
         $("hud").textContent =
           `建築 ${bd.floor + 1}階目　${bd.step}/${bd.plan.length}　次: ${nx.kind}\n` +
           `得点 ${bd.score}　高さ ${(bd.floor * FLOOR_H).toFixed(1)}m\n` +
