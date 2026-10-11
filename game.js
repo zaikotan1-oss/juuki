@@ -1309,8 +1309,27 @@ const G = window.G = {};   // 確かめ用の口
     m.rotationQuaternion = m.rotationQuaternion || new B.Quaternion();
     B.Quaternion.FromUnitVectorsToRef(_up, dir.scale(-1 / Math.max(0.01, len)), m.rotationQuaternion);
   }
+  // 外から見ている時、ブームが「カメラ→吊り荷・光る枠」の間に入ったら半透明にする（看板を据える所がブームで隠れた 10-12 評価 b1）
+  let boomFade = 1;
+  function fadeBoom(dt) {
+    let want = 1;
+    if (view === "tp" && !bd.done) {
+      const cam = tp.position, root = crBoomJ.getAbsolutePosition(), tip = crTip.getAbsolutePosition();
+      const goals = [cr.tgt]; if (bd.ghost) goals.push(bd.ghost.position);
+      for (const g of goals) {
+        const d = g.subtract(cam), len = d.length(); d.scaleInPlace(1 / len);
+        for (let i = 0; i <= 12 && want === 1; i++) {
+          const q = B.Vector3.Lerp(root, tip, i / 12), v = q.subtract(cam), k = B.Vector3.Dot(v, d);
+          if (k > 0 && k < len - 1 && v.subtract(d.scale(k)).length() < 1.6) want = 0.25;
+        }
+      }
+    }
+    const nf = B.Scalar.MoveTowards(boomFade, want, 4 * dt);
+    if (nf !== boomFade) { boomFade = nf; for (const c of SEC) { c.t.visibility = nf; c.col.visibility = nf; } }
+  }
   function updateBuild(dt) {
     const L = sticks.L, R = sticks.R;
+    fadeBoom(dt);
     // 左レバー: フックを 前後（遠く・近く）／左右。右レバー: 上げ下げ
     const fwd = L.y + kv("KeyW", "KeyS"), side = L.x + kv("KeyD", "KeyA"), lift = R.y + kv("KeyI", "KeyK");
     const t = cr.tgt, hang = bd.hanging ? bd.hanging.p.size[1] + 0.75 : 0, t0 = t.clone();
