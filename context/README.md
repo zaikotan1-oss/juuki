@@ -54,3 +54,11 @@
 
 ## 公開
 - GitHub Pages https://zaikotan1-oss.github.io/juuki/ （リポジトリ zaikotan1-oss/juuki・2026-10-01 公開）。直したら index.html の `game.js?v=N` を上げて push
+
+## 2026-10-10〜11 見た目の写実化（途中）と読み込み
+- 素材は Poly Haven（CC0）。一覧は assets/CREDITS.md。**素材を足したら `python tools/make_manifest.py`**（読み込み画面の進捗バーが assets/manifest.json の一覧を先に取る）。写真素材を作り直したら make_manifest.py の TEX_V を上げる
+- 容量: 約 59MB（実際の転送は JS の圧縮で約 48MB）。PC で 9 秒
+- タブレットは最初から低画質。自動画質（4 秒ごと・28fps 未満で 高→低→最低/影なし）。前は scene.isReady() が false のままで一度も働いていなかった
+- 評価ループ（3 人・A=平均 8.0 以上かつ全項目 7 以上）: 1 回目 5.2/5.8/5.5 → 4 回目 6.7/6.9/6.7（全員 B）。重機が箱の組み合わせで頭打ち → Sketchfab の CC-BY 重機モデル（Hitachi excavator / Japanese Dump Truck / Kato NK500）を使う方針。本人のログイン待ち
+- 確かめ方の落とし穴: アプリ内ブラウザが裏だと rAF が止まる。WebGPU は手で render すると PBR が黒くなる → 評価画像は `?gl=1` ＋ testMode ＋ canvas.toDataURL を 8821 の受け口へ POST（最初の 1 枚は灰色なので捨て撮り）
+- 塗装に汚れの写真を貼ると引き伸ばされて木目に見えた → 単色＋つや
