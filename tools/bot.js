@@ -156,6 +156,7 @@
     const ym = y.m.position, top = ym.y + 0.5;
     await BOT.hookTo(new B.Vector3(ym.x, Math.max(G.cr.tgt.y, top + 4), ym.z), 0.4);
     for (let i = 0; i < 300 && !bd.hanging; i++) { R.y = -1; await BOT.step(1); } clear();
+    if (!bd.hanging) { BOT.rec("吊れず やり直し"); return true; }
     BOT.rec("吊った");
     // 枠の上まで上げて運び、下ろして手を離す
     const p = bd.hanging.p, hy = p.pos.y + 0.75 + p.size[1] / 2;

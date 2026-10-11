@@ -1080,7 +1080,7 @@ const G = window.G = {};   // 確かめ用の口
     const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
     $("rStars").textContent = stars(n);
     $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.trips}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "") + (first && STAGES[stage + 1] ? `\n🔓 つぎの ステージ: ${STAGES[stage + 1].name}` : "");
-    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = ""; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
+    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = ""; $("bBuild").textContent = "クレーンで 建てる ▶"; $("bNext").textContent = "つぎの ビルへ ▶"; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
     $("done").style.display = "";
     chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
   }
@@ -1223,18 +1223,29 @@ const G = window.G = {};   // 確かめ用の口
   const steelM = paintM("steelM", "paint_primer_diff.jpg", 0.6, 0), slabM = pbrTex("slabM", "concrete_floor_02", 2.5);   // さび止め塗装の鉄骨・コンクリートの床板
   const ghostM = new B.StandardMaterial("ghostM", scene); ghostM.diffuseColor = new B.Color3(0.2, 0.9, 1); ghostM.emissiveColor = new B.Color3(0.1, 0.6, 0.8); ghostM.alpha = 0.35;
   const ghostOk = new B.StandardMaterial("ghostOk", scene); ghostOk.diffuseColor = new B.Color3(0.3, 1, 0.3); ghostOk.emissiveColor = new B.Color3(0.15, 0.8, 0.15); ghostOk.alpha = 0.6;
+  let BUILD_GOAL = 99; const bd_goal = () => BUILD_GOAL;   // 何階だてか（最後の階に看板を足す）。bd より前に呼ばれるので別の変数
+  const signM = (() => {
+    const t = new B.DynamicTexture("signT", { width: 512, height: 200 }, scene, true), c = t.getContext();
+    c.fillStyle = "#1c5fb8"; c.fillRect(0, 0, 512, 200); c.strokeStyle = "#fff"; c.lineWidth = 10; c.strokeRect(8, 8, 496, 184);
+    c.fillStyle = "#fff"; c.font = "bold 92px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("じゅうきビル", 256, 104); t.update();
+    const m = new B.StandardMaterial("signM", scene); m.diffuseTexture = t; m.emissiveColor = new B.Color3(0.35, 0.35, 0.35); return m;
+  })();
   function planFloor(f) {
     const y0 = f * FLOOR_H, L = [];
     for (const x of [-3.8, 3.8]) for (const z of [14.2, 19.8]) L.push({ kind: "柱", size: [0.35, FLOOR_H, 0.35], pos: new B.Vector3(x, y0 + FLOOR_H / 2, z), m: steelM });
     for (const z of [14.2, 19.8]) L.push({ kind: "梁", size: [7.3, 0.4, 0.3], pos: new B.Vector3(0, y0 + FLOOR_H - 0.2, z), m: steelM });
     for (const x of [-3.8, 3.8]) L.push({ kind: "梁", size: [0.3, 0.4, 5.3], pos: new B.Vector3(x, y0 + FLOOR_H - 0.2, SC.z), m: steelM });
     L.push({ kind: "床板", size: [8.2, 0.22, 6.2], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.11, SC.z), m: slabM });
+    if (f === bd_goal() - 1) L.push({ kind: "かんばん", size: [4, 1.6, 0.25], pos: new B.Vector3(0, y0 + FLOOR_H + 0.22 + 0.8, 14.6), m: signM });   // 最後の 1 個は屋上の看板
     return L;
   }
-  const YARD = new B.Vector3(-7.5, 0, 5.5);               // 建材の置き場（クレーンの左前）
+  const YARD = new B.Vector3(-7.5, 0, 10.5);              // 建材の置き場（クレーンの左前）。5.5 では置き場へ戻る 2〜3 秒が待ちになった（10-12 評価 b0）
   const SNAP = { xz: 2.0, y: 1.8 };                       // 枠のこの範囲に入るとピタッとはまる
-  const bd = { floor: 0, step: 0, plan: planFloor(0), placed: [], score: 0, hanging: null, yard: null, snap: null, ghost: null, toastT: 0, near: false, goal: 2, t: 0, streak: 0, perfect: 0, done: false };
+  const bd = { floor: 0, step: 0, plan: planFloor(0), placed: [], score: 0, hanging: null, yard: null, snap: null, ghost: null, toastT: 0, near: false, goal: 2, t: 0, streak: 0, perfect: 0, done: false, windT: 4, gust: 0, gustDir: 0, hookT: 0 };
   const CRANE_SPD = () => (prog.build && prog.build[0] ? 1.4 : 1);   // 建築 1 つめクリア: フックが 1.4 倍速
+  const SNAP_MUL = () => (prog.build && prog.build[1] ? 1.35 : 1);   // 建築 2 つめクリア: はまる範囲が広い
+  const WIND_MUL = () => (prog.build && prog.build[2] ? 0.4 : 1);    // 建築 3 つめクリア: 風に強い
+  const BUILD_UPS = ["クレーンが はやくなる（1.4ばい）", "ぴったりの はんいが ひろがる", "かぜに つよくなる"];
   // 柱と梁は H 形（フランジ 2 枚＋ウェブ 1 枚）。床板はただの板
   function hBeam(name, size) {
     const ax = size.indexOf(Math.max(...size)), L = size[ax], o = [0, 1, 2].filter(i => i !== ax), W = size[o[0]], Hh = size[o[1]], t = 0.035;
@@ -1242,7 +1253,7 @@ const G = window.G = {};   // 確かめ用の口
     return B.Mesh.MergeMeshes([part(W, t, Hh / 2 - t / 2), part(W, t, -(Hh / 2 - t / 2)), part(t, Hh - 2 * t, 0)], true);
   }
   function pieceMesh(p, name) {
-    const m = p.kind === "床板" ? B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene) : hBeam(name, p.size);
+    const m = p.kind === "床板" || p.kind === "かんばん" ? B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene) : hBeam(name, p.size);
     m.material = p.m; shadow.addShadowCaster(m); m.receiveShadows = true; m.rotationQuaternion = B.Quaternion.Identity();
     return m;
   }
@@ -1310,7 +1321,7 @@ const G = window.G = {};   // 確かめ用の口
     ang += side * 5 * csp * dt / nr;                          // 左右は「横に 5m/秒」になるように角度で動かす
     t.x = cr.pos.x + Math.sin(ang) * nr; t.z = cr.pos.z + Math.cos(ang) * nr;
     t.y = B.Scalar.Clamp(t.y + lift * 4 * csp * dt, 0.9 + hang, 45);
-    if (!bd.done) bd.t += dt;
+    if (!bd.done) { bd.t += dt; bd.hookT += dt; }
     const tgtSpeed = B.Vector3.Distance(t, t0) / dt;      // 本人がフックを動かしている速さ
     // 関節は逆算した値へ、重機らしい速さで追いかける
     const s = solveCrane(t, hang);
@@ -1328,6 +1339,12 @@ const G = window.G = {};   // 確かめ用の口
     _tipPrev.copyFrom(_tip); _tipVelPrev.copyFrom(_tipVel);
     const g = 9.81 / Math.max(1, cr.wire);
     cr.swayV.x += (-g * cr.sway.x - ax * 0.35) * dt; cr.swayV.y += (-g * cr.sway.y - az * 0.35) * dt;
+    // 2 かいめからは風: ときどき突風でフックが横に押される（同じ繰り返しにしないため 10-12 評価 b0）
+    if (bd.floor >= 1 && !bd.done) {
+      bd.windT -= dt;
+      if (bd.windT <= 0) { bd.windT = 7 + Math.random() * 6; bd.gust = 1.2; bd.gustDir = Math.random() * 6.28; popup("💨 かぜだ！ ゆれに 気をつけて", "mile"); chime([12, 7], 0.09, 0.08); }
+      if (bd.gust > 0) { bd.gust -= dt; const w = 2.2 * WIND_MUL() * Math.sin(Math.min(1, bd.gust) * Math.PI); cr.swayV.x += Math.cos(bd.gustDir) * w * dt; cr.swayV.y += Math.sin(bd.gustDir) * w * dt; }
+    }
     cr.swayV.scaleInPlace(Math.max(0, 1 - 2.6 * dt));
     cr.sway.addInPlace(cr.swayV.scale(dt));
     const sl = cr.sway.length(), smax = Math.min(1.2, cr.wire * 0.15); if (sl > smax) cr.sway.scaleInPlace(smax / sl);
@@ -1343,7 +1360,7 @@ const G = window.G = {};   // 確かめ用の口
     if (!bd.hanging && !bd.snap && bd.yard) {
       const m = bd.yard.m; m.computeWorldMatrix(true);
       const top = m.getBoundingInfo().boundingBox.maximumWorld.y;
-      if (Math.hypot(hp.x - m.position.x, hp.z - m.position.z) < 1.8 && hp.y - 0.95 < top + 1.2) { bd.hanging = bd.yard; bd.yard = null; thud(0.3, 1200); chime([7], 0.1, 0.1); popup("つった！", "load"); }
+      if (Math.hypot(hp.x - m.position.x, hp.z - m.position.z) < 1.8 && hp.y - 0.95 < top + 1.2) { bd.hanging = bd.yard; bd.yard = null; bd.hookT = 0; thud(0.3, 1200); chime([7], 0.1, 0.1); popup("つった！", "load"); }
     }
     bd.near = false;
     if (bd.hanging) {
@@ -1352,14 +1369,15 @@ const G = window.G = {};   // 確かめ用の口
       B.Quaternion.SlerpToRef(h.m.rotationQuaternion, B.Quaternion.Identity(), Math.min(1, dt * 3), h.m.rotationQuaternion);   // 寝ていた柱が起き上がる
       // 光る枠の近くまで運ぶとピタッとはまる。横は近いのに高さが合っていない時は枠が緑になって知らせる
       const d = Math.hypot(h.m.position.x - h.p.pos.x, h.m.position.z - h.p.pos.z), dy = h.m.position.y - h.p.pos.y;
-      bd.near = d < SNAP.xz; bd.dist = d; bd.dy = dy;
+      bd.near = d < SNAP.xz * SNAP_MUL(); bd.dist = d; bd.dy = dy;
       // 通り過ぎただけでははまらない。レバーを離して止めた時（またはほぼ真上でゆっくり）にはまる
-      if (d < SNAP.xz && Math.abs(dy) < SNAP.y && (tgtSpeed < 0.3 || (d < 0.5 && Math.abs(dy) < 0.5 && tgtSpeed < 2.5))) {
+      if (d < SNAP.xz * SNAP_MUL() && Math.abs(dy) < SNAP.y * SNAP_MUL() && (tgtSpeed < 0.3 || (d < 0.5 && Math.abs(dy) < 0.5 && tgtSpeed < 2.5))) {
         let pts = Math.max(40, Math.round(100 - d * 14 - Math.abs(dy) * 8));   // 25/15 では真上で止めても 77〜80 で「ぴったり」がほぼ出なかった（10-12 台本）
         const good = pts >= 85; bd.streak = good ? bd.streak + 1 : 0; if (good) bd.perfect++;
         if (bd.streak >= 2) pts += 20 * (bd.streak - 1);          // 続けてぴったりだと上乗せ
+        const quick = bd.hookT < 9; if (quick) pts += 30;          // 吊ってから 9 秒以内に置けたら上乗せ
         bd.score += pts; bd.snap = { m: h.m, from: h.m.position.clone(), q: h.m.rotationQuaternion.clone(), to: h.p.pos, t: 0, good }; bd.hanging = null;
-        popup((good ? "ぴったり！ +" : "はまった！ +") + pts + (bd.streak >= 2 ? `（${bd.streak}れんぞく）` : ""), good ? "mid" : "");
+        popup((good ? "ぴったり！ +" : "はまった！ +") + pts + (bd.streak >= 2 ? `（${bd.streak}れんぞく）` : "") + (quick ? " ⚡はやい！" : ""), good ? "mid" : "");
       }
     }
     if (bd.snap) {
@@ -1426,13 +1444,14 @@ const G = window.G = {};   // 確かめ用の口
     const mm = Math.floor(bd.t / 60), ss = String(Math.floor(bd.t % 60)).padStart(2, "0");
     $("done").querySelector(".rT").textContent = "ビル かんせい！";
     $("rStars").textContent = stars(n);
-    $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${bd.goal * bd.plan.length}　とくてん ${bd.score}` + (first && stage === 0 ? "\n🔓 パワーアップ: クレーンが はやくなる" : "");
-    $("bNext").style.display = "none"; $("bBuild").style.display = "none"; $("done").style.display = "";
+    const total = bd.placed.length;
+    $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${total}　とくてん ${bd.score}` + (first && BUILD_UPS[stage] ? `\n🔓 パワーアップ: ${BUILD_UPS[stage]}` : "") + (STAGES[stage + 1] && prog.stars[stage] ? `\n▶ つぎは ${STAGES[stage + 1].name}を こわそう` : "");
+    $("bNext").textContent = "つぎの ステージ ▶"; $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").textContent = "もういちど 建てる"; $("bBuild").style.display = ""; $("done").style.display = "";
     $("hint").style.display = "none";
     confettiPS.emitter = new B.Vector3(0, top + 4, 17); chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti(); shake(0.3);
   }
   function enterBuild() {
-    bd.goal = STAGES[stage].floors; bd.t = 0; bd.streak = 0; bd.perfect = 0; bd.done = false; bd.score = 0;
+    bd.goal = STAGES[stage].floors; bd.t = 0; bd.streak = 0; bd.perfect = 0; bd.done = false; bd.score = 0; bd.windT = 4; BUILD_GOAL = bd.goal; bd.plan = planFloor(0);
     $("goal").style.display = ""; $("stages").style.display = "none";   // 建築でも左上に目標と進み具合
     mode = "build";
     clearDebris(); for (const c of [...bld.cells.values()]) removeCell(c); rebuildCellMesh();
@@ -1443,13 +1462,14 @@ const G = window.G = {};   // 確かめ用の口
     cr.pos.set(0, 0, 3); cr.heading = 0; cr.sway.set(0, 0); cr.swayV.set(0, 0); tipInit = false;
     cr.tgt.set(YARD.x, 6, YARD.z);                           // 最初は置き場の真上。あとは「下げる」だけで吊れる
     const s = solveCrane(cr.tgt, 0); cr.swing = s.swing; cr.luff = s.luff; cr.ext = s.ext; cr.wire = s.wire;
-    fp.parent = crSeat; fp.fov = 1.25; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = 32;
+    fp.parent = crSeat; fp.fov = 1.25; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35;
+    if (view === "fp") $("bView").onclick();   // 建築は外からが最初（運転席からだとブームと柱でフックが隠れた 10-12 評価 b0）
     $("done").style.display = "none"; $("pedals").style.display = "none"; $("hint").style.display = "";   // クレーンは止めたまま届くのでペダルは隠す
     $("labL").textContent = "フックを動かす ↑遠く ↓近く ←→左右"; $("labR").textContent = "↑ 上げる / ↓ 下げる";
     nextPiece(); popup("けんちく スタート！ " + bd.goal + "かいだてを たてよう", "mile");
   }
-  $("bBuild").onclick = () => { $("done").style.display = "none"; enterBuild(); };
-  $("bNext").onclick = () => { $("done").style.display = "none"; startStage(stage + 1); };
+  $("bBuild").onclick = () => { if (mode === "build") { location.href = location.pathname + "?build&stage=" + (stage + 1); return; } $("done").style.display = "none"; enterBuild(); };
+  $("bNext").onclick = () => { if (mode === "build") { location.href = location.pathname + "?stage=" + (stage + 2); return; } $("done").style.display = "none"; startStage(stage + 1); };
   $("bAgain").onclick = () => { if (mode === "build") { location.href = location.pathname + "?stage=" + (stage + 1); return; } $("done").style.display = "none"; showStages("ステージを えらぼう"); };
 
   // ================= 毎フレーム =================
