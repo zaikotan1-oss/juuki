@@ -75,3 +75,5 @@
   → 軽い版 LITE（タッチ端末の既定、`?full` で元・`?lite` で PC でも試せる）: 画像は assets/lite（tex 512・模型 256・背景 1024）、影 1024、仕上げの HDR なし、環境 128。
   画像の GPU 見積り 262MB → 約 65MB。読み込みも 50MB → 24MB（index.html の読み込み係が lite の一覧だけ読む）。
   画像を作り直したら assets/lite も作り直す（作り方は 10-11 の会話の通り PIL で縮小）
+- 10-11 追記3: 軽い版でも iPhone で「起動できませんでした: Unable to create texture」。推測（裏付けなし）: 直前の GPU 停止のあと Safari がこのページの WebGL を止めている／環境 HDR の下ごしらえ（float の描画先）が重い。
+  → 軽い版は HDRCubeTexture を 64・prefilterOnLoad なし。起動失敗の文に [GPU可/GPU停止中/GPUなし] を付け、可でなければ「タブを閉じて新しいタブで」と出す

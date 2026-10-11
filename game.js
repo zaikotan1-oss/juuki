@@ -59,7 +59,7 @@ const G = window.G = {};   // 確かめ用の口
   // ---- 空と光: Poly Haven の HDRI「construction_yard」（CC0）----
   // 光の当たり方は HDR（256 の小さな立方体で十分）、背景は軽い JPG（HDR を 1024 の立方体にすると iPad のメモリが苦しい）
   const ENV_ROT = Number(Q.get("envrot") || -2.11);   // 写真を回して、太陽がプレイヤーの斜め後ろから当たる向きに
-  const env = new B.HDRCubeTexture("assets/hdri/construction_yard_2k.hdr", scene, LITE ? 128 : 256, false, true, false, true);
+  const env = new B.HDRCubeTexture("assets/hdri/construction_yard_2k.hdr", scene, LITE ? 64 : 256, false, true, false, !LITE);   // 軽い版は読み込み時の下ごしらえ（float の描画先を何枚も作る）を省く
   env.rotationY = ENV_ROT;
   scene.environmentTexture = env; scene.environmentIntensity = 1.0;
   const dome = new B.PhotoDome("bg", AS + "hdri/construction_yard_bg3.jpg", { resolution: 64, size: 1600 }, scene);
@@ -1431,4 +1431,9 @@ const G = window.G = {};   // 確かめ用の口
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
-})().catch(e => { console.error(e); const m = $("msg"); m.style.display = ""; m.textContent = "起動できませんでした: " + e.message; });
+})().catch(e => {
+  console.error(e); const m = $("msg"); m.style.display = "";
+  // GPU が使えない状態（前に GPU のメモリ不足で止まった後、Safari がこのページの 3D を止めていることがある）かどうかも出す
+  let lost = "?"; try { const g = document.querySelector("canvas").getContext("webgl2"); lost = g ? (g.isContextLost() ? "GPU停止中" : "GPU可") : "GPUなし"; } catch (_) {}
+  m.textContent = "起動できませんでした: " + e.message + " [" + lost + "]" + (lost !== "GPU可" ? "\nこのタブを閉じて（スワイプで消して）、新しいタブで開き直してください" : "");
+});
