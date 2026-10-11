@@ -15,7 +15,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
   font-family:"Hiragino Sans","BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif;
   user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;outline:none}
-#hud{position:absolute;left:calc(10px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));
+#hud{display:none;position:absolute;left:calc(10px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));
   color:#fff;font-size:14px;line-height:1.45;background:#0008;padding:6px 10px;border-radius:10px;pointer-events:none;white-space:pre}
 #btns{position:absolute;right:calc(10px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:70vw}
 .btn{border:0;border-radius:12px;background:#fffe;color:#223;font:inherit;font-weight:bold;font-size:16px;padding:10px 14px;
@@ -35,7 +35,19 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 #pFwd{background:#8fe08f} #pBack{background:#f4b2a0}
 #pLeft,#pRight{width:66px;height:80px;font-size:28px}
 #done{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%);color:#223;font-size:30px;font-weight:bold;background:#ffd23f;padding:18px 30px;border-radius:18px;text-align:center;box-shadow:0 6px 0 #0005;pointer-events:none}
-#done .btn{pointer-events:auto;margin-top:12px;font-size:22px;padding:12px 22px}
+#done .btn{pointer-events:auto;margin:12px 6px 0;font-size:20px;padding:12px 18px}
+#done .rT{font-size:32px} #rStars{font-size:46px;color:#d9480f;letter-spacing:6px;text-shadow:0 2px 0 #fff8} #rInfo{font-size:18px;white-space:pre-line;margin-top:4px}
+#goal{position:absolute;left:calc(10px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));width:min(44vw,380px);color:#fff;background:#000a;border-radius:12px;padding:8px 10px;pointer-events:none;font-weight:bold}
+#gStage{font-size:12px;opacity:.8} #gText{font-size:17px;line-height:1.3;margin:2px 0 6px} #gScore{position:absolute;right:10px;top:6px;font-size:15px;color:#ffd23f}
+.gbar{position:relative;height:18px;background:#fff3;border-radius:9px;overflow:hidden;margin-top:4px} .gbar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(#ffcf3f,#f08c00);transition:width .3s}
+.gbar.tr i{background:linear-gradient(#8fe08f,#2f9e44)} .gbar span{position:relative;font-size:12px;padding-left:8px;line-height:18px;text-shadow:0 1px 2px #000}
+#pops{position:absolute;left:50%;top:30%;width:0;height:0;pointer-events:none}
+.pop{position:absolute;left:0;top:0;transform:translate(-50%,0);white-space:nowrap;color:#fff;font-weight:900;font-size:28px;text-shadow:0 3px 0 #000a,0 0 8px #000;animation:popup 1.3s ease-out forwards}
+.pop.mid{font-size:36px;color:#ffd23f} .pop.big{font-size:46px;color:#ff922b} .pop.mile{font-size:34px;color:#8ce99a;top:60px} .pop.load{font-size:26px;color:#8ce99a;top:110px}
+@keyframes popup{0%{opacity:0;transform:translate(-50%,20px) scale(.6)}15%{opacity:1;transform:translate(-50%,0) scale(1.15)}30%{transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-70px)}}
+#stages{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);background:#ffd23fee;border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 6px 0 #0005;width:min(86vw,460px)}
+.stTitle{font-size:26px;font-weight:900;color:#223;text-align:center} .stBtn{font-size:20px;text-align:left} .stBtn.locked{opacity:.55}
+.stUp{font-size:14px;color:#223;white-space:pre-line;font-weight:bold}
 #toast{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%);color:#fff;font-size:26px;font-weight:bold;background:#0009;padding:10px 22px;border-radius:14px;pointer-events:none;white-space:nowrap}
 #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(36px + env(safe-area-inset-bottom));max-width:46vw;text-align:center;color:#fff;font-size:21px;font-weight:bold;background:#000b;padding:10px 16px;border-radius:14px;pointer-events:none}
 #msg .lbar{width:260px;height:10px;background:#fff3;border-radius:5px;margin:10px auto 6px;overflow:hidden}#msg .lbar i{display:block;height:100%;background:#7cd67c}#msg small{font-size:14px;opacity:.85}
@@ -55,7 +67,11 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 <div id="pedals"><button class="pd" id="pLeft">◀</button><button class="pd" id="pBack">バック</button><button class="pd" id="pFwd">アクセル</button><button class="pd" id="pRight">▶</button></div>
 <div class="stick" id="stR"><div class="lab" id="labR"></div><div class="knob"></div></div>
 <div id="msg">読み込み中…</div>
-<div id="done" style="display:none">さら地になりました！<br><button class="btn" id="bBuild">クレーンで建てる ▶</button></div>
+<div id="done" style="display:none"><div class="rT">さら地 かんせい！</div><div id="rStars"></div><div id="rInfo"></div>
+<div class="rBtns"><button class="btn" id="bNext">つぎの ビルへ ▶</button><button class="btn" id="bBuild">クレーンで 建てる ▶</button><button class="btn" id="bAgain">ステージを えらぶ</button></div></div>
+<div id="goal"><div id="gStage"></div><div id="gText">読み込み中…</div><div class="gbar"><i id="gBld"></i><span id="gBldT"></span></div><div class="gbar tr"><i id="gTr"></i><span id="gTrT"></span></div><div id="gScore"></div></div>
+<div id="pops"></div>
+<div id="stages" style="display:none"></div>
 <div id="toast" style="display:none"></div>
 <div id="hint" style="display:none"></div>
 <script>
@@ -86,7 +102,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "準備中…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=52"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=53"]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();

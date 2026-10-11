@@ -14,7 +14,7 @@ const MAX_DEBRIS = 500;    // 破片の上限。超えたら古い物から消�
 const CARVE_R = 0.9;       // バケットの当たり点ごとの削る半径（10-11 本人「ちょっとぶつかっただけで崩れるくらい甘く」）
 const BUCKET = { W: 1.9, H: 1.05, L: 1.55 };   // 本人「バケットを大きく」で 1.1×0.7×1.25 から拡大
 const HOLD_MAX = 40;       // バケットに一度に掴める数
-const TRUCK_CAP = 40;      // ダンプ 1 台に積める量（小さい破片 1・2m の板 4 くらい。units() で数える）
+const TRUCK_CAP = 50;      // ダンプ 1 台に積める量（units() で数える）。すくう 2 回で出発するくらい（10-12 評価 r0: 40 は台本が下手で届かず、24 は毎回出発して待ちが多い）
 const G = window.G = {};   // 確かめ用の口
 
 (async function main() {
@@ -171,7 +171,20 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ================= ビル（格子） =================
-  const BW = 8, BD = 6, FLOORS = 3, FH = 3;      // 建物の大きさ(m)
+  const BW = 8, BD = 6, FH = 3;      // 建物の大きさ(m)
+  // ステージ: 階の数が増える。クリアすると強化が開く（10-12 評価 r0「ステージ・強化が無い」）
+  const STAGES = [
+    { floors: 2, name: "小さな ビル", star3: 150, star2: 270 },
+    { floors: 3, name: "3かいだての ビル", star3: 240, star2: 420 },
+    { floors: 4, name: "4かいだての ビル", star3: 330, star2: 560 }];
+  const UPGRADES = ["うでが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
+  const prog = (() => { try { return JSON.parse(localStorage.getItem("juuki_prog")) || { stars: [] }; } catch (e) { return { stars: [] }; } })();
+  const saveProg = () => { try { localStorage.setItem("juuki_prog", JSON.stringify(prog)); } catch (e) {} };
+  let stage = Math.min(STAGES.length - 1, Math.max(0, Number(Q.get("stage") || 0) - 1));
+  let FLOORS = STAGES[stage].floors;
+  const POW = () => (prog.stars[0] ? 1.3 : 1);          // 1 面クリア: 腕が 1.3 倍速
+  const BIGB = () => !!prog.stars[1];                    // 2 面クリア: バケットが大きい
+  const FASTT = () => (prog.stars[2] ? 1.6 : 1);         // 3 面クリア: ダンプが速い
   const bld = { cells: new Map(), origin: new B.Vector3(-BW / 2, 0, 14) };
   const SITE = { x0: bld.origin.x - 3, x1: bld.origin.x + BW + 3, z0: bld.origin.z - 3, z1: bld.origin.z + BD + 3 };   // さら地にする範囲
   const cellShape = new B.PhysicsShapeBox(B.Vector3.Zero(), B.Quaternion.Identity(), new B.Vector3(CELL, CELL, CELL), scene);
@@ -370,6 +383,8 @@ const G = window.G = {};   // 確かめ用の口
   function clearDebris() { for (const d of debris) { physOff(d); d.m.dispose(); } debris.length = 0; }
   function carvedToDebris(c, kick) {
     const k = KIND_COL[c.kind];
+    // 半分は粉々（粉塵だけ・瓦礫を残さない）。全部を瓦礫にすると 1 棟のすくう回数が多すぎた（10-12 評価 r0 テンポ）
+    if (Math.random() < 0.5) { removeCell(c); return; }
     spawnDebris(c.p, new B.Vector3(CELL * 0.9, CELL * (0.7 + Math.random() * 0.25), CELL * 0.9), k,
       kick.add(new B.Vector3((Math.random() - 0.5), Math.random() * 0.8, (Math.random() - 0.5))));
     removeCell(c);
@@ -387,7 +402,7 @@ const G = window.G = {};   // 確かめ用の口
       for (const c of list) { mn.minimizeInPlace(c.p); mx.maximizeInPlace(c.p); }
       const size = mx.subtract(mn).addInPlaceFromFloats(CELL, CELL, CELL).scaleInPlace(0.94);
       const k = KIND_COL[list[0].kind];
-      spawnDebris(mn.add(mx).scaleInPlace(0.5), size, k, null);
+      const ctr = mn.add(mx).scaleInPlace(0.5); spawnDebris(ctr, size, k, null); if (groups.size <= 8 || Math.random() < 0.4) dust(ctr, 25);
       for (const c of list) removeCell(c);
     }
     return groups.size;
@@ -727,12 +742,103 @@ const G = window.G = {};   // 確かめ用の口
     if (ac && ac.state !== "running") ac.resume();
   }
   document.addEventListener("visibilitychange", () => { if (ac && !document.hidden) ac.resume(); });
+  // ---- 手ごたえ（10-12 評価 r0「崩れた時に音 1 種だけ・揺れ・粉塵・数字が無い」）----
+  let master = null, nbuf = null;
+  const OUT = () => { if (!master) { master = ac.createDynamicsCompressor(); master.connect(ac.destination); } return master; };
+  const NB = () => { if (!nbuf) { nbuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = nbuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } return nbuf; };
+  let crashT = 0;
+  // 崩れる音: 低いドーン＋ザザッ（帯域ノイズ）＋ガラガラ（小石の当たる音を時間差で）。pw 0〜1
+  function crash(pw) {
+    if (!ac || ac.state !== "running") return;
+    const t = ac.currentTime; if (t - crashT < 0.07) return; crashT = t;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.55);
+    g.gain.setValueAtTime(Math.min(0.75, 0.12 + pw * 0.6), t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    o.connect(g).connect(OUT()); o.start(t); o.stop(t + 0.65);
+    const n = ac.createBufferSource(), f = ac.createBiquadFilter(), g2 = ac.createGain();
+    n.buffer = NB(); f.type = "bandpass"; f.frequency.value = 700 + Math.random() * 400; f.Q.value = 0.6;
+    g2.gain.setValueAtTime(Math.min(0.5, 0.08 + pw * 0.4), t); g2.gain.exponentialRampToValueAtTime(0.001, t + 0.35 + pw * 0.4);
+    n.connect(f).connect(g2).connect(OUT()); n.start(t, Math.random() * 0.4); n.stop(t + 0.8);
+    const k = Math.min(16, 2 + Math.round(pw * 14));
+    for (let i = 0; i < k; i++) {
+      const st = t + 0.04 + Math.random() * (0.2 + pw * 0.7), c = ac.createBufferSource(), hf = ac.createBiquadFilter(), cg = ac.createGain();
+      c.buffer = NB(); hf.type = "bandpass"; hf.frequency.value = 1500 + Math.random() * 2800; hf.Q.value = 5;
+      cg.gain.setValueAtTime(0.1 + Math.random() * 0.14, st); cg.gain.exponentialRampToValueAtTime(0.001, st + 0.045);
+      c.connect(hf).connect(cg).connect(OUT()); c.start(st, Math.random() * 0.9); c.stop(st + 0.05);
+    }
+  }
+  // ごほうびの音（ドレミ）。notes は半音の数（0=ド）
+  function chime(notes, step = 0.11, vol = 0.16) {
+    if (!ac || ac.state !== "running") return;
+    const t = ac.currentTime;
+    notes.forEach((n, i) => {
+      const o = ac.createOscillator(), g = ac.createGain(), st = t + i * step;
+      o.type = "triangle"; o.frequency.value = 523.25 * Math.pow(2, n / 12);
+      g.gain.setValueAtTime(0.0001, st); g.gain.linearRampToValueAtTime(vol, st + 0.015); g.gain.exponentialRampToValueAtTime(0.001, st + 0.5);
+      o.connect(g).connect(OUT()); o.start(st); o.stop(st + 0.55);
+    });
+  }
+  // 画面の揺れ（trauma 方式: 足して、2 乗で揺らし、すぐ減る。?noshake で無し）
+  let trauma = 0;
+  const shake = (a) => { if (!Q.has("noshake")) trauma = Math.min(1, trauma + a); };
+  // 粉塵と小さな破片（使い回しの粒の箱）
+  const dustTex = (() => {
+    const t = new B.DynamicTexture("dustT", 64, scene, false), c = t.getContext(), g = c.createRadialGradient(32, 32, 2, 32, 32, 32);
+    g.addColorStop(0, "rgba(255,255,255,0.95)"); g.addColorStop(0.45, "rgba(255,255,255,0.4)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    c.fillStyle = g; c.fillRect(0, 0, 64, 64); t.update(); t.hasAlpha = true; return t;
+  })();
+  // 粒は地面の後に描く（地面は半透明の重ね貼りなので、同じ組だと粒の上に地面が塗られて瓦礫の形だけ粉塵色に見えた 10-12）
+  scene.setRenderingAutoClearDepthStencil(1, false, false, false);
+  const dustPool = []; let dustI = 0;
+  for (let i = 0; i < (LITE ? 4 : 6); i++) {
+    const ps = new B.ParticleSystem("dust" + i, LITE ? 160 : 300, scene);
+    ps.particleTexture = dustTex; ps.emitter = new B.Vector3(0, -50, 0);
+    ps.minEmitBox = new B.Vector3(-0.5, -0.4, -0.5); ps.maxEmitBox = new B.Vector3(0.5, 0.4, 0.5);
+    ps.color1 = new B.Color4(0.6, 0.55, 0.48, 0.42); ps.color2 = new B.Color4(0.5, 0.46, 0.4, 0.34); ps.colorDead = new B.Color4(0.56, 0.52, 0.46, 0);
+    ps.addSizeGradient(0, 0.8, 1.4); ps.addSizeGradient(1, 2.6, 4.2);
+    ps.minLifeTime = 0.9; ps.maxLifeTime = 2.0; ps.emitRate = 0; ps.manualEmitCount = 0;
+    ps.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ps.gravity = new B.Vector3(0, 0.2, 0);
+    ps.direction1 = new B.Vector3(-1, 0.2, -1); ps.direction2 = new B.Vector3(1, 1.0, 1); ps.minEmitPower = 0.3; ps.maxEmitPower = 1.4;
+    ps.minAngularSpeed = -0.5; ps.maxAngularSpeed = 0.5; ps.minInitialRotation = 0; ps.maxInitialRotation = 6.28;
+    const ch = new B.ParticleSystem("chips" + i, LITE ? 60 : 120, scene);
+    ch.particleTexture = dustTex; ch.emitter = ps.emitter; ch.minEmitBox = ps.minEmitBox; ch.maxEmitBox = ps.maxEmitBox;
+    ch.color1 = new B.Color4(0.32, 0.3, 0.27, 1); ch.color2 = new B.Color4(0.5, 0.47, 0.42, 1); ch.colorDead = new B.Color4(0.3, 0.28, 0.25, 0.6);
+    ch.minSize = 0.06; ch.maxSize = 0.16; ch.minLifeTime = 0.5; ch.maxLifeTime = 1.0; ch.emitRate = 0; ch.manualEmitCount = 0;
+    ch.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ch.gravity = new B.Vector3(0, -9.8, 0);
+    ch.direction1 = new B.Vector3(-1.5, 1, -1.5); ch.direction2 = new B.Vector3(1.5, 3, 1.5); ch.minEmitPower = 1; ch.maxEmitPower = 3;
+    ps.renderingGroupId = ch.renderingGroupId = 1; ps.start(); ch.start(); dustPool.push([ps, ch]);
+  }
+  function dust(p, n) {
+    const [ps, ch] = dustPool[dustI++ % dustPool.length];
+    const e = p.clone(); ps.emitter = e; ch.emitter = e;
+    ps.manualEmitCount = Math.min(LITE ? 50 : 100, Math.round(n)); ch.manualEmitCount = Math.min(LITE ? 20 : 40, Math.round(n * 0.5));
+  }
+  // 浮かぶ数字（崩れた量を 0.5 秒ためて 1 回出す）と得点
+  let score = 0, combo = 0, comboT = 0, comboP = null, lastPctStep = 0, lastDustT = -1;
+  function popup(text, cls) {
+    const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text;
+    $("pops").appendChild(el); setTimeout(() => el.remove(), 1300);
+  }
+  function broke(n, p, big) {      // 格子が n 個こわれた（p はその辺り）
+    combo += n; comboT = 0.5; comboP = p; score += n;
+    if (big || playT - lastDustT > 0.15) { lastDustT = playT; dust(p, (big ? 30 : 6) + n * (big ? 8 : 3)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
+    crash(Math.min(1, (big ? 0.35 : 0.05) + n * (big ? 0.06 : 0.03)));
+    shake(Math.min(0.6, (big ? 0.25 : 0.04) + n * (big ? 0.03 : 0.012)));
+  }
+  function updateCombo(dt) {
+    if (comboT <= 0) return;
+    comboT -= dt; if (comboT > 0) return;
+    if (combo >= 6) popup((combo >= 60 ? "ドドーン!! " : combo >= 25 ? "ガラガラ！ " : "ゴロッ ") + "+" + combo, combo >= 60 ? "big" : combo >= 25 ? "mid" : "");
+    combo = 0;
+    const pct = Math.floor((1 - bld.cells.size / bld.total) * 4);   // 25% ごとの合図
+    if (pct > lastPctStep && pct < 4) { lastPctStep = pct; chime([0, 4, 7]); popup(pct * 25 + "% こわした！", "mile"); }
+  }
   function thud(v, freq) {
     if (!ac || ac.state !== "running") return;
     const n = ac.createBufferSource(), len = ac.sampleRate * 0.25, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
     const f = ac.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = freq || 500; const g = ac.createGain(); g.gain.value = Math.min(0.6, v);
-    n.buffer = buf; n.connect(f).connect(g).connect(ac.destination); n.start();
+    n.buffer = buf; n.connect(f).connect(g).connect(OUT()); n.start();
   }
 
   // ================= 壊す =================
@@ -747,11 +853,11 @@ const G = window.G = {};   // 確かめ用の口
       carvedToDebris(c, c.p.subtract(p).normalize().scale(2.0)); n++;
       chainAbove(c.x, c.y, c.z, 0);
     }
-    if (n) { dirty = true; thud(0.2 + n * 0.04); }
+    if (n) { dirty = true; broke(n, p, false); }
     return n;
   }
   // 連鎖: 削った格子の真上と斜め上は、少し遅れて確率で崩れる（上へ 5 段まで）。「ガラガラ崩れていく」感じ
-  const chain = [];
+  const chain = []; let chainLast = null;
   function chainAbove(x, y, z, depth) {
     if (depth >= 5) return;
     for (const [dx, dz, pr] of [[0, 0, 0.75], [1, 0, 0.3], [-1, 0, 0.3], [0, 1, 0.3], [0, -1, 0.3]])
@@ -763,10 +869,10 @@ const G = window.G = {};   // 確かめ用の口
       const q = chain[i]; q.t -= dt; if (q.t > 0) continue;
       chain.splice(i, 1);
       const c = bld.cells.get(key(q.x, q.y, q.z)); if (!c) continue;
-      carvedToDebris(c, new B.Vector3((Math.random() - 0.5) * 1.5, -0.5, (Math.random() - 0.5) * 1.5)); n++;
+      carvedToDebris(c, new B.Vector3((Math.random() - 0.5) * 1.5, -0.5, (Math.random() - 0.5) * 1.5)); n++; chainLast = q;
       chainAbove(q.x, q.y, q.z, q.depth);
     }
-    if (n) { dirty = true; thud(0.12 + n * 0.03, 300); }
+    if (n) { dirty = true; broke(n, cellWorld(chainLast.x, chainLast.y, chainLast.z), false); }
   }
 
   // ================= 掴む・あける =================
@@ -781,8 +887,19 @@ const G = window.G = {};   // 確かめ用の口
   const SLOTS = [];
   for (let k = 0; k < 3; k++) for (const z of [0.3, 0.75, 1.2]) for (const x of [-0.63, -0.21, 0.21, 0.63]) SLOTS.push(new B.Vector3(x, -0.25 - k * 0.38, z));
   for (const [x, z] of [[-0.21, 0.55], [0.21, 0.55], [-0.21, 1.0], [0.21, 1.0]]) SLOTS.push(new B.Vector3(x, -1.32, z));
-  const slotUsed = new Array(SLOTS.length).fill(null);
-  function updateHeld(dt) {   // 掴んだ破片を置き場へすっと寄せる
+  const slotUsed = new Array(SLOTS.length).fill(null), BASE_SLOTS = SLOTS.length;
+  const flying = [];
+  function updateFly(dt) {
+    for (let i = flying.length - 1; i >= 0; i--) {
+      const f = flying[i]; if (f.d.held || f.d.ag || f.d.m.isDisposed()) { flying.splice(i, 1); continue; }
+      f.t = Math.min(f.T, f.t + dt);
+      const m = f.d.m; m.position.set(f.p0.x + f.v.x * f.t, f.p0.y + f.v.y * f.t - 4.905 * f.t * f.t, f.p0.z + f.v.z * f.t);
+      m.rotationQuaternion.multiplyInPlace(B.Quaternion.FromEulerAngles(f.spin.x * dt, f.spin.y * dt, f.spin.z * dt));
+      if (f.t >= f.T) { flying.splice(i, 1); physOn(f.d, new B.Vector3(f.v.x, f.v.y - 9.81 * f.t, f.v.z)); f.d.restT = 0; if (!flying.length) { crash(0.25); dust(bedCenter().addInPlaceFromFloats(0, 0.6, 0), 14); } }   // 最後の 1 個が荷台に入る時にザザッ
+    }
+  }
+  function updateHeld(dt) {
+    updateFly(dt);   // 掴んだ破片を置き場へすっと寄せる
     const a = Math.min(1, dt * 12);
     for (let i = 0; i < SLOTS.length; i++) { const d = slotUsed[i]; if (d) B.Vector3.LerpToRef(d.m.position, SLOTS[i], a, d.m.position); }
   }
@@ -790,7 +907,7 @@ const G = window.G = {};   // 確かめ用の口
     const up = bucketOpenUp();
     // すくう動き（バケットを巻き込んでいる最中）は、口の前の広めの範囲も掴む。板で押しのけてしまい 1 個しか入らなかったため
     const curling = ex.bucket > lastBucket + 1e-4 && up > -0.6, opening = ex.bucket < lastBucket - 1e-4; lastBucket = ex.bucket;
-    if ((up > 0.35 || curling) && held < HOLD_MAX) {
+    if ((up > 0.35 || curling) && held < SLOTS.length) {
       const m = curling ? 0.55 : 0.1;
       bucketJ.getWorldMatrix().invertToRef(_inv);
       const { W, H, L } = BUCKET;
@@ -802,7 +919,7 @@ const G = window.G = {};   // 確かめ用の口
           physOff(d); d.m.setParent(bucketJ); d.held = true; held++; d.slot = si; slotUsed[si] = d;
           // 大きすぎる塊はバケットに入る大きさに割れた扱い（離した後もこの大きさ）
           d.m.scaling.set(Math.min(d.m.scaling.x, 0.44), Math.min(d.m.scaling.y, 0.42), Math.min(d.m.scaling.z, 0.44));
-          if (held >= HOLD_MAX) break;
+          if (held >= SLOTS.length) break;
         }
       }
     } else if (opening && up < 0.1 && held) {
@@ -818,16 +935,21 @@ const G = window.G = {};   // 確かめ用の口
         const sp = SLOTS[si];
         const mouth = B.Vector3.TransformCoordinates(new B.Vector3(sp.x, -BUCKET.H - 0.3 - (si % 3) * 0.12, sp.z), bucketJ.getWorldMatrix());
         d.m.position.copyFrom(mouth);
-        // 荷台の近く（6.5m 以内）で開いたら、荷台の中のばらけた場所に落ちる速さで投げる（補助）
+        // 荷台の近く（9m 以内。6.5m では運転台の前で開くと外れた 10-12）で開いたら、荷台の中のばらけた場所に落ちる速さで投げる（補助）
         const p = d.m.position, v = new B.Vector3(0, 0, 0);
         if (truck.state === "wait") {
           const m = truck.root.computeWorldMatrix(true);
           const tgt = B.Vector3.TransformCoordinates(new B.Vector3((Math.random() - 0.5) * 1.5, BED.y0 + 0.35, BED.z0 + 0.6 + Math.random() * (BED.z1 - BED.z0 - 1.2)), m);
-          if (Math.hypot(p.x - tgt.x, p.z - tgt.z) < 6.5) {
+          if (Math.hypot(p.x - tgt.x, p.z - tgt.z) < 9) {
             // 山なりに投げる: 一番高い所が荷台の縁より 0.5m 上になるように（低い所で離しても縁を越えて中へ落ちる）
-            const g = 9.81, rimY = B.Vector3.TransformCoordinates(new B.Vector3(0, 2.6, 0), m).y, peak = Math.max(p.y, rimY + 0.5);
+            const g = 9.81, rimY = B.Vector3.TransformCoordinates(new B.Vector3(0, 3.1, 0), m).y, peak = Math.max(p.y + 0.3, rimY + 0.8);   // 運転台の屋根（3.06）も越える高さ。荷台の縁だけ見ていたら運転台に当たって横へ跳ねた（10-12）
             const vy = Math.sqrt(2 * g * (peak - p.y)), t = vy / g + Math.sqrt(2 * Math.max(0.05, peak - tgt.y) / g);
             v.set((tgt.x - p.x) / t, vy, (tgt.z - p.z) / t);
+            // 飛んでいる間は物理を切って放物線で動かす（物理のまま投げると、出てすぐ腕や仲間に当たって止まり、荷台の手前に落ちた 10-12）
+            // 荷台の縁の少し上まで下りてきたら物理に戻す
+            const yOn = rimY + 0.2, tOn = vy / g + Math.sqrt(2 * Math.max(0.05, peak - yOn) / g);
+            flying.push({ d, p0: p.clone(), v: v.clone(), t: 0, T: tOn, spin: new B.Vector3(Math.random() * 6 - 3, Math.random() * 6 - 3, Math.random() * 6 - 3) });
+            n++; continue;
           }
         }
         physOn(d, v); d.restT = 0;
@@ -839,8 +961,9 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ================= ダンプの荷台に入った破片を積む／出発と戻り =================
-  let loadT = 0;
+  let loadT = 0, loadedNow = 0, loadSum = 0, loadPopT = 0;
   function updateTruck(dt) {
+    if (loadPopT > 0 && (loadPopT -= dt) <= 0 && loadSum) { popup("つんだ +" + loadSum * 3, "load"); loadSum = 0; }   // つんだ数は 0.9 秒ためて 1 回出す
     if (truck.state === "wait") {
       loadT += dt;
       if (loadT > 0.2) {
@@ -853,21 +976,87 @@ const G = window.G = {};   // 確かめ用の口
             d.ag.body.getLinearVelocityToRef(_v);
             if (_v.lengthSquared() > 0.09) { d.restT = 0; continue; }       // 落ち着くまで待つ
             d.restT = (d.restT || 0) + 0.2; if (d.restT < 0.4) continue;
-            physOff(d); d.m.setParent(truck.root); debris.splice(i, 1); truck.load.push(d.m); truck.amount += units(d.m);
+            physOff(d); d.m.setParent(truck.root); debris.splice(i, 1); truck.load.push(d.m); const u = units(d.m); truck.amount += u; score += u * 3; loadedNow += u;
           }
         }
-        if (truck.amount >= TRUCK_CAP) { truck.state = "leave"; truck.v = 0; thud(0.4, 200); }
+        if (loadedNow) { chime([7 + Math.min(5, loadedNow)], 0.1, 0.1); loadSum += loadedNow; loadPopT = 0.9; loadedNow = 0; }
+        if (truck.amount >= TRUCK_CAP) { truck.state = "leave"; truck.v = 0; thud(0.4, 200); score += 100; chime([0, 4, 7, 12], 0.12); popup((truck.trips + 1) + "だいめ しゅっぱつ！ +100", "big"); }
       }
     } else if (truck.state === "leave") {
-      truck.v = Math.min(12, truck.v + 3 * dt); truck.z -= truck.v * dt;
-      if (truck.z < -90) { for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips++; truck.state = "back"; }
+      truck.v = Math.min(16 * FASTT(), truck.v + 5 * FASTT() * dt); truck.z -= truck.v * dt;
+      if (truck.z < -55) { for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips++; truck.state = "back"; }
     } else if (truck.state === "back") {
       const rest = TRUCK_HOME.z - truck.z;
-      truck.v = Math.max(1.2, Math.min(12, rest * 0.6)); truck.z += truck.v * dt;
+      truck.v = Math.max(1.5, Math.min(16 * FASTT(), rest * 0.9 * FASTT())); truck.z += truck.v * dt;
       if (rest < 0.02) { truck.z = TRUCK_HOME.z; truck.state = "wait"; }
     }
     placeTruck(); syncColliders(truck.parts, false);
   }
+
+  // 次はここ: 何か掴んでいる時、ダンプの荷台の上に下向きの矢印（はねる）
+  const arrow = B.MeshBuilder.CreateCylinder("goalArrow", { diameterTop: 0, diameterBottom: 0.9, height: 1.0, tessellation: 4 }, scene);
+  arrow.rotation.x = Math.PI; arrow.isPickable = false;
+  { const am = new B.StandardMaterial("arrowM", scene); am.emissiveColor = new B.Color3(0.35, 1, 0.35); am.disableLighting = true; am.alpha = 0.85; arrow.material = am; }
+  let arrowT = 0;
+  function updateArrow(dt) {
+    arrowT += dt;
+    const show = held > 0 && truck.state === "wait"; arrow.setEnabled(show); if (!show) return;
+    const c = bedCenter(); arrow.position.set(c.x, c.y + 3.2 + Math.sin(arrowT * 5) * 0.3, c.z); arrow.rotation.y = arrowT * 2;
+  }
+  let playT = 0;
+  function goalText(pct, sd) {
+    if (truck.state === "leave") return "🚚 ダンプが はこんで いくよ！";
+    if (held > 0) return truck.state === "wait" ? "↩ ひだりに まわして、ダンプの 上で あけよう（みどりの 矢印）" : "⏳ ダンプが もどるまで まとう";
+    if (bld.cells.size === 0) return "🧹 のこりの がれきを ダンプへ（あと " + Math.max(0, sd - 10) + " こ）";
+    if (sd >= 12) return "🪣 がれきを すくおう（右レバーを ←）";
+    return "🏢 バケットを ビルに ぶつけて こわそう！";
+  }
+  function updateGoal(pct, sd) {
+    $("gText").textContent = goalText(pct, sd);
+    $("gBld").style.width = pct + "%"; $("gBldT").textContent = "かいたい " + pct + "%";
+    const tp = Math.min(100, Math.round(truck.amount / TRUCK_CAP * 100));
+    $("gTr").style.width = tp + "%"; $("gTrT").textContent = "ダンプ " + tp + "%　" + truck.trips + "だい はこんだ";
+    $("gScore").textContent = "★ " + score;
+    $("gStage").textContent = "ステージ " + (stage + 1) + "　" + STAGES[stage].name;
+  }
+  // ステージを選ぶ札（最初と、クリアの後）
+  function stars(n) { return "★".repeat(n) + "☆".repeat(3 - n); }
+  function showStages(title) {
+    const el = $("stages"); el.innerHTML = "";
+    const h = document.createElement("div"); h.className = "stTitle"; h.textContent = title; el.appendChild(h);
+    STAGES.forEach((st, i) => {
+      const open = i === 0 || prog.stars[i - 1];
+      const b = document.createElement("button"); b.className = "btn stBtn" + (open ? "" : " locked");
+      b.textContent = open ? `${i + 1}. ${st.name}　${stars(prog.stars[i] || 0)}` : `${i + 1}. 🔒 ${i}つめを クリアで ひらく`;
+      if (open) b.onclick = () => { wakeAudio(); el.style.display = "none"; startStage(i); };
+      el.appendChild(b);
+    });
+    const ups = UPGRADES.map((u, i) => (prog.stars[i] ? "✔ " : "🔒 ") + u).join("\n");
+    const u = document.createElement("div"); u.className = "stUp"; u.textContent = "パワーアップ（ステージを クリアすると ふえる）\n" + ups; el.appendChild(u);
+    el.style.display = "";
+  }
+  function startStage(i) { stage = i; FLOORS = STAGES[i].floors; reset(); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
+  // さら地の結果
+  function showResult() {
+    const st = STAGES[stage], n = playT <= st.star3 ? 3 : playT <= st.star2 ? 2 : 1;
+    const first = !prog.stars[stage];
+    prog.stars[stage] = Math.max(prog.stars[stage] || 0, n); saveProg();
+    const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
+    $("rStars").textContent = stars(n);
+    $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.trips}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "") + (first && STAGES[stage + 1] ? `\n🔓 つぎの ステージ: ${STAGES[stage + 1].name}` : "");
+    $("bNext").style.display = STAGES[stage + 1] ? "" : "none";
+    $("done").style.display = "";
+    chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
+  }
+  const confettiPS = (() => {
+    const ps = new B.ParticleSystem("confetti", 400, scene); ps.particleTexture = dustTex; ps.emitter = new B.Vector3(0, 12, 17);
+    ps.minEmitBox = new B.Vector3(-6, 0, -4); ps.maxEmitBox = new B.Vector3(6, 2, 4);
+    ps.color1 = new B.Color4(1, 0.85, 0.2, 1); ps.color2 = new B.Color4(0.3, 0.8, 1, 1); ps.colorDead = new B.Color4(1, 0.3, 0.5, 0.8);
+    ps.minSize = 0.15; ps.maxSize = 0.35; ps.minLifeTime = 2; ps.maxLifeTime = 4; ps.emitRate = 0; ps.manualEmitCount = 0;
+    ps.blendMode = B.ParticleSystem.BLENDMODE_ADD; ps.gravity = new B.Vector3(0, -2.5, 0);
+    ps.direction1 = new B.Vector3(-3, 6, -3); ps.direction2 = new B.Vector3(3, 10, 3); ps.minEmitPower = 1; ps.maxEmitPower = 2; ps.renderingGroupId = 1; ps.start(); return ps;
+  })();
+  function confetti() { confettiPS.manualEmitCount = LITE ? 200 : 400; }
 
   // ================= さら地の判定 =================
   let siteDone = false;
@@ -880,7 +1069,9 @@ const G = window.G = {};   // 確かめ用の口
   function reset() {
     clearDebris(); buildBuilding();
     for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips = 0; truck.state = "wait"; truck.z = TRUCK_HOME.z;
-    held = 0; slotUsed.fill(null); chain.length = 0; siteDone = false; $("done").style.display = "none";
+    held = 0; slotUsed.fill(null); chain.length = 0; flying.length = 0; siteDone = false; $("done").style.display = "none";
+    score = 0; combo = 0; comboT = 0; lastPctStep = 0; playT = 0; trauma = 0; lastDustT = -1;
+    if (BIGB() && SLOTS.length === BASE_SLOTS) { for (const [x, z] of [[-0.63, 0.55], [0.63, 0.55], [-0.63, 1.0], [0.63, 1.0], [-0.42, 0.3], [0.42, 0.3], [-0.42, 1.25], [0.42, 1.25], [0, 0.75], [0, 0.3], [0, 1.25], [-0.21, 0.75], [0.21, 0.75]]) { SLOTS.push(new B.Vector3(x, -1.32 - (Math.abs(x) < 0.3 ? 0.36 : 0), z)); slotUsed.push(null); } bucketJ.scaling.setAll(1.15); }
     ex.pos.set(0, 0, 2); ex.heading = 0; ex.swing = 0; ex.boom = -0.35; ex.stick = 1.3; ex.bucket = 0.6;
     look.yaw = 0; look.pitch = 0.12;
     applyPose(); syncColliders(exParts, true); placeTruck(); syncColliders(truck.parts, true);
@@ -1156,6 +1347,7 @@ const G = window.G = {};   // 確かめ用の口
   }
   let mode = "demo";
   function enterBuild() {
+    $("goal").style.display = "none"; $("stages").style.display = "none";
     mode = "build";
     clearDebris(); for (const c of [...bld.cells.values()]) removeCell(c); rebuildCellMesh();
     // ショベルは横へ片づけ、ダンプは帰す
@@ -1170,7 +1362,9 @@ const G = window.G = {};   // 確かめ用の口
     $("labL").textContent = "フックを動かす ↑遠く ↓近く ←→左右"; $("labR").textContent = "↑ 上げる / ↓ 下げる";
     nextPiece(); toast("右レバーを↓で下げて、建材を吊ろう");
   }
-  $("bBuild").onclick = enterBuild;
+  $("bBuild").onclick = () => { $("done").style.display = "none"; $("goal").style.display = "none"; enterBuild(); };
+  $("bNext").onclick = () => { $("done").style.display = "none"; startStage(stage + 1); };
+  $("bAgain").onclick = () => { $("done").style.display = "none"; showStages("ステージを えらぼう"); };
 
   // ================= 毎フレーム =================
   let fpsAvg = 60, msAvg = 16, hudT = 0;
@@ -1180,10 +1374,11 @@ const G = window.G = {};   // 確かめ用の口
     const L = sticks.L, R = sticks.R;
     const sw = L.x + kv("KeyD", "KeyA"), st = -L.y + kv("KeyS", "KeyW"), bo = -R.y + kv("KeyK", "KeyI"), bu = -R.x + kv("KeyJ", "KeyL");
     const prev = [ex.boom, ex.stick, ex.bucket], low0 = bucketLowest();
-    ex.swing += sw * 0.85 * dt;
-    ex.stick = B.Scalar.Clamp(ex.stick + st * 0.7 * dt, ...LIM.stick);
-    ex.boom = B.Scalar.Clamp(ex.boom + bo * 0.45 * dt, ...LIM.boom);
-    ex.bucket = B.Scalar.Clamp(ex.bucket + bu * 1.2 * dt, ...LIM.bucket);
+    const pw = POW();
+    ex.swing += sw * 0.85 * pw * dt;
+    ex.stick = B.Scalar.Clamp(ex.stick + st * 0.7 * pw * dt, ...LIM.stick);
+    ex.boom = B.Scalar.Clamp(ex.boom + bo * 0.45 * pw * dt, ...LIM.boom);
+    ex.bucket = B.Scalar.Clamp(ex.bucket + bu * 1.2 * pw * dt, ...LIM.bucket);
     // 腕は物理で動かしていないので地面を突き抜ける → 地面より下へ行く動きはそのコマだけ取り消す
     applyPose();
     const low1 = bucketLowest();
@@ -1216,12 +1411,12 @@ const G = window.G = {};   // 確かめ用の口
       for (const q of HIT_PTS_B) carveAt(B.Vector3.TransformCoordinates(q, bm), CARVE_R);
       for (const q of HIT_PTS_S) carveAt(B.Vector3.TransformCoordinates(q, sm), CARVE_R * 0.8);
     }
-    updateHeld(dt); updateChain(dt);
+    updateHeld(dt); updateChain(dt); updateArrow(dt);
     // 削った後、少し置いてから「支えのない塊」を落とす（揺れの間）
     if (dirty) { collapseTimer += dt; if (collapseTimer > 0.25) {
       dirty = false; collapseTimer = 0;
       const fl = floatingCells();
-      if (fl.length) { const n = collapse(fl); thud(Math.min(0.6, 0.2 + n * 0.01)); }
+      if (fl.length) { const c0 = fl[0].p.clone(), m = fl.length; collapse(fl); broke(m, c0, true); }
       rebuildCellMesh();
     } }
     updateGrab();
@@ -1231,7 +1426,10 @@ const G = window.G = {};   // 確かめ用の口
   });
   function frameCommon(dt) {
     // カメラ
-    fp.rotation.set(look.pitch, look.yaw, 0);
+    trauma = Math.max(0, trauma - dt * 1.6); const tr = trauma * trauma;
+    fp.position.set((Math.random() - 0.5) * tr * 0.22, (Math.random() - 0.5) * tr * 0.22, 0);
+    fp.rotation.set(look.pitch + (Math.random() - 0.5) * tr * 0.03, look.yaw + (Math.random() - 0.5) * tr * 0.03, (Math.random() - 0.5) * tr * 0.05);
+    if (mode !== "build") { updateCombo(dt); playT += dt; }
     tp.target.copyFrom(mode === "build" ? cr.pos.add(new B.Vector3(0, 6, 6)) : ex.pos.add(new B.Vector3(0, 2.5, 0)));
 
     // 数字
@@ -1261,7 +1459,8 @@ const G = window.G = {};   // 確かめ用の口
         `画面 ${engine.getRenderWidth()}×${engine.getRenderHeight()}  影 ${shadowOn ? "あり" : "なし"}`;
       G.stats = { api, fps: fpsAvg, ms: msAvg, debris: debris.length, awake, cells: bld.cells.size, pct, site: sd, load: truck.amount, trips: truck.trips, held, truck: truck.state };
       // さら地: ビルが残っておらず、範囲のがれきが 10 個以下
-      if (!siteDone && bld.cells.size === 0 && sd <= 10) { siteDone = true; $("done").style.display = ""; thud(0.5, 900); }
+      updateGoal(pct, sd);
+      if (!siteDone && bld.cells.size === 0 && sd <= 10) { siteDone = true; showResult(); }
     }
   }
 
@@ -1389,6 +1588,7 @@ const G = window.G = {};   // 確かめ用の口
 
   reset();
   if (Q.has("build")) enterBuild();   // ?build で最初から建築モード（確かめ用）
+  else if (!Q.has("stage") && !Q.has("nostage")) showStages("ステージを えらぼう");
   $("msg").style.display = "none";
   engine.resize();   // WebGPU は作った時点で canvas の大きさを拾わないことがある（300×150 のままになった）
   engine.runRenderLoop(() => scene.render());
@@ -1427,7 +1627,7 @@ const G = window.G = {};   // 確かめ用の口
     else if (watch.stage === 3) { dome.setEnabled(false); showErr(what + " → 背景の写真を外しました。この文を教えてください", true); }
   });
 
-  Object.assign(G, { get pipe() { return pipe; }, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { get pipe() { return pipe; }, get score() { return score; }, startStage, prog, showResult, get playT() { return playT; }, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
