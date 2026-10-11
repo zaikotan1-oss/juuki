@@ -14,7 +14,7 @@ const MAX_DEBRIS = 500;    // 破片の上限。超えたら古い物から消�
 const CARVE_R = 0.9;       // バケットの当たり点ごとの削る半径（10-11 本人「ちょっとぶつかっただけで崩れるくらい甘く」）
 const BUCKET = { W: 1.9, H: 1.05, L: 1.55 };   // 本人「バケットを大きく」で 1.1×0.7×1.25 から拡大
 const HOLD_MAX = 40;       // バケットに一度に掴める数
-const TRUCK_CAP = 50;      // ダンプ 1 台に積める量（units() で数える）。すくう 2 回で出発するくらい（10-12 評価 r0: 40 は台本が下手で届かず、24 は毎回出発して待ちが多い）
+const TRUCK_CAP = 24;      // ダンプ 1 台に積める量（units() で数える）。すくう 1 回で出発。往復 9 秒 < 1 回分 20 秒なので待ちは出ない（10-12 評価 r1: 最初の出発 50 秒は遅い）
 const G = window.G = {};   // 確かめ用の口
 
 (async function main() {
@@ -174,15 +174,15 @@ const G = window.G = {};   // 確かめ用の口
   const BW = 8, BD = 6, FH = 3;      // 建物の大きさ(m)
   // ステージ: 階の数が増える。クリアすると強化が開く（10-12 評価 r0「ステージ・強化が無い」）
   const STAGES = [
-    { floors: 2, name: "小さな ビル", star3: 150, star2: 270 },
-    { floors: 3, name: "3かいだての ビル", star3: 240, star2: 420 },
-    { floors: 4, name: "4かいだての ビル", star3: 330, star2: 560 }];
-  const UPGRADES = ["うでが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
+    { floors: 2, name: "小さな ビル", star3: 420, star2: 720 },          // ★ の時間（秒）。下手な自動プレイで 1 面 約 13 分だったので、人なら ★3 は 7 分以内（10-12）
+    { floors: 3, name: "3かいだての ビル", star3: 600, star2: 960 },
+    { floors: 4, name: "4かいだての ビル", star3: 780, star2: 1200 }];
+  const UPGRADES = ["うでと はしりが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
   const prog = (() => { try { return JSON.parse(localStorage.getItem("juuki_prog")) || { stars: [] }; } catch (e) { return { stars: [] }; } })();
   const saveProg = () => { try { localStorage.setItem("juuki_prog", JSON.stringify(prog)); } catch (e) {} };
   let stage = Math.min(STAGES.length - 1, Math.max(0, Number(Q.get("stage") || 0) - 1));
   let FLOORS = STAGES[stage].floors;
-  const POW = () => (prog.stars[0] ? 1.3 : 1);          // 1 面クリア: 腕が 1.3 倍速
+  const POW = () => (prog.stars[0] ? 1.5 : 1);          // 1 面クリア: 腕が 1.5 倍速・走るのも 1.3 倍（1.3 倍だけでは 1 回分が 1.14 倍しか速くならなかった 10-12）
   const BIGB = () => !!prog.stars[1];                    // 2 面クリア: バケットが大きい
   const FASTT = () => (prog.stars[2] ? 1.6 : 1);         // 3 面クリア: ダンプが速い
   const bld = { cells: new Map(), origin: new B.Vector3(-BW / 2, 0, 14) };
@@ -794,9 +794,9 @@ const G = window.G = {};   // 確かめ用の口
     const ps = new B.ParticleSystem("dust" + i, LITE ? 160 : 300, scene);
     ps.particleTexture = dustTex; ps.emitter = new B.Vector3(0, -50, 0);
     ps.minEmitBox = new B.Vector3(-0.5, -0.4, -0.5); ps.maxEmitBox = new B.Vector3(0.5, 0.4, 0.5);
-    ps.color1 = new B.Color4(0.6, 0.55, 0.48, 0.42); ps.color2 = new B.Color4(0.5, 0.46, 0.4, 0.34); ps.colorDead = new B.Color4(0.56, 0.52, 0.46, 0);
-    ps.addSizeGradient(0, 0.8, 1.4); ps.addSizeGradient(1, 2.6, 4.2);
-    ps.minLifeTime = 0.9; ps.maxLifeTime = 2.0; ps.emitRate = 0; ps.manualEmitCount = 0;
+    ps.color1 = new B.Color4(0.6, 0.55, 0.48, 0.3); ps.color2 = new B.Color4(0.5, 0.46, 0.4, 0.22);   // 濃いと運転席から当たりが見えない（10-12 評価 r1） ps.colorDead = new B.Color4(0.56, 0.52, 0.46, 0);
+    ps.addSizeGradient(0, 0.6, 1.1); ps.addSizeGradient(1, 1.8, 3.0);
+    ps.minLifeTime = 0.7; ps.maxLifeTime = 1.5; ps.emitRate = 0; ps.manualEmitCount = 0;
     ps.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ps.gravity = new B.Vector3(0, 0.2, 0);
     ps.direction1 = new B.Vector3(-1, 0.2, -1); ps.direction2 = new B.Vector3(1, 1.0, 1); ps.minEmitPower = 0.3; ps.maxEmitPower = 1.4;
     ps.minAngularSpeed = -0.5; ps.maxAngularSpeed = 0.5; ps.minInitialRotation = 0; ps.maxInitialRotation = 6.28;
@@ -888,6 +888,19 @@ const G = window.G = {};   // 確かめ用の口
   for (let k = 0; k < 3; k++) for (const z of [0.3, 0.75, 1.2]) for (const x of [-0.63, -0.21, 0.21, 0.63]) SLOTS.push(new B.Vector3(x, -0.25 - k * 0.38, z));
   for (const [x, z] of [[-0.21, 0.55], [0.21, 0.55], [-0.21, 1.0], [0.21, 1.0]]) SLOTS.push(new B.Vector3(x, -1.32, z));
   const slotUsed = new Array(SLOTS.length).fill(null), BASE_SLOTS = SLOTS.length;
+  // 暴れ止め: 大きな崩れで塊が重なって生まれると、物理が押し出して 50m/s で飛んだ・地面を抜けて落ち続けた（10-12 通しプレイで 168 回）
+  // 速すぎる物は 12m/s に抑え、地面の下へ抜けた物は消す
+  let calmI = 0; const _cv = new B.Vector3();
+  function calmDebris() {
+    if (++calmI % 2) return;
+    for (let i = debris.length - 1; i >= 0; i--) {
+      const d = debris[i]; if (!d.ag) continue;
+      if (d.m.position.y < -2) { physOff(d); d.m.dispose(); debris.splice(i, 1); continue; }
+      d.ag.body.getLinearVelocityToRef(_cv); const v2 = _cv.lengthSquared();
+      if (v2 > 144) { _cv.scaleInPlace(12 / Math.sqrt(v2)); d.ag.body.setLinearVelocity(_cv); }
+      d.ag.body.getAngularVelocityToRef(_cv); if (_cv.lengthSquared() > 100) d.ag.body.setAngularVelocity(_cv.normalize().scaleInPlace(10));
+    }
+  }
   const flying = [];
   function updateFly(dt) {
     for (let i = flying.length - 1; i >= 0; i--) {
@@ -908,7 +921,7 @@ const G = window.G = {};   // 確かめ用の口
     // すくう動き（バケットを巻き込んでいる最中）は、口の前の広めの範囲も掴む。板で押しのけてしまい 1 個しか入らなかったため
     const curling = ex.bucket > lastBucket + 1e-4 && up > -0.6, opening = ex.bucket < lastBucket - 1e-4; lastBucket = ex.bucket;
     if ((up > 0.35 || curling) && held < SLOTS.length) {
-      const m = curling ? 0.55 : 0.1;
+      const m = curling ? 0.95 : 0.1;   // すくう時は口の前を広めに（0.55 では散らばった瓦礫が 1 回 2〜9 個しか入らなかった 10-12）
       bucketJ.getWorldMatrix().invertToRef(_inv);
       const { W, H, L } = BUCKET;
       for (const d of debris) {
@@ -980,7 +993,15 @@ const G = window.G = {};   // 確かめ用の口
           }
         }
         if (loadedNow) { chime([7 + Math.min(5, loadedNow)], 0.1, 0.1); loadSum += loadedNow; loadPopT = 0.9; loadedNow = 0; }
-        if (truck.amount >= TRUCK_CAP) { truck.state = "leave"; truck.v = 0; thud(0.4, 200); score += 100; chime([0, 4, 7, 12], 0.12); popup((truck.trips + 1) + "だいめ しゅっぱつ！ +100", "big"); }
+        if (truck.amount >= TRUCK_CAP) {
+          // 出発の時、荷台の中でまだ転がっている物も全部積んだことにする（物理のまま運ぶと、速さの上限で荷台から滑り落ちた 10-12）
+          for (let i = debris.length - 1; i >= 0; i--) {
+            const d = debris[i]; if (d.held || !d.ag) continue;
+            B.Vector3.TransformCoordinatesToRef(d.m.position, _inv, _lp);
+            if (Math.abs(_lp.x) < BED.x + 0.2 && _lp.z > BED.z0 - 0.2 && _lp.z < BED.z1 + 0.2 && _lp.y > BED.y0 - 0.3 && _lp.y < BED.y0 + 2.5) { physOff(d); d.m.setParent(truck.root); debris.splice(i, 1); truck.load.push(d.m); }
+          }
+          if (loadSum) { popup("つんだ +" + loadSum * 3, "load"); loadSum = 0; loadPopT = 0; }   // 「しゅっぱつ」より先に出す
+          truck.state = "leave"; truck.v = 0; thud(0.4, 200); score += 100; chime([0, 4, 7, 12], 0.12); popup((truck.trips + 1) + "だいめ しゅっぱつ！ +100", "big"); }
       }
     } else if (truck.state === "leave") {
       truck.v = Math.min(16 * FASTT(), truck.v + 5 * FASTT() * dt); truck.z -= truck.v * dt;
@@ -1007,7 +1028,7 @@ const G = window.G = {};   // 確かめ用の口
   function goalText(pct, sd) {
     if (truck.state === "leave") return "🚚 ダンプが はこんで いくよ！";
     if (held > 0) return truck.state === "wait" ? "↩ ひだりに まわして、ダンプの 上で あけよう（みどりの 矢印）" : "⏳ ダンプが もどるまで まとう";
-    if (bld.cells.size === 0) return "🧹 のこりの がれきを ダンプへ（あと " + Math.max(0, sd - 10) + " こ）";
+    if (bld.cells.size === 0) return "🧹 のこりの がれきを ダンプへ（あと " + Math.max(0, sd - CLEAR_LEFT) + " こ）";
     if (sd >= 12) return "🪣 がれきを すくおう（右レバーを ←）";
     return "🏢 バケットを ビルに ぶつけて こわそう！";
   }
@@ -1033,9 +1054,9 @@ const G = window.G = {};   // 確かめ用の口
     });
     const ups = UPGRADES.map((u, i) => (prog.stars[i] ? "✔ " : "🔒 ") + u).join("\n");
     const u = document.createElement("div"); u.className = "stUp"; u.textContent = "パワーアップ（ステージを クリアすると ふえる）\n" + ups; el.appendChild(u);
-    el.style.display = "";
+    el.style.display = ""; $("goal").style.display = "none";
   }
-  function startStage(i) { stage = i; FLOORS = STAGES[i].floors; reset(); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
+  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
   // さら地の結果
   function showResult() {
     const st = STAGES[stage], n = playT <= st.star3 ? 3 : playT <= st.star2 ? 2 : 1;
@@ -1058,6 +1079,18 @@ const G = window.G = {};   // 確かめ用の口
   })();
   function confetti() { confettiPS.manualEmitCount = LITE ? 200 : 400; }
 
+  // さら地: ビルが無くなり、範囲の瓦礫が CLEAR_LEFT 個以下になったら完成。最後の少しは片付け係が持っていく（拾い残しを探させない）
+  const CLEAR_LEFT = 40;
+  function sweepRest() {
+    let k = 0;
+    for (let i = debris.length - 1; i >= 0; i--) {
+      const d = debris[i], p = d.m.getAbsolutePosition();
+      if (d.held || p.x < SITE.x0 - 4 || p.x > SITE.x1 + 4 || p.z < SITE.z0 - 4 || p.z > SITE.z1 + 4) continue;
+      if (k++ % 4 === 0) dust(p, 12);
+      physOff(d); d.m.dispose(); debris.splice(i, 1);
+    }
+    popup("🧹 のこりは かたづけたよ！", "mile");
+  }
   // ================= さら地の判定 =================
   let siteDone = false;
   function siteDebris() {
@@ -1390,7 +1423,7 @@ const G = window.G = {};   // 確かめ用の口
     }
     let moving = Math.abs(sw) + Math.abs(st) + Math.abs(bo) + Math.abs(bu);
     // ペダル: 目標の速さへじわっと近づける（急に止まらない）
-    const want = B.Scalar.Clamp(pedal.fwd - pedal.back + kv("ArrowUp", "ArrowDown"), -1, 1) * (pedal.back && !pedal.fwd ? 2.0 : 3.2);
+    const want = B.Scalar.Clamp(pedal.fwd - pedal.back + kv("ArrowUp", "ArrowDown"), -1, 1) * (pedal.back && !pedal.fwd ? 2.0 : 3.2) * (prog.stars[0] ? 1.3 : 1);
     speed += (want - speed) * Math.min(1, dt * (want ? 2.5 : 4));
     if (Math.abs(speed) < 0.02 && !want) speed = 0;
     const wantT = B.Scalar.Clamp(pedal.right - pedal.left + kv("ArrowRight", "ArrowLeft"), -1, 1) * 0.7;
@@ -1412,6 +1445,7 @@ const G = window.G = {};   // 確かめ用の口
       for (const q of HIT_PTS_S) carveAt(B.Vector3.TransformCoordinates(q, sm), CARVE_R * 0.8);
     }
     updateHeld(dt); updateChain(dt); updateArrow(dt);
+    calmDebris();
     // 削った後、少し置いてから「支えのない塊」を落とす（揺れの間）
     if (dirty) { collapseTimer += dt; if (collapseTimer > 0.25) {
       dirty = false; collapseTimer = 0;
@@ -1460,7 +1494,7 @@ const G = window.G = {};   // 確かめ用の口
       G.stats = { api, fps: fpsAvg, ms: msAvg, debris: debris.length, awake, cells: bld.cells.size, pct, site: sd, load: truck.amount, trips: truck.trips, held, truck: truck.state };
       // さら地: ビルが残っておらず、範囲のがれきが 10 個以下
       updateGoal(pct, sd);
-      if (!siteDone && bld.cells.size === 0 && sd <= 10) { siteDone = true; showResult(); }
+      if (!siteDone && bld.cells.size === 0 && sd <= CLEAR_LEFT) { siteDone = true; sweepRest(); showResult(); }
     }
   }
 
@@ -1627,7 +1661,8 @@ const G = window.G = {};   // 確かめ用の口
     else if (watch.stage === 3) { dome.setEnabled(false); showErr(what + " → 背景の写真を外しました。この文を教えてください", true); }
   });
 
-  Object.assign(G, { get pipe() { return pipe; }, get score() { return score; }, startStage, prog, showResult, get playT() { return playT; }, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
+  Object.assign(G, { applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });

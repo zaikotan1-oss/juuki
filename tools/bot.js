@@ -58,5 +58,83 @@
   setInterval(() => { const g = document.getElementById("gText").textContent; if (g !== lastGoal) { lastGoal = g; BOT.goals.push({ t: +BOT.t.toFixed(2), text: g }); } }, 50);
   BOT.paused = false; BOT.hold = async () => { while (BOT.paused) await new Promise(r => setTimeout(r, 100)); };
   G.engine.setHardwareScalingLevel(BOT.scale);
+  // ---- 賢い台本: 瓦礫の多い所を狙ってすくい、ダンプの方へ回してあける。届かなければ近づく。1 面を通して測る用 ----
+  const ex = G.ex, flat = (v) => new B.Vector3(v.x, 0, v.z);
+  const angTo = (p) => { const d = p.subtract(ex.pos); let a = Math.atan2(d.x, d.z) - ex.heading; while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+  const dist = (p) => B.Vector3.Distance(flat(p), flat(ex.pos));
+  // 腕の届く距離の表（ブームを下げた時、ステックごとの水平距離）
+  BOT.reachTable = () => {
+    const keep = [ex.swing, ex.boom, ex.stick, ex.bucket], t = [];
+    for (let st = 0.35; st <= 2.6; st += 0.15) { ex.swing = 0; ex.boom = 0.35; ex.stick = st; ex.bucket = -0.2; G.applyPose(); G.bucketJ.computeWorldMatrix(true); t.push([st, dist(G.bucketJ.getAbsolutePosition())]); }
+    [ex.swing, ex.boom, ex.stick, ex.bucket] = keep; G.applyPose(); BOT.RT = t; return t;
+  };
+  const stickFor = (r) => { let best = BOT.RT[0]; for (const e of BOT.RT) if (Math.abs(e[1] - r) < Math.abs(best[1] - r)) best = e; return best[0]; };
+  const loose = () => G.debris.filter(d => !d.held && d.ag && d.m.position.y < 3);
+  // 一番まとまっている瓦礫（まわり 1.5m の数が多い）を選ぶ。reachOnly なら届く物だけ
+  BOT.pickPile = (reachOnly = true) => {
+    const L = loose(), rmin = BOT.RT[BOT.RT.length - 1][1] + 0.3, rmax = BOT.RT[0][1] - 0.3; let best = null, bs = -1;
+    for (const d of L) {
+      const p = d.m.position, r = dist(p);
+      if (reachOnly && (r < rmin || r > rmax)) continue;
+      let n = 0; for (const o of L) if (B.Vector3.DistanceSquared(o.m.position, p) < 2.25) n++;
+      if (reachOnly && n < 3) continue;
+      const sc = n - (reachOnly ? 0 : r * 0.3); if (sc > bs) { bs = sc; best = p.clone(); }
+    }
+    return best;
+  };
+  BOT.nearestCell = () => { let best = null, bd = 1e9; for (const c of G.bld.cells.values()) { const d = dist(c.p); if (d < bd) { bd = d; best = c.p.clone(); } } return best; };
+  // 狙った所の方へ向いて、want m まで近づく／下がる（ペダル）
+  BOT.approach = async (p, want = 6) => {
+    for (let k = 0; k < 600; k++) {
+      const a = angTo(p), r = dist(p);
+      G.pedal.left = a < -0.08 ? 1 : 0; G.pedal.right = a > 0.08 ? 1 : 0;
+      G.pedal.fwd = Math.abs(a) < 0.5 && r > want + 0.6 ? 1 : 0; G.pedal.back = Math.abs(a) < 0.5 && r < want - 0.8 ? 1 : 0;
+      if (Math.abs(a) < 0.1 && Math.abs(r - want) < 1.0) break;
+      await BOT.step(1);
+    }
+    clear(); await BOT.step(20);
+  };
+  BOT.miss = 0;
+  BOT.smartScoop = async (p) => {   // 人と同じく、すくう前に瓦礫の方へ向いて 5.6m まで寄る
+    if (Math.abs(angTo(p)) > 0.5 || dist(p) < 4.5 || dist(p) > 7) { await BOT.pose({ boom: -0.8, swing: 0 }, 4); await BOT.approach(p, 5.6); }
+    const st = stickFor(dist(p) + 0.5 + (BOT.miss % 3) * 0.4);
+    await BOT.pose({ boom: -0.6 }, 2); await BOT.pose({ swing: angTo(p), stick: st, bucket: -0.4 }, 5);
+    await BOT.pose({ boom: 0.45 }, 3);
+    await BOT.pose({ stick: Math.max(0.35, st - 1.0), bucket: 2.2 }, 4); await BOT.step(15); if (!(G.stats.held > 0)) BOT.miss++; BOT.rec("すくった");
+  };
+  BOT.smartDump = async () => {
+    while (G.truck.state !== "wait") await BOT.step(10);
+    await BOT.pose({ boom: -0.8 }, 3);
+    if (dist(G.bedCenter()) > 8.5) await BOT.approach(G.bedCenter(), 6.5);
+    await BOT.pose({ swing: angTo(G.bedCenter()) }, 6); await BOT.pose({ bucket: -0.9 }, 3); await BOT.wait(1.2); BOT.rec("ダンプへあけた");
+  };
+  // 壁を崩す: その方へ回して、高さを変えながら腕を手前へ引いて掻く（高い所も低い所も当たる）
+  BOT.smartHit = async (p) => {
+    await BOT.pose({ boom: -1.0, bucket: 0.4 }, 3); await BOT.pose({ swing: angTo(p), stick: 0.4 }, 5);
+    const boomFor = p.y > 4 ? [-1.0, -0.6] : p.y > 2 ? [-0.6, -0.2] : [-0.2, 0.3];
+    for (const bo of boomFor) { await BOT.pose({ boom: bo, stick: 0.4 }, 3); await BOT.pose({ stick: 2.4 }, 4); }
+    BOT.rec("壁を崩した");
+  };
+  // 1 面を通す。進まない時は別の側へ回る。maxSec で打ち切り
+  BOT.playStage = async (maxSec = 600) => {
+    BOT.reachTable(); const t0 = BOT.t; let stuck = 0, last = "";
+    while (BOT.t - t0 < maxSec && !G.isDone()) {
+      const sig = G.bld.cells.size + "/" + G.debris.length + "/" + G.truck.amount + "/" + G.truck.trips;
+      stuck = sig === last ? stuck + 1 : 0; last = sig;
+      await BOT.step(15);
+      if (G.stats.held > 0) { await BOT.smartDump(); continue; }
+      const pile = BOT.pickPile(true);
+      if (pile && stuck < 2) { await BOT.smartScoop(pile); await BOT.step(15); if (G.stats.held > 0) await BOT.smartDump(); continue; }
+      if (G.bld.cells.size) {
+        let c = BOT.nearestCell();
+        if (stuck >= 2) { const cs = [...G.bld.cells.values()]; c = cs[Math.floor(Math.random() * cs.length)].p.clone(); stuck = 0; await BOT.approach(c, 5.5); }
+        else if (dist(c) > 7 || dist(c) < 3.5) await BOT.approach(c, 5.5);
+        await BOT.smartHit(BOT.nearestCell()); continue;
+      }
+      const far = BOT.pickPile(false); if (!far) break;
+      await BOT.approach(far, 5.5); const p2 = BOT.pickPile(true); if (p2) { await BOT.smartScoop(p2); await BOT.step(15); if (G.stats.held > 0) await BOT.smartDump(); }
+    }
+    BOT.rec(G.isDone() ? "さら地！" : "打ち切り"); return BOT.t - t0;
+  };
   window.BOT_READY = true;
 })();
