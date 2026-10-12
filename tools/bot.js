@@ -163,8 +163,8 @@
     BOT.rec("吊った");
     // 枠の上まで上げて運び、下ろして手を離す
     const p = bd.hanging.p, hy = p.pos.y - p.size[1] / 2 + bd.hanging.hang;
-    await BOT.hookTo(new B.Vector3(G.cr.tgt.x, Math.max(hy + 3, G.cr.tgt.y), G.cr.tgt.z), 0.5);
-    await BOT.hookTo(new B.Vector3(p.pos.x, hy + 3, p.pos.z), 0.3);
+    await BOT.hookTo(new B.Vector3(G.cr.tgt.x, Math.max(hy + 4.5, G.cr.tgt.y), G.cr.tgt.z), 0.5);
+    await BOT.hookTo(new B.Vector3(p.pos.x, hy + 4.5, p.pos.z), 0.3);
     await BOT.hookTo(new B.Vector3(p.pos.x, hy, p.pos.z), 0.15);
     for (let i = 0; i < 120 && bd.hanging; i++) await BOT.step(1);   // 手を離して止まるとはまる
     await BOT.step(30); BOT.rec("はまった");
