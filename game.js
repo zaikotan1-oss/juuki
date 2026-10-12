@@ -174,10 +174,12 @@ const G = window.G = {};   // 確かめ用の口
   const BW = 8, BD = 6, FH = 3;      // 建物の大きさ(m)
   // ステージ: 階の数が増える。クリアすると強化が開く（10-12 評価 r0「ステージ・強化が無い」）
   const STAGES = [
-    { floors: 2, name: "小さな ビル", star3: 420, star2: 720 },          // ★ の時間（秒）。下手な自動プレイで 1 面 約 13 分だったので、人なら ★3 は 7 分以内（10-12）
-    { floors: 3, name: "3かいだての ビル", star3: 600, star2: 960 },
-    { floors: 4, name: "4かいだての ビル", star3: 780, star2: 1200 },
-    { floors: 2, name: "まちの いえ（5けん）", star3: 1100, star2: 1700, town: true, open: true }];   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
+    // trucks: ダンプが この台数 出発したら さら地 かんせい（10-12 本人「全部は入らないから回数を決める」→ 少なめ 4/6/8/10・建物が残っていても台数だけで終わり）
+    // 瓦礫の全部は 1 面で ダンプ約 19 台分（4 面は約 47 台分）。★ の時間は 1 台 45 秒ほどの見込みで決めた推測（人の実測はまだ）
+    { floors: 2, name: "小さな ビル", trucks: 4, star3: 200, star2: 330 },
+    { floors: 3, name: "3かいだての ビル", trucks: 6, star3: 290, star2: 480 },
+    { floors: 4, name: "4かいだての ビル", trucks: 8, star3: 380, star2: 620 },
+    { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true }];   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
   const UPGRADES = ["うでと はしりが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
   const prog = (() => { try { return JSON.parse(localStorage.getItem("juuki_prog")) || { stars: [] }; } catch (e) { return { stars: [] }; } })();
   const saveProg = () => { try { localStorage.setItem("juuki_prog", JSON.stringify(prog)); } catch (e) {} };
@@ -643,7 +645,7 @@ const G = window.G = {};   // 確かめ用の口
   // ================= ダンプ =================
   // 前（運転台）は -Z を向いて止まる。荷台は建物側。いっぱいになったら -Z へ走り去り、空のダンプがバックで戻る
   const TRUCK_HOME = new B.Vector3(-6.8, 0, 4.5);   // ビルを掘る位置（z≈6）から左へ 90° 旋回した所に荷台が来る
-  const truck = { root: new B.TransformNode("truck", scene), parts: [], state: "wait", z: TRUCK_HOME.z, v: 0, load: [], amount: 0, trips: 0 };
+  const truck = { root: new B.TransformNode("truck", scene), parts: [], state: "wait", z: TRUCK_HOME.z, v: 0, load: [], amount: 0, trips: 0, sent: 0 };   // sent: 出発した台数（完成の数え方）・trips: 走り去って戻った台数
   truck.root.rotation.y = Math.PI;
   {
     const r = truck.root, P = truck.parts;
@@ -1050,7 +1052,8 @@ const G = window.G = {};   // 確かめ用の口
             if (Math.abs(_lp.x) < BED.x + 0.2 && _lp.z > BED.z0 - 0.2 && _lp.z < BED.z1 + 0.2 && _lp.y > BED.y0 - 0.3 && _lp.y < BED.y0 + 2.5) { physOff(d); d.m.setParent(truck.root); debris.splice(i, 1); truck.load.push(d.m); }
           }
           if (loadSum) { popup("つんだ +" + loadSum * 3, "load"); loadSum = 0; loadPopT = 0; }   // 「しゅっぱつ」より先に出す
-          truck.state = "leave"; truck.v = 0; thud(0.4, 200); score += 100; chime([0, 4, 7, 12], 0.12); popup((truck.trips + 1) + "だいめ しゅっぱつ！ +100", "big"); }
+          truck.state = "leave"; truck.v = 0; thud(0.4, 200); score += 100; chime([0, 4, 7, 12], 0.12); truck.sent++; const left = STAGES[stage].trucks - truck.sent;
+          popup(truck.sent + "だいめ しゅっぱつ！ +100" + (left > 0 ? "（あと " + left + "だい）" : ""), "big"); if (left <= 0 && !siteDone && finishAt < 0) finishAt = playT + 2.5; }   // 最後の 1 台が走り去るのを見せてから完成
       }
     } else if (truck.state === "leave") {
       truck.v = Math.min(16 * FASTT(), truck.v + 5 * FASTT() * dt); truck.z -= truck.v * dt;
@@ -1077,7 +1080,8 @@ const G = window.G = {};   // 確かめ用の口
   function goalText(pct, sd) {
     if (truck.state === "leave") return "🚚 ダンプが はこんで いくよ！";
     if (held > 0) return truck.state === "wait" ? "↩ ひだりに まわして、ダンプの 上で あけよう（みどりの 矢印）" : "⏳ ダンプが もどるまで まとう";
-    if (bld.cells.size === 0) return "🧹 のこりの がれきを ダンプへ（あと " + Math.max(0, sd - CLEAR_LEFT) + " こ）";
+    if (finishAt >= 0) return "🎉 さいごの ダンプが しゅっぱつ！";
+    if (bld.cells.size === 0) return "🪣 がれきを すくって ダンプへ（あと " + Math.max(0, STAGES[stage].trucks - truck.sent) + "だい）";
     if (sd >= 12) return "🪣 がれきを すくおう（右レバーを ←）";
     return STAGES[stage].town ? "🏠 バケットを いえに ぶつけて こわそう！" : "🏢 バケットを ビルに ぶつけて こわそう！";
   }
@@ -1085,7 +1089,7 @@ const G = window.G = {};   // 確かめ用の口
     $("gText").textContent = goalText(pct, sd);
     $("gBld").style.width = pct + "%"; $("gBldT").textContent = "かいたい " + pct + "%";
     const tp = Math.min(100, Math.round(truck.amount / TRUCK_CAP * 100));
-    $("gTr").style.width = tp + "%"; $("gTrT").textContent = "ダンプ " + tp + "%　" + truck.trips + "だい はこんだ";
+    $("gTr").style.width = tp + "%"; $("gTrT").textContent = "ダンプ " + tp + "%　" + truck.sent + " / " + STAGES[stage].trucks + "だい";
     $("gScore").textContent = "★ " + score;
     $("gStage").textContent = "ステージ " + (stage + 1) + "　" + STAGES[stage].name;
   }
@@ -1113,7 +1117,7 @@ const G = window.G = {};   // 確かめ用の口
     prog.stars[stage] = Math.max(prog.stars[stage] || 0, n); saveProg();
     const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
     $("rStars").textContent = stars(n);
-    $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.trips}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "") + (first && STAGES[stage + 1] ? `\n🔓 つぎの ステージ: ${STAGES[stage + 1].name}` : "");
+    $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.sent}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "") + (first && STAGES[stage + 1] ? `\n🔓 つぎの ステージ: ${STAGES[stage + 1].name}` : "");
     $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = ""; $("bBuild").textContent = "クレーンで 建てる ▶"; $("bNext").textContent = "つぎの ビルへ ▶"; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
     $("done").style.display = "";
     chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
@@ -1140,8 +1144,15 @@ const G = window.G = {};   // 確かめ用の口
     }
     popup("🧹 のこりは かたづけたよ！", "mile");
   }
+  // 決めた台数を運んだら、残っている建物も片付け係が崩して持っていく（さら地にする）
+  function clearRest() {
+    let k = 0;
+    for (const c of [...bld.cells.values()]) { if (k++ % 25 === 0) dust(c.p, 18); removeCell(c); }
+    if (k) { rebuildCellMesh(); crash(0.6); shake(0.3); }
+    sweepRest();
+  }
   // ================= さら地の判定 =================
-  let siteDone = false;
+  let siteDone = false, finishAt = -1;   // finishAt: 決めた台数が出発した時刻＋少し（その時に完成）
   function siteDebris() {
     let n = 0;
     for (const d of debris) { const p = d.m.getAbsolutePosition(); if (!d.held && p.x > SITE.x0 && p.x < SITE.x1 && p.z > SITE.z0 && p.z < SITE.z1) n++; }
@@ -1150,7 +1161,7 @@ const G = window.G = {};   // 確かめ用の口
 
   function reset() {
     clearDebris(); buildBuilding();
-    for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips = 0; truck.state = "wait"; truck.z = TRUCK_HOME.z;
+    for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips = 0; truck.sent = 0; finishAt = -1; truck.state = "wait"; truck.z = TRUCK_HOME.z;
     held = 0; slotUsed.fill(null); chain.length = 0; flying.length = 0; siteDone = false; $("done").style.display = "none";
     score = 0; combo = 0; comboT = 0; lastPctStep = 0; playT = 0; trauma = 0; lastDustT = -1;
     if (BIGB() && SLOTS.length === BASE_SLOTS) { for (const [x, z] of [[-0.63, 0.55], [0.63, 0.55], [-0.63, 1.0], [0.63, 1.0], [-0.42, 0.3], [0.42, 0.3], [-0.42, 1.25], [0.42, 1.25], [0, 0.75], [0, 0.3], [0, 1.25], [-0.21, 0.75], [0.21, 0.75]]) { SLOTS.push(new B.Vector3(x, -1.32 - (Math.abs(x) < 0.3 ? 0.36 : 0), z)); slotUsed.push(null); } bucketJ.scaling.setAll(1.15); }
@@ -1741,10 +1752,11 @@ const G = window.G = {};   // 確かめ用の口
         `バケット ${held} 個\n` +
         `${api}  ${fpsAvg.toFixed(0)} fps (${msAvg.toFixed(1)} ms)  破片 ${debris.length}（動 ${awake}）\n` +
         `画面 ${engine.getRenderWidth()}×${engine.getRenderHeight()}  影 ${shadowOn ? "あり" : "なし"}`;
-      G.stats = { api, fps: fpsAvg, ms: msAvg, debris: debris.length, awake, cells: bld.cells.size, pct, site: sd, load: truck.amount, trips: truck.trips, held, truck: truck.state };
+      G.stats = { api, fps: fpsAvg, ms: msAvg, debris: debris.length, awake, cells: bld.cells.size, pct, site: sd, load: truck.amount, trips: truck.trips, sent: truck.sent, held, truck: truck.state };
       // さら地: ビルが残っておらず、範囲のがれきが 10 個以下
       updateGoal(pct, sd);
-      if (!siteDone && bld.cells.size === 0 && sd <= CLEAR_LEFT) { siteDone = true; sweepRest(); showResult(); }
+      if (!siteDone && finishAt >= 0 && playT >= finishAt) { siteDone = true; clearRest(); showResult(); }
+      else if (!siteDone && bld.cells.size === 0 && sd <= CLEAR_LEFT) { siteDone = true; sweepRest(); showResult(); }   // 台数の前に拾う物が無くなった時の逃げ道
     }
   }
 
