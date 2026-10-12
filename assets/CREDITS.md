@@ -5,3 +5,6 @@
   - hdri: construction_yard（背景の jpg はこの HDRI から作った。bg3 は地平線より下を地面の色へ溶かした版）
   - models: concrete_road_barrier, concrete_road_barrier_02, barrel_03, wooden_crate_01, plastic_crate_01, metal_jerrycan
 - 作り変えた画像: hoard_diff.jpg（box_profile_metal_sheet を白く）、dirty_concrete_soft_diff.jpg（しみを薄く）
+
+## 効果音（assets/sfx/）
+- 自前で生成した音（音作りのセッション・bgm-pipeline、2026-10-13）。一覧と中身は assets/sfx/README.md と sfx.json

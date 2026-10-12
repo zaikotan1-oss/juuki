@@ -120,3 +120,10 @@
 ## 効果音の頼み先（2026-10-13 お知らせ）
 - 効果音は音作りのセッション「Piano music generation context」に SendMessage で頼める（利用者の指示とのこと）。書くこと: 欲しい音と鳴る場面・長さ・数・置き場（assets\sfx など）・形式（ogg/mp3）。重機・解体の音（エンジン・崩れる・瓦礫・クレーン・鉄骨を打つ音）も可
 - 共通の効果音ライブラリ: C:\Users\zaiko\se-library（入口 README.md・一覧 catalog.json・ogg 書き出し tools\export.py）。今の juuki の音はコードで鳴らす合成音（crash/thud/clang/chime）
+
+## 2026-10-13 録った効果音を入れた（v69）
+- 音作りのセッション（「Piano music generation context」）に 14 種を頼み、22 本の mp3 が assets/sfx に届いた（README.md・sfx.json 付き。候補の全部は C:\Users\zaiko\bgm-pipeline\outputs\sfx\se_1013_juuki\cut）
+- 鳴らし方（game.js「録った効果音」）: 最初のタップで loadSfx → 鳴りっぱなし 4 本（エンジン・油圧・キャタピラ・ウインチ）はレバーと速さで音量と速さを毎コマ合わせる（setLoop）。一発物は playS(name) で _1〜_3 から続かないように選ぶ。ファイルが無い音は前の合成音のまま
+- 割り当て: バケットが当たる（carveAt・0.3 秒に 1 回）／崩れる crash(pw) は 0.3 未満で small・以上で big／荷台にあける／出発はクラクション→走り去る／フックに掛ける／鉄骨を置く→0.35 秒後にボルト締め／突風。合図のチャイムは合成音のまま
+- 確かめ: Chrome で 22 本とも読み込み・再生でき、エラー無し。ループ物の長さは表どおり（Chrome は mp3 の頭の詰め物を自分で削る）。**耳での確かめ（音量の釣り合い）と iPad Safari で鳴るかは未確認**
+- 確かめ用: G.sfxInfo()（読み込んだ数・ループの今の音量）・G.playS(name, vol)

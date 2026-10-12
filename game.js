@@ -776,6 +776,7 @@ const G = window.G = {};   // 確かめ用の口
       } catch (e) { ac = null; }
     }
     if (ac && ac.state !== "running") ac.resume();
+    if (ac && !sfxLoading) loadSfx();
   }
   document.addEventListener("visibilitychange", () => { if (ac && !document.hidden) ac.resume(); });
   // ---- 手ごたえ（10-12 評価 r0「崩れた時に音 1 種だけ・揺れ・粉塵・数字が無い」）----
@@ -787,6 +788,7 @@ const G = window.G = {};   // 確かめ用の口
   function crash(pw) {
     if (!ac || ac.state !== "running") return;
     const t = ac.currentTime; if (t - crashT < 0.07) return; crashT = t;
+    if (hasS("crash_small") && hasS("crash_big")) { if (pw < 0.3) playS("crash_small", 0.45 + pw * 1.5); else playS("crash_big", Math.min(1, 0.55 + pw * 0.5)); return; }
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = "sine"; o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.55);
     g.gain.setValueAtTime(Math.min(0.75, 0.12 + pw * 0.6), t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
@@ -806,6 +808,7 @@ const G = window.G = {};   // 確かめ用の口
   // 鉄骨がはまる音: 金属の倍音（カーン）＋少し遅れてボルト締め（カン、カン）
   function clang(pw) {
     if (!ac || ac.state !== "running") return;
+    if (playS("steel_clang", 0.8 * pw)) { playS("bolt_impact", 0.55, 1, 0.35); return; }
     const t = ac.currentTime;
     for (const [f, a, d] of [[420, 0.22, 1.1], [1130, 0.14, 0.7], [2210, 0.08, 0.45], [3370, 0.05, 0.3]]) {
       const o = ac.createOscillator(), g = ac.createGain(); o.type = "sine"; o.frequency.value = f * (0.97 + Math.random() * 0.06);
@@ -828,6 +831,51 @@ const G = window.G = {};   // 確かめ用の口
       g.gain.setValueAtTime(0.0001, st); g.gain.linearRampToValueAtTime(vol, st + 0.015); g.gain.exponentialRampToValueAtTime(0.001, st + 0.5);
       o.connect(g).connect(OUT()); o.start(st); o.stop(st + 0.55);
     });
+  }
+  // ---- 録った効果音（assets/sfx。音作りのセッションに頼んだ物 10-13）。無い音は今までの合成音のまま ----
+  const SFX_FILES = ["exc_engine_loop", "exc_hydraulic_loop", "exc_tracks_loop", "crane_winch_loop", "bucket_hit_1", "bucket_hit_2", "bucket_hit_3",
+    "crash_small_1", "crash_small_2", "crash_small_3", "crash_big_1", "crash_big_2", "crash_big_3", "rubble_dump_1", "rubble_dump_2",
+    "truck_depart", "truck_horn", "steel_clang_1", "steel_clang_2", "bolt_impact", "wind_gust", "sling_hook"];
+  const sfx = {}; let sfxLoading = false;
+  // mp3 は頭と終わりに無音（エンコーダの遅れ）が付くので、ループ物は鳴っている所だけに切る（つなぎ目でプツッと切れないように）
+  function trimSilence(buf) {
+    const d = buf.getChannelData(0), th = 0.002; let a = 0, b = d.length - 1;
+    while (a < b && Math.abs(d[a]) < th) a++; while (b > a && Math.abs(d[b]) < th) b--;
+    if (a < 8 && b > d.length - 9) return buf;
+    const out = ac.createBuffer(buf.numberOfChannels, b - a + 1, buf.sampleRate);
+    for (let c = 0; c < buf.numberOfChannels; c++) out.copyToChannel(buf.getChannelData(c).subarray(a, b + 1), c);
+    return out;
+  }
+  function loadSfx() {
+    sfxLoading = true;
+    for (const n of SFX_FILES) fetch("assets/sfx/" + n + ".mp3").then(r => r.ok ? r.arrayBuffer() : null).then(a => a && new Promise((ok, ng) => ac.decodeAudioData(a, ok, ng)))
+      .then(b => { if (b) { sfx[n] = n.endsWith("_loop") ? trimSilence(b) : b; if (n.endsWith("_loop")) startLoops(); } }).catch(() => {});
+  }
+  const hasS = n => !!(sfx[n] || sfx[n + "_1"]);
+  // 1 回鳴らす。name_1〜3 があれば、その中から選ぶ（同じ音が続かないように）
+  const lastPick = {};
+  function playS(name, vol = 1, rate = 1, delay = 0) {
+    if (!ac || ac.state !== "running") return false;
+    const vs = [1, 2, 3].map(i => name + "_" + i).filter(k => sfx[k]); let k = sfx[name] ? name : null;
+    if (vs.length) { do { k = vs[Math.floor(Math.random() * vs.length)]; } while (vs.length > 1 && k === lastPick[name]); lastPick[name] = k; }
+    if (!k) return false;
+    const src = ac.createBufferSource(), g = ac.createGain(); src.buffer = sfx[k]; src.playbackRate.value = rate * (0.95 + Math.random() * 0.1); g.gain.value = vol;
+    src.connect(g).connect(OUT()); src.start(ac.currentTime + delay); return true;
+  }
+  // 鳴りっぱなしの音（エンジン・油圧・キャタピラ・ウインチ）。音量と速さを毎コマ合わせる
+  const loops = {};
+  function startLoops() {
+    for (const n of ["exc_engine_loop", "exc_hydraulic_loop", "exc_tracks_loop", "crane_winch_loop"]) {
+      if (loops[n] || !sfx[n]) continue;
+      const src = ac.createBufferSource(), g = ac.createGain(); src.buffer = sfx[n]; src.loop = true; g.gain.value = 0;
+      src.connect(g).connect(OUT()); src.start(); loops[n] = { src, g, v: 0 };
+    }
+    if (loops.exc_engine_loop && eng) { eng.g.gain.value = 0; }   // 録った音が来たら仮のエンジン音は消す
+  }
+  function setLoop(n, vol, rate, dt) {
+    const L = loops[n]; if (!L) return;
+    L.v += (vol - L.v) * Math.min(1, dt * 8);       // 急に鳴ったり消えたりしない
+    L.g.gain.value = L.v; L.src.playbackRate.value = rate;
   }
   // 画面の揺れ（trauma 方式: 足して、2 乗で揺らし、すぐ減る。?noshake で無し）
   let trauma = 0;
@@ -893,7 +941,7 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ================= 壊す =================
-  let collapseTimer = 0, dirty = false;
+  let collapseTimer = 0, dirty = false, hitT = 0;
   function carveAt(p, r) {
     let n = 0;
     const lx = Math.floor((p.x - bld.origin.x) / CELL), ly = Math.floor((p.y - bld.origin.y) / CELL), lz = Math.floor((p.z - bld.origin.z) / CELL);
@@ -904,7 +952,7 @@ const G = window.G = {};   // 確かめ用の口
       carvedToDebris(c, c.p.subtract(p).normalize().scale(2.0)); n++;
       chainAbove(c.x, c.y, c.z, 0);
     }
-    if (n) { dirty = true; broke(n, p, false); }
+    if (n) { dirty = true; broke(n, p, false); if (ac && ac.currentTime - hitT > 0.3) { hitT = ac.currentTime; playS("bucket_hit", 0.7); } }   // ガツッ（続けて当てても 0.3 秒に 1 回）
     return n;
   }
   // 連鎖: 削った格子の真上と斜め上は、少し遅れて確率で崩れる（上へ 5 段まで）。「ガラガラ崩れていく」感じ
@@ -959,7 +1007,7 @@ const G = window.G = {};   // 確かめ用の口
       f.t = Math.min(f.T, f.t + dt);
       const m = f.d.m; m.position.set(f.p0.x + f.v.x * f.t, f.p0.y + f.v.y * f.t - 4.905 * f.t * f.t, f.p0.z + f.v.z * f.t);
       m.rotationQuaternion.multiplyInPlace(B.Quaternion.FromEulerAngles(f.spin.x * dt, f.spin.y * dt, f.spin.z * dt));
-      if (f.t >= f.T) { flying.splice(i, 1); physOn(f.d, new B.Vector3(f.v.x, f.v.y - 9.81 * f.t, f.v.z)); f.d.restT = 0; if (!flying.length) { crash(0.25); dust(bedCenter().addInPlaceFromFloats(0, 0.6, 0), 14); } }   // 最後の 1 個が荷台に入る時にザザッ
+      if (f.t >= f.T) { flying.splice(i, 1); physOn(f.d, new B.Vector3(f.v.x, f.v.y - 9.81 * f.t, f.v.z)); f.d.restT = 0; if (!flying.length) { if (!playS("rubble_dump", 0.8)) crash(0.25); dust(bedCenter().addInPlaceFromFloats(0, 0.6, 0), 14); } }   // 最後の 1 個が荷台に入る時にザザッ
     }
   }
   function updateHeld(dt) {
@@ -1052,7 +1100,7 @@ const G = window.G = {};   // 確かめ用の口
             if (Math.abs(_lp.x) < BED.x + 0.2 && _lp.z > BED.z0 - 0.2 && _lp.z < BED.z1 + 0.2 && _lp.y > BED.y0 - 0.3 && _lp.y < BED.y0 + 2.5) { physOff(d); d.m.setParent(truck.root); debris.splice(i, 1); truck.load.push(d.m); }
           }
           if (loadSum) { popup("つんだ +" + loadSum * 3, "load"); loadSum = 0; loadPopT = 0; }   // 「しゅっぱつ」より先に出す
-          truck.state = "leave"; truck.v = 0; thud(0.4, 200); score += 100; chime([0, 4, 7, 12], 0.12); truck.sent++; const left = STAGES[stage].trucks - truck.sent;
+          truck.state = "leave"; truck.v = 0; if (playS("truck_horn", 0.6)) playS("truck_depart", 0.8, 1, 0.4); else thud(0.4, 200); score += 100; chime([0, 4, 7, 12], 0.12); truck.sent++; const left = STAGES[stage].trucks - truck.sent;
           popup(truck.sent + "だいめ しゅっぱつ！ +100" + (left > 0 ? "（あと " + left + "だい）" : ""), "big"); if (left <= 0 && !siteDone && finishAt < 0) finishAt = playT + 2.5; }   // 最後の 1 台が走り去るのを見せてから完成
       }
     } else if (truck.state === "leave") {
@@ -1502,7 +1550,7 @@ const G = window.G = {};   // 確かめ用の口
     // 2 かいめからは風: ときどき突風でフックが横に押される（同じ繰り返しにしないため 10-12 評価 b0）
     if (bd.floor >= 1 && !bd.done) {
       bd.windT -= dt;
-      if (bd.windT <= 0) { bd.windT = 7 + Math.random() * 6; bd.gust = 1.2; bd.gustDir = Math.random() * 6.28; popup("💨 かぜだ！ ゆれに 気をつけて", "mile"); chime([12, 7], 0.09, 0.08); }
+      if (bd.windT <= 0) { bd.windT = 7 + Math.random() * 6; bd.gust = 1.2; bd.gustDir = Math.random() * 6.28; popup("💨 かぜだ！ ゆれに 気をつけて", "mile"); if (!playS("wind_gust", 0.7)) chime([12, 7], 0.09, 0.08); }
       if (bd.gust > 0) { bd.gust -= dt; const w = 2.2 * WIND_MUL() * Math.sin(Math.min(1, bd.gust) * Math.PI); cr.swayV.x += Math.cos(bd.gustDir) * w * dt; cr.swayV.y += Math.sin(bd.gustDir) * w * dt; }
     }
     cr.swayV.scaleInPlace(Math.max(0, 1 - 0.9 * dt));   // 2.6 では揺れがすぐ消えて見えなかった（評価 k1）
@@ -1527,7 +1575,7 @@ const G = window.G = {};   // 確かめ用の口
       const y = bd.yard, top = y.rest.y + (y.p.kind === "柱" ? y.p.size[0] / 2 : y.p.size[1] / 2);
       if (Math.hypot(hp.x - y.at.x, hp.z - y.at.z) < (y.col ? 1.0 : 0.6) && hp.y - HOOK_DROP < top + 0.06) {   // 平らな荷は真ん中近くで掛ける（片寄ると梁が傾いて見えた 評価 k4）
         bd.hanging = y; bd.yard = null; bd.hookT = 0; y.lifted = false; y.bot = y.rest.add(new B.Vector3(-y.p.size[1] / 2, 0, 0));
-        thud(0.3, 1200); chime([7], 0.1, 0.1); popup("かけた！ まきあげよう ↑", "load");
+        if (!playS("sling_hook", 0.8)) thud(0.3, 1200); chime([7], 0.1, 0.1); popup("かけた！ まきあげよう ↑", "load");
       }
     }
     bd.near = false;
@@ -1606,6 +1654,9 @@ const G = window.G = {};   // 確かめ用の口
       look.pitch += (wp - look.pitch) * Math.min(1, dt * 3);
     }
     if (eng) eng.o.frequency.value = 38 + Math.min(Math.abs(fwd) + Math.abs(side) + Math.abs(lift), 2) * 14;
+    { const w = Math.min(1, Math.abs(fwd) + Math.abs(side) + Math.abs(lift));
+      setLoop("exc_engine_loop", 0.22 + w * 0.12, 0.85 + w * 0.15, dt); setLoop("crane_winch_loop", w * 0.5, 0.9 + w * 0.2, dt);
+      setLoop("exc_hydraulic_loop", 0, 1, dt); setLoop("exc_tracks_loop", 0, 1, dt); }
   }
   let mode = "demo";
   function updateBuildGoal() {
@@ -1695,6 +1746,9 @@ const G = window.G = {};   // 確かめ用の口
     }
     applyPose(); syncColliders(exParts, false);
     if (eng) eng.o.frequency.value = 38 + Math.min(moving, 2) * 14;
+    { const tr = Math.min(1, Math.abs(speed) / 3.2 + Math.abs(turnRate)), arm = Math.min(1, Math.max(0, moving - tr));
+      setLoop("exc_engine_loop", 0.3 + Math.min(1, moving) * 0.2, 1 + Math.min(1, moving) * 0.3, dt);
+      setLoop("exc_hydraulic_loop", arm * 0.45, 0.9 + arm * 0.2, dt); setLoop("exc_tracks_loop", tr * 0.5, 0.85 + tr * 0.3, dt); setLoop("crane_winch_loop", 0, 1, dt); }
 
     // バケットの先で削る（何か掴んでいる間は削らない＝運んでいる途中で壁を崩さない）
     // バケット全体と腕の先のどこかが壁に触れたら削る（止まっていても・何か掴んでいても）
@@ -1924,7 +1978,7 @@ const G = window.G = {};   // 確かめ用の口
   });
 
   // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
-  Object.assign(G, { hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
