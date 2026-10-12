@@ -176,7 +176,8 @@ const G = window.G = {};   // 確かめ用の口
   const STAGES = [
     { floors: 2, name: "小さな ビル", star3: 420, star2: 720 },          // ★ の時間（秒）。下手な自動プレイで 1 面 約 13 分だったので、人なら ★3 は 7 分以内（10-12）
     { floors: 3, name: "3かいだての ビル", star3: 600, star2: 960 },
-    { floors: 4, name: "4かいだての ビル", star3: 780, star2: 1200 }];
+    { floors: 4, name: "4かいだての ビル", star3: 780, star2: 1200 },
+    { floors: 2, name: "まちの いえ（5けん）", star3: 1100, star2: 1700, town: true, open: true }];   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
   const UPGRADES = ["うでと はしりが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
   const prog = (() => { try { return JSON.parse(localStorage.getItem("juuki_prog")) || { stars: [] }; } catch (e) { return { stars: [] }; } })();
   const saveProg = () => { try { localStorage.setItem("juuki_prog", JSON.stringify(prog)); } catch (e) {} };
@@ -186,13 +187,14 @@ const G = window.G = {};   // 確かめ用の口
   const BIGB = () => !!prog.stars[1];                    // 2 面クリア: バケットが大きい
   const FASTT = () => (prog.stars[2] ? 1.6 : 1);         // 3 面クリア: ダンプが速い
   const bld = { cells: new Map(), origin: new B.Vector3(-BW / 2, 0, 14) };
-  const SITE = { x0: bld.origin.x - 3, x1: bld.origin.x + BW + 3, z0: bld.origin.z - 3, z1: bld.origin.z + BD + 3 };   // さら地にする範囲
+  const SITE = {};   // さら地にする範囲（buildBuilding で決める。まちのステージは広い）
   const cellShape = new B.PhysicsShapeBox(B.Vector3.Zero(), B.Quaternion.Identity(), new B.Vector3(CELL, CELL, CELL), scene);
   cellShape.material = { friction: 0.8, restitution: 0 };
   const key = (x, y, z) => x + "," + y + "," + z;
   // 見た目: 見えている面だけを 1 枚のメッシュに組む（模様は世界の座標で貼るので、格子の境目で切れない）
   const cellMesh = new B.Mesh("bld", scene);
-  const bldM = pbrTex("bldM", "dirty_concrete", 1, [1.0, 0.97, 0.92], "dirty_concrete_soft_diff.jpg");   // しみの濃さを半分にした写真 bldM.backFaceCulling = false;
+  const bldM = pbrTex("bldM", "dirty_concrete", 1, [1.0, 0.97, 0.92], "dirty_concrete_soft_diff.jpg");   // しみの濃さを半分にした写真
+  bldM.backFaceCulling = false;   // 格子の面は向きによって裏返しに組まれる（後ろ・左から見ると壁が抜けていた 10-12。行の途中のコメントに飲まれて効いていなかった）
   cellMesh.material = bldM; cellMesh.receiveShadows = true;
   // 壊れた断面（元は隣に壁があった面）は別のメッシュ: 荒いコンクリート＋飛び出した鉄筋
   const brokeMesh = new B.Mesh("bldBroken", scene);
@@ -222,35 +224,67 @@ const G = window.G = {};   // 確かめ用の口
     body.shape = cellShape;
     bld.cells.set(key(x, y, z), { x, y, z, kind, node, body, p });
   }
-  function buildBuilding() {
-    for (const c of bld.cells.values()) { c.body.dispose(); c.node.dispose(); }
-    bld.cells.clear(); winSet.clear();
-    const W = BW / CELL, D = BD / CELL, H = FH / CELL;           // 16 × 12、1 階 6 段
-    for (let f = 0; f < FLOORS; f++) {
+  // 格子で家を 1 軒組む。ox, oz は格子の座標（ビルの左手前の角が 0,0）、W・D は格子の数、H は 1 階の段数
+  function addHouse(ox, oz, W, D, floors, H, o = {}) {
+    const K = Object.assign({ wall: "wall", pillar: "pillar", slab: "slab", roof: "parapet", winRows: [2, 3], door: [W / 2 - 3, W / 2 + 2, 4] }, o);
+    for (let f = 0; f < floors; f++) {
       for (let r = 0; r < H; r++) {
         const y = f * H + r;
         for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) {
           const edge = x === 0 || z === 0 || x === W - 1 || z === D - 1;
           const corner = (x <= 1 || x >= W - 2) && (z <= 1 || z >= D - 2);
           const pillar = corner || ((x === W / 2 - 1 || x === W / 2) && (z === 0 || z === D - 1));
-          if (r === H - 1) { addCell(x, y, z, "slab"); continue; }      // 各階の天井
+          if (r === H - 1) { addCell(ox + x, y, oz + z, K.slab); continue; }      // 各階の天井
           if (!edge) continue;
-          // 窓: 各階の 2〜3 段目、柱以外の壁を 2 格子おきにあける
-          const along = (z === 0 || z === D - 1) ? x : z;
-          if (r >= 2 && r <= 3 && !pillar && (Math.floor(along / 2) % 2 === 1)) { winSet.add(key(x, y, z) + (z === 0 || z === D - 1 ? ",z" : ",x")); continue; }
-          // 1 階の正面（z=0）の真ん中は入口
-          if (f === 0 && z === 0 && x >= W / 2 - 3 && x <= W / 2 + 2 && r < 4 && !pillar) continue;
-          addCell(x, y, z, pillar ? "pillar" : "wall");
+          // 窓: 柱以外の壁を 2 格子おきにあける
+          const zFace = z === 0 || z === D - 1, along = zFace ? x : z;
+          if (K.winRows.includes(r) && !pillar && (Math.floor(along / 2) % 2 === 1)) {
+            const sg = zFace ? (z === 0 ? -1 : 1) : (x === 0 ? -1 : 1);
+            winSet.add(key(ox + x, y, oz + z) + (zFace ? ",z," : ",x,") + sg); continue;
+          }
+          // 1 階の正面（z=0）の入口
+          if (K.door && f === 0 && z === 0 && x >= K.door[0] && x <= K.door[1] && r < K.door[2] && !pillar) continue;
+          addCell(ox + x, y, oz + z, pillar ? K.pillar : K.wall);
         }
       }
     }
-    // 屋上の縁の立ち上がり（パラペット）: 一番上の床の外周に 1 段
-    for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) if (x === 0 || z === 0 || x === W - 1 || z === D - 1) addCell(x, FLOORS * H, z, "wall");
+    const top = floors * H;
+    if (K.roof === "parapet")      // 屋上の縁の立ち上がり: 一番上の床の外周に 1 段
+      for (let x = 0; x < W; x++) for (let z = 0; z < D; z++) { if (x === 0 || z === 0 || x === W - 1 || z === D - 1) addCell(ox + x, top, oz + z, K.wall); }
+    if (K.roof === "gable") {      // 切妻屋根: 手前と奥から 1 段ずつ上がる。軒は 1 格子はみ出す。両端は壁でふさぐ
+      for (let k = 0; ; k++) {
+        const zL = k - 1, zR = D - k; if (zL > zR) break;
+        for (let x = -1; x <= W; x++) { addCell(ox + x, top + k, oz + zL, "roof"); if (zR !== zL) addCell(ox + x, top + k, oz + zR, "roof"); }
+        for (const x of [0, W - 1]) for (let z = Math.max(0, zL + 1); z <= Math.min(D - 1, zR - 1); z++) addCell(ox + x, top + k, oz + z, K.wall);
+      }
+    }
+  }
+  // 塀: 長さ len・高さ h（格子）。x 向き
+  function addFence(ox, oz, len, h, kind) { for (let x = 0; x < len; x++) for (let y = 0; y < h; y++) addCell(ox + x, y, oz, kind); }
+  function buildBuilding() {
+    for (const c of bld.cells.values()) { c.body.dispose(); c.node.dispose(); }
+    bld.cells.clear(); winSet.clear();
+    addHouse(0, 0, BW / CELL, BD / CELL, FLOORS, FH / CELL);     // 真ん中のビル 16 × 12、1 階 6 段
+    const town = STAGES[stage].town;
+    if (town) {
+      // まち: 右に木造の家（2 階・切妻屋根）とブロック塀、左にトタンの倉庫、右奥にプレハブ小屋（格子 0.5m。ビルの左手前の角 = 世界の x -4, z 14）
+      addHouse(24, -2, 12, 10, 2, 5, { wall: "wood", pillar: "beam", slab: "wfloor", roof: "gable", door: [2, 4, 4] });
+      addFence(20, -8, 18, 3, "block");
+      addHouse(-26, -2, 14, 10, 1, 7, { wall: "tin", pillar: "steelc", slab: "tinroof", roof: "flat", winRows: [5], door: [4, 9, 5] });
+      addHouse(24, 16, 8, 6, 1, 6, { wall: "prefab", pillar: "prefab", slab: "tinroof", roof: "flat", winRows: [2, 3], door: [1, 2, 4] });
+    }
+    // さら地にする範囲: 格子の外側 3m
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const c of bld.cells.values()) { x0 = Math.min(x0, c.p.x); x1 = Math.max(x1, c.p.x); z0 = Math.min(z0, c.p.z); z1 = Math.max(z1, c.p.z); }
+    Object.assign(SITE, { x0: x0 - 3, x1: x1 + 3, z0: z0 - 3, z1: z1 + 3 });
     bld.total = bld.cells.size;
     bld.orig = new Set(bld.cells.keys());
     rebuildCellMesh();
   }
-  const KIND_COL = { wall: [1, 0.98, 0.94], slab: [0.78, 0.78, 0.78], pillar: [0.9, 0.88, 0.85] };   // 写真素材に掛ける色（壁・床・柱で少し変える）
+  const KIND_COL = { wall: [1, 0.98, 0.94], slab: [0.78, 0.78, 0.78], pillar: [0.9, 0.88, 0.85],   // 写真素材に掛ける色（壁・床・柱で少し変える）
+    wood: [0.78, 0.55, 0.34], beam: [0.5, 0.33, 0.2], wfloor: [0.62, 0.48, 0.36], roof: [0.3, 0.33, 0.42],      // 木造の家（茶色の板壁・こげ茶の柱・紺の瓦）
+    block: [0.86, 0.84, 0.76], tin: [0.62, 0.72, 0.8], steelc: [0.5, 0.55, 0.6], tinroof: [0.66, 0.36, 0.3],     // ブロック塀・トタンの倉庫（水色の壁・赤さびの屋根）
+    prefab: [0.95, 0.92, 0.75] };                                                                              // プレハブ小屋（クリーム色）
   const FACE = [
     { n: [1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] }, { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
     { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] }, { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
@@ -305,7 +339,7 @@ const G = window.G = {};   // 確かめ用の口
     // 窓ガラス: 窓の穴の上と下の壁が残っている時だけ
     const pp = [], pn = [], pi = [];
     for (const w of winSet) {
-      const [x, y, z, ax] = w.split(","), X = +x, Y = +y, Z = +z;
+      const [x, y, z, ax, sg] = w.split(","), X = +x, Y = +y, Z = +z;
       if (!bld.cells.has(key(X, Y - 1, Z)) && !bld.cells.has(key(X, Y + 1, Z))) continue;
       if (!bld.cells.has(key(X, Y + 1, Z)) && !bld.cells.has(key(X, Y + 2, Z)) && !bld.cells.has(key(X, Y - 1, Z))) continue;
       const p = cellWorld(X, Y, Z), b = pp.length / 3;
@@ -315,8 +349,8 @@ const G = window.G = {};   // 確かめ用の口
       for (const [ox, oy, w, hh] of [[0, h - T / 2, CELL, T], [0, -h + T / 2, CELL, T], [h - T / 2, 0, T, CELL], [-h + T / 2, 0, T, CELL]])
         frames.push(B.Matrix.Compose(ax === "z" ? new B.Vector3(w, hh, Dp) : new B.Vector3(Dp, hh, w), B.Quaternion.Identity(), new B.Vector3(p.x + (ax === "z" ? ox : 0), p.y + oy, p.z + (ax === "z" ? 0 : ox))));
       // 窓の下の水切り（外へ少し出る）
-      if (bld.cells.has(key(X, Y - 1, Z)) && !winSet.has(key(X, Y - 1, Z) + "," + ax)) {
-        const out = (ax === "z" ? (Z === 0 ? -1 : 1) : (X === 0 ? -1 : 1)) * 0.3;
+      if (bld.cells.has(key(X, Y - 1, Z)) && !winSet.has(key(X, Y - 1, Z) + "," + ax + "," + sg)) {
+        const out = +sg * 0.3;   // 外へ出す向き（家ごとに違うので窓を作った時に覚えておく）
         frames.push(B.Matrix.Compose(ax === "z" ? new B.Vector3(CELL + 0.02, 0.05, 0.22) : new B.Vector3(0.22, 0.05, CELL + 0.02), B.Quaternion.Identity(), new B.Vector3(p.x + (ax === "x" ? out : 0), p.y - h - 0.02, p.z + (ax === "z" ? out : 0))));
       }
       if ((X * 7 + Y * 3 + Z * 5) % 5 === 0) continue;     // 割れてガラスの無い窓
@@ -1045,7 +1079,7 @@ const G = window.G = {};   // 確かめ用の口
     if (held > 0) return truck.state === "wait" ? "↩ ひだりに まわして、ダンプの 上で あけよう（みどりの 矢印）" : "⏳ ダンプが もどるまで まとう";
     if (bld.cells.size === 0) return "🧹 のこりの がれきを ダンプへ（あと " + Math.max(0, sd - CLEAR_LEFT) + " こ）";
     if (sd >= 12) return "🪣 がれきを すくおう（右レバーを ←）";
-    return "🏢 バケットを ビルに ぶつけて こわそう！";
+    return STAGES[stage].town ? "🏠 バケットを いえに ぶつけて こわそう！" : "🏢 バケットを ビルに ぶつけて こわそう！";
   }
   function updateGoal(pct, sd) {
     $("gText").textContent = goalText(pct, sd);
@@ -1061,7 +1095,7 @@ const G = window.G = {};   // 確かめ用の口
     const el = $("stages"); el.innerHTML = "";
     const h = document.createElement("div"); h.className = "stTitle"; h.textContent = title; el.appendChild(h);
     STAGES.forEach((st, i) => {
-      const open = i === 0 || prog.stars[i - 1];
+      const open = i === 0 || prog.stars[i - 1] || st.open;
       const b = document.createElement("button"); b.className = "btn stBtn" + (open ? "" : " locked");
       b.textContent = open ? `${i + 1}. ${st.name}　${stars(prog.stars[i] || 0)}` : `${i + 1}. 🔒 ${i}つめを クリアで ひらく`;
       if (open) b.onclick = () => { wakeAudio(); el.style.display = "none"; startStage(i); };
