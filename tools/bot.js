@@ -167,6 +167,7 @@
     await BOT.hookTo(new B.Vector3(p.pos.x, hy + 4.5, p.pos.z), 0.3);
     await BOT.hookTo(new B.Vector3(p.pos.x, hy, p.pos.z), 0.15);
     for (let i = 0; i < 120 && bd.hanging; i++) await BOT.step(1);   // 手を離して止まるとはまる
+    for (let i = 0; i < 180 && bd.snap; i++) await BOT.step(1);   // ワイヤーを外し終わるまで待つ（動き出すとワイヤーが横へ伸びて見えた）
     await BOT.step(30); BOT.rec("はまった");
     return true;
   };
@@ -182,7 +183,7 @@
     while (bd.step <= 8 && bd.floor === 0 && !bd.done) {
       const nm = names[bd.step];
       if (nm) { G.tp.radius = nm === "slab" ? 15 : 11; G.tp.alpha = -Math.PI / 2 - 0.9; G.tp.beta = 1.15; BOT.film(`${tag}_${nm}`, 0.25); }
-      const st = bd.step; await BOT.placeOne(); BOT.cut();
+      const st = bd.step; await BOT.placeOne(); if (nm) await BOT.step(60); BOT.cut();   // 外れたワイヤーが荷の上に残る所まで撮る
       if (st === 8) break;
     }
     G.camAt = null; return BOT.shots.length;
