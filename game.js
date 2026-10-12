@@ -1145,7 +1145,7 @@ const G = window.G = {};   // 確かめ用の口
   // 吊り荷は物理なし（フックの下にぶら下げるだけ）。フックは振り子で少しだけ揺れる
   const cr = { pos: new B.Vector3(0, 0, 3), heading: 0, swing: 0, luff: 0.8, ext: 4, wire: 6, sway: new B.Vector2(0, 0), swayV: new B.Vector2(0, 0),
     tgt: new B.Vector3(-7.5, 7, 5.5) };   // tgt = フックをここへ持っていきたい（本人が動かすのはこれ）
-  const CLIM = { luff: [0.12, 1.4], ext: [0, 34], wire: [1.2, 50] };
+  const CLIM = { luff: [0.12, 1.4], ext: [0, 25], wire: [1.2, 50] };   // ext は 25 まで（内側の筒 9.2m を 3 段で出すので、25.8 を超えると段の間にすき間が空いた 10-12 評価 k2）
   const crRoot = new B.TransformNode("crane", scene);
   const crRed = paintM("crRed", "paint_red_diff.jpg", 0.38, 0.6), white = paintM("white", "paint_white_diff.jpg", 0.4, 0.6);
   const crRoofGlass = mat("crRoofGlass", 0.2, 0.25, 0.28, 0.05); crRoofGlass.alpha = 0.12;   // 屋根は上を見て吊るので薄く
@@ -1186,10 +1186,11 @@ const G = window.G = {};   // 確かめ用の口
   // 見た目のブーム: 太い順に 4 段の六角形の筒。伸ばした分を内側の 3 段で等分して出す。筒の口には濃い色の帯
   const SEC = [{ d: 0.98, L: BOOM0, m: crRed }, { d: 0.82, L: 9.2, m: white }, { d: 0.68, L: 9.2, m: white }, { d: 0.55, L: 9.2, m: white }].map((c, i) => {
     const t = B.MeshBuilder.CreateCylinder("crSec" + i, { diameter: c.d, height: c.L, tessellation: 6 }, scene);
-    t.parent = crBoomJ; t.rotation.x = Math.PI / 2; t.rotation.y = Math.PI / 6; t.scaling.x = 0.82; t.material = c.m;
+    t.rotation.y = Math.PI / 6; t.bakeCurrentTransformIntoVertices();   // 六角形の向きは筒の軸まわりに先に焼き込む（rotation.y と x を同時に入れると Y が後に掛かり、筒が横へ 30 度ねじれて段が途切れて見えた 10-12 評価 k2）
+    t.parent = crBoomJ; t.rotation.x = Math.PI / 2; t.scaling.x = 0.82; t.material = c.m;
     shadow.addShadowCaster(t); t.receiveShadows = true; t.isPickable = false;
     const col = B.MeshBuilder.CreateCylinder("crCollar" + i, { diameter: c.d + 0.06, height: 0.22, tessellation: 6 }, scene);
-    col.parent = crBoomJ; col.rotation.x = Math.PI / 2; col.rotation.y = Math.PI / 6; col.scaling.x = 0.82; col.material = i ? dark : crRed; col.isPickable = false; shadow.addShadowCaster(col);
+    col.rotation.y = Math.PI / 6; col.bakeCurrentTransformIntoVertices(); col.parent = crBoomJ; col.rotation.x = Math.PI / 2; col.scaling.x = 0.82; col.material = i ? dark : crRed; col.isPickable = false; shadow.addShadowCaster(col);
     return { ...c, t, col };
   });
   function placeBoomSecs(ext) {
@@ -1285,13 +1286,19 @@ const G = window.G = {};   // 確かめ用の口
     const spread = Math.max(...pts.map(q => Math.hypot(q.x, q.z))), S = Math.max(0.9, spread * 1.15);
     return { pts, S, hang: HOOK_DROP + S + sy, col: false };
   }
-  const slingM = mat("slingM", 0.62, 0.62, 0.6, 0.6, 0.6);   // 玉掛けワイヤーは明るい鋼色（暗いと地面に沈んで見えない）
+  const slingM = mat("slingM", 0.36, 0.36, 0.37, 0.6, 0.6);   // 玉掛けワイヤー（評価 k1: 細く明るいと見えにくい → 太く暗めの灰）
   const ringM = mat("ringM", 1, 0.8, 0.1, 0.4); ringM.emissiveColor = new B.Color3(0.3, 0.22, 0);
-  const slings = [0, 1, 2, 3].map(i => { const w = B.MeshBuilder.CreateCylinder("sling" + i, { diameter: 0.075, height: 1, tessellation: 6 }, scene); w.material = slingM; w.isPickable = false; w.setEnabled(false); return w; });
-  function drawSlings(h, hb) {
-    if (!h) { for (const w of slings) w.setEnabled(false); return; }
+  const slings = [0, 1, 2, 3].map(i => { const w = B.MeshBuilder.CreateCylinder("sling" + i, { diameter: 0.095, height: 1, tessellation: 6 }, scene); w.material = slingM; w.isPickable = false; w.setEnabled(false); return w; });
+  const slings2 = slings.map((w, i) => { const v = w.clone("slingB" + i); v.setEnabled(false); return v; });   // たるんだ時の下半分
+  // sag > 0 の時はワイヤーがたるむ（真ん中が下がった 2 本の線で描く）
+  function drawSlings(h, hb, sag = 0) {
+    if (!h) { for (const w of slings) w.setEnabled(false); for (const w of slings2) w.setEnabled(false); return; }
     const W = h.m.computeWorldMatrix(true);
-    slings.forEach((w, i) => { const q = h.pts[i]; w.setEnabled(!!q); if (q) setRope(w, hb, B.Vector3.TransformCoordinates(q, W)); });
+    slings.forEach((w, i) => {
+      const q = h.pts[i], v = slings2[i]; w.setEnabled(!!q); v.setEnabled(!!q && sag > 0); if (!q) return;
+      const e = B.Vector3.TransformCoordinates(q, W);
+      if (sag > 0) { const mid = B.Vector3.Lerp(hb, e, 0.55); mid.y -= sag; setRope(w, hb, mid); setRope(v, mid, e); } else setRope(w, hb, e);
+    });
   }
   // 吊っている建材の位置と向き。ワイヤーが張るまでは地面に残る（地切り）。柱は下の端を地面に付けたまま起き上がる
   function hangPiece(h, hp, dt) {
@@ -1316,6 +1323,7 @@ const G = window.G = {};   // 確かめ用の口
         h.lifted = true;
         const k = Math.min(1, dt * 6); m.position.x += (hp.x - m.position.x) * k; m.position.z += (hp.z - m.position.z) * k; m.position.y = want;
       } else { h.lifted = false; m.position.y = h.rest.y; }
+      if (h.lifted) B.Quaternion.RotationYawPitchRollToRef(0, B.Scalar.Clamp(cr.swayV.y * 0.05, -0.08, 0.08), B.Scalar.Clamp(-cr.swayV.x * 0.05, -0.08, 0.08), m.rotationQuaternion);
     }
     drawSlings(h, hb);
   }
@@ -1390,17 +1398,21 @@ const G = window.G = {};   // 確かめ用の口
     ang += side * 5 * csp * dt / nr;                          // 左右は「横に 5m/秒」になるように角度で動かす
     t.x = cr.pos.x + Math.sin(ang) * nr; t.z = cr.pos.z + Math.cos(ang) * nr;
     t.y = B.Scalar.Clamp(t.y + lift * 4 * csp * dt, 0.9 + hang, 45);
+    if (bd.hanging && bd.hanging.holdT > 0) { bd.hanging.holdT -= dt; t.y = Math.min(t.y, t0.y); }   // 地切りで止めている間は上げない
     if (!bd.done) { bd.t += dt; bd.hookT += dt; }
     const tgtSpeed = B.Vector3.Distance(t, t0) / dt;      // 本人がフックを動かしている速さ
     // 関節は逆算した値へ、重機らしい速さで追いかける
     const s = solveCrane(t, hang);
-    cr.swing = cr.swing + B.Scalar.Clamp(angDiff(cr.swing, s.swing), -0.9 * csp * dt, 0.9 * csp * dt);
-    cr.luff = approach(cr.luff, s.luff, 0.6 * csp * dt);
-    cr.ext = approach(cr.ext, s.ext, 8 * csp * dt);
+    const slow = bd.hanging ? 0.8 : 1;
+    const drive = (v, d, max, acc, gain) => approach(v, B.Scalar.Clamp(d * gain, -max, max), acc * dt);   // 目標までの差に比例した速さを、加速度の上限つきで追う
+    cr.swV = drive(cr.swV || 0, angDiff(cr.swing, s.swing), 0.42 * csp * slow, 0.7 * csp, 1.6); cr.swing += cr.swV * dt;   // 旋回 最大 24 度/秒（1 周 15 秒）
+    cr.luV = drive(cr.luV || 0, s.luff - cr.luff, 0.3 * csp * slow, 0.6 * csp, 2); cr.luff += cr.luV * dt;
+    cr.exV = drive(cr.exV || 0, s.ext - cr.ext, 2.5 * csp * slow, 3 * csp, 2); cr.ext += cr.exV * dt;
     applyCranePose();
     for (const n of [crRoot, crUpper, crBoomJ]) n.computeWorldMatrix(true);
     _tip.copyFrom(crTip.computeWorldMatrix(true).getTranslation());
-    cr.wire = approach(cr.wire, B.Scalar.Clamp(_tip.y - t.y, ...CLIM.wire), 7 * dt);
+    { const ex2 = t.x - _tip.x, ez2 = t.z - _tip.z, dd = Math.hypot(ex2, ez2), LE = 1.6; if (dd > LE) { t.x = _tip.x + ex2 * LE / dd; t.z = _tip.z + ez2 * LE / dd; } }   // 目標はフックの真上から 1.6m まで
+    cr.wire = approach(cr.wire, B.Scalar.Clamp(_tip.y - t.y, ...CLIM.wire), 3.5 * dt);
     if (!tipInit) { _tipPrev.copyFrom(_tip); _tipVelPrev.setAll(0); tipInit = true; }
     // フックの揺れ（振り子）。小さめにして早く収まるようにした（揺れ止め）
     _tip.subtractToRef(_tipPrev, _tipVel).scaleInPlace(1 / dt);
@@ -1414,10 +1426,11 @@ const G = window.G = {};   // 確かめ用の口
       if (bd.windT <= 0) { bd.windT = 7 + Math.random() * 6; bd.gust = 1.2; bd.gustDir = Math.random() * 6.28; popup("💨 かぜだ！ ゆれに 気をつけて", "mile"); chime([12, 7], 0.09, 0.08); }
       if (bd.gust > 0) { bd.gust -= dt; const w = 2.2 * WIND_MUL() * Math.sin(Math.min(1, bd.gust) * Math.PI); cr.swayV.x += Math.cos(bd.gustDir) * w * dt; cr.swayV.y += Math.sin(bd.gustDir) * w * dt; }
     }
-    cr.swayV.scaleInPlace(Math.max(0, 1 - 2.6 * dt));
+    cr.swayV.scaleInPlace(Math.max(0, 1 - 0.9 * dt));   // 2.6 では揺れがすぐ消えて見えなかった（評価 k1）
     cr.sway.addInPlace(cr.swayV.scale(dt));
     const sl = cr.sway.length(), smax = Math.min(1.2, cr.wire * 0.15); if (sl > smax) cr.sway.scaleInPlace(smax / sl);
     const hp = hookPos();
+    if (bd.snap && bd.snap.drop) hp.y -= bd.snap.drop;   // 置いた後、フックを少し下げてワイヤーをゆるめる
     if (hp.y - hang < 0.9) hp.y = 0.9 + hang;
     // 置き場の建材の上では、鉤が建材の上面に当たって止まる（めり込まない）
     if (!bd.hanging && !bd.snap && bd.yard) {
@@ -1442,7 +1455,7 @@ const G = window.G = {};   // 確かめ用の口
     if (bd.hanging) {
       const h = bd.hanging;
       const wasLifted = h.lifted; hangPiece(h, hp, dt);
-      if (h.lifted && !wasLifted && !h.liftedOnce) { h.liftedOnce = true; thud(0.2, 900); popup("つった！", "load"); }
+      if (h.lifted && !wasLifted && !h.liftedOnce) { h.liftedOnce = true; h.holdT = 0.35; thud(0.2, 900); popup("つった！", "load"); }   // 地切り: 少し浮いた所でいったん止める
       // 光る枠の近くまで運ぶとピタッとはまる。横は近いのに高さが合っていない時は枠が緑になって知らせる
       const d = Math.hypot(h.m.position.x - h.p.pos.x, h.m.position.z - h.p.pos.z), dy = h.m.position.y - h.p.pos.y;
       bd.near = d < SNAP.xz * SNAP_MUL(); bd.dist = d; bd.dy = dy;
@@ -1457,12 +1470,17 @@ const G = window.G = {};   // 確かめ用の口
       }
     }
     if (bd.snap) {
-      const s2 = bd.snap; s2.t = Math.min(1, s2.t + dt / 0.35);
-      B.Vector3.LerpToRef(s2.from, s2.to, s2.t, s2.m.position); B.Quaternion.SlerpToRef(s2.q, B.Quaternion.Identity(), s2.t, s2.m.rotationQuaternion);
-      drawSlings(s2.h, new B.Vector3(hp.x, hp.y - HOOK_DROP, hp.z));
-      if (s2.t >= 1) {
+      const s2 = bd.snap, hb = new B.Vector3(hp.x, hp.y - HOOK_DROP, hp.z);
+      if (s2.t < 1) {
+        s2.t = Math.min(1, s2.t + dt / 0.9); const e = 1 - Math.pow(1 - s2.t, 3);   // 着地の手前ほどゆっくり（評価 k1: 0.35 秒で急に収まっていた）
+        B.Vector3.LerpToRef(s2.from, s2.to, e, s2.m.position); B.Quaternion.SlerpToRef(s2.q, B.Quaternion.Identity(), e, s2.m.rotationQuaternion);
+        drawSlings(s2.h, hb);
+        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.1 : 0.15); dust(s2.to, s2.good ? 14 : 8); }
+      } else {
+        s2.slack += dt; s2.drop = Math.min(0.4, s2.slack * 1.2); drawSlings(s2.h, hb, s2.drop * 0.9);
+      }
+      if (s2.t >= 1 && s2.slack >= 0.55) {
         drawSlings(null); for (const r of s2.h.rings || []) r.dispose();
-        clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.1 : 0.15); dust(s2.to, s2.good ? 14 : 8);
         bd.placed.push(s2.m); bd.snap = null; bd.step++;
         if (bd.step >= bd.plan.length) {
           bd.floor++; bd.step = 0; bd.score += 150; chime([0, 4, 7, 12], 0.12); shake(0.25); popup(`${bd.floor}かい かんせい！ +150`, "big");
