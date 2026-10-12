@@ -1166,7 +1166,8 @@ const G = window.G = {};   // 確かめ用の口
     deco("crOutBeam", [2.2, 0.45, 0.5], crRoot, [sx * 2.2, 1.1, z], white);
     deco("crJack", [0.4, 1.05, 0.4], crRoot, [sx * 3.2, 0.6, z], crRed);
     cyl("crJackRod", 0.22, 0.4, crRoot, [sx * 3.2, 0.2, z], null, chrome, 12);
-    cyl("crPad", 0.8, 0.08, crRoot, [sx * 3.2, 0.04, z], null, dark, 20);
+    cyl("crPad", 0.8, 0.08, crRoot, [sx * 3.2, 0.12, z], null, dark, 20);
+    deco("crMat", [1.3, 0.1, 1.3], crRoot, [sx * 3.2, 0.05, z], mat("crMatM", 0.42, 0.3, 0.18, 0.9));   // 敷板（木）
   }
   deco("crBumper", [2.7, 0.35, 0.3], crRoot, [0, 1.0, 4.6], dark);
   for (const sx of [-0.95, 0.95]) deco("crLamp", [0.3, 0.16, 0.05], crRoot, [sx, 1.45, 4.52], lampM);
@@ -1178,6 +1179,7 @@ const G = window.G = {};   // 確かめ用の口
   makeBox("crCabRoof", [1.15, 0.05, 1.75], crUpper, [-0.95, 1.52, 1.2], crRoofGlass).isVisible = false;   // 上を見て吊るので屋根は無し（縁の線が空に見えた）
   for (const [x, z] of [[-1.48, 2.03], [-0.42, 2.03], [-1.48, 0.37], [-0.42, 0.37]]) deco("crPillar", [0.05, 1.5, 0.05], crUpper, [x, 0.75, z], cabFrameM);
   deco("crCabBase", [1.12, 0.08, 1.72], crUpper, [-0.95, 0.02, 1.2], white);   // 屋根もガラス（上を見て吊るので）
+  for (const [x, z] of [[-1.55, 2.0]]) { deco("crMirrorArm", [0.3, 0.04, 0.04], crUpper, [x - 0.1, 1.2, z], dark); deco("crMirror", [0.06, 0.32, 0.2], crUpper, [x - 0.27, 1.12, z], dark); }
   const crSeat = new B.TransformNode("crSeat", scene); crSeat.parent = crUpper; crSeat.position.set(-0.95, 1.15, 1.1);
   const crBoomJ = new B.TransformNode("crBoomJ", scene); crBoomJ.parent = crUpper; crBoomJ.position.set(0.45, 1.2, -2.4);
   const BOOM0 = 11, PIV = { x: 0.45, y: 1.9 + 1.2, z: -2.4 };   // 一番縮めた時のブームの長さ／ブームの根元（クレーンの中の座標）
@@ -1212,11 +1214,17 @@ const G = window.G = {};   // 確かめ用の口
   const hookStripe = B.MeshBuilder.CreateBox("hookStripe", { width: 0.77, height: 0.18, depth: 0.52 }, scene); hookStripe.parent = hook; hookStripe.position.y = 0.1; hookStripe.material = dark;
   const hookCurve = B.MeshBuilder.CreateTorus("hookCurve", { diameter: 0.5, thickness: 0.12, tessellation: 20 }, scene);
   hookCurve.parent = hook; hookCurve.rotation.x = Math.PI / 2; hookCurve.position.y = -0.75; hookCurve.material = steel; shadow.addShadowCaster(hookCurve);
+  const hookLatch = B.MeshBuilder.CreateBox("hookLatch", { width: 0.05, height: 0.32, depth: 0.06 }, scene);   // 外れ止め（鉤の口をふさぐ金具）
+  hookLatch.parent = hook; hookLatch.position.set(0.2, -0.62, 0); hookLatch.rotation.z = 0.5; hookLatch.material = hookM;
   // 落ちる場所の目印（吊り荷・フックの真下）と、真下へ伸びる細い線
   const markM = new B.StandardMaterial("markM", scene); markM.diffuseColor = new B.Color3(1, 0.55, 0.1); markM.emissiveColor = new B.Color3(0.6, 0.3, 0); markM.alpha = 0.6;
   const mark = B.MeshBuilder.CreateDisc("mark", { radius: 0.9, tessellation: 32 }, scene); mark.rotation.x = Math.PI / 2; mark.material = markM; mark.isPickable = false;
   const markLine = B.MeshBuilder.CreateCylinder("markLine", { diameter: 0.05, height: 1, tessellation: 6 }, scene); markLine.material = markM; markLine.isPickable = false;
-  const crAll = [crRoot, wireM, wireM2, hook, mark, markLine, crLuff.barrel, crLuff.rod];
+  const blobM = new B.StandardMaterial("blobM", scene); blobM.diffuseColor = B.Color3.Black(); blobM.specularColor = B.Color3.Black(); blobM.opacityTexture = dustTex; blobM.alpha = 0.55; blobM.disableLighting = true;
+  const blob = (name, w, d) => { const b = B.MeshBuilder.CreateGround(name, { width: w, height: d }, scene); b.material = blobM; b.isPickable = false; return b; };
+  const crBlob = blob("crBlob", 7.5, 12); crBlob.parent = crRoot; crBlob.position.y = 0.02;
+  const hookBlob = blob("hookBlob", 1, 1), loadBlob = blob("loadBlob", 1, 1);
+  const crAll = [crRoot, wireM, wireM2, hook, mark, markLine, crLuff.barrel, crLuff.rod, hookBlob, loadBlob];
   for (const n of crAll) n.setEnabled(false);
 
   // 建てる物: 1 階 = 柱 4 → 梁 4 → 床板 1。建物の位置は解体したビルと同じ（x -4〜4, z 14〜20）
@@ -1323,14 +1331,14 @@ const G = window.G = {};   // 確かめ用の口
         h.lifted = true;
         const k = Math.min(1, dt * 6); m.position.x += (hp.x - m.position.x) * k; m.position.z += (hp.z - m.position.z) * k; m.position.y = want;
       } else { h.lifted = false; m.position.y = h.rest.y; }
-      if (h.lifted) B.Quaternion.RotationYawPitchRollToRef(0, B.Scalar.Clamp(cr.swayV.y * 0.05, -0.08, 0.08), B.Scalar.Clamp(-cr.swayV.x * 0.05, -0.08, 0.08), m.rotationQuaternion);
+      if (h.lifted) B.Quaternion.RotationYawPitchRollToRef(0, B.Scalar.Clamp(cr.swayV.y * 0.025, -0.035, 0.035), B.Scalar.Clamp(-cr.swayV.x * 0.025, -0.035, 0.035), m.rotationQuaternion);   // 最大 2 度（評価 k2: 4.6 度では傾いたまま運ばれて見えた）
     }
     drawSlings(h, hb);
   }
   function toast(t) { const el = $("toast"); el.textContent = t; el.style.display = ""; bd.toastT = 2.5; }
   function applyCranePose() {
     crRoot.position.copyFrom(cr.pos); crRoot.rotation.y = cr.heading;
-    crUpper.rotation.y = cr.swing; crBoomJ.rotation.x = -cr.luff;
+    crUpper.rotation.y = cr.swing; crBoomJ.rotation.x = -cr.luff + (cr.bend || 0);
     const L = BOOM0 + cr.ext;
     crBoom2.scaling.z = Math.max(0.5, L - BOOM0 + 1); crBoom2.position.z = (BOOM0 - 1 + L) / 2;
     crTip.position.z = L;
@@ -1406,8 +1414,10 @@ const G = window.G = {};   // 確かめ用の口
     const slow = bd.hanging ? 0.8 : 1;
     const drive = (v, d, max, acc, gain) => approach(v, B.Scalar.Clamp(d * gain, -max, max), acc * dt);   // 目標までの差に比例した速さを、加速度の上限つきで追う
     cr.swV = drive(cr.swV || 0, angDiff(cr.swing, s.swing), 0.42 * csp * slow, 0.7 * csp, 1.6); cr.swing += cr.swV * dt;   // 旋回 最大 24 度/秒（1 周 15 秒）
+    const swA = ((cr.swV || 0) - (cr.swVp || 0)) / Math.max(dt, 1e-3); cr.swVp = cr.swV || 0;
+    cr.bend = (cr.bend || 0) + (B.Scalar.Clamp(Math.abs(swA) * 0.006, 0, 0.004) - (cr.bend || 0)) * Math.min(1, dt * 6);   // 旋回の加速・減速でブームが少ししなる（先端で数 cm）
     cr.luV = drive(cr.luV || 0, s.luff - cr.luff, 0.3 * csp * slow, 0.6 * csp, 2); cr.luff += cr.luV * dt;
-    cr.exV = drive(cr.exV || 0, s.ext - cr.ext, 2.5 * csp * slow, 3 * csp, 2); cr.ext += cr.exV * dt;
+    cr.exV = drive(cr.exV || 0, s.ext - cr.ext, 1.5 * csp * slow, 2 * csp, 2); cr.ext += cr.exV * dt;   // 伸縮 最大 1.5m/秒（評価 k2: 2.5 は速い）
     applyCranePose();
     for (const n of [crRoot, crUpper, crBoomJ]) n.computeWorldMatrix(true);
     _tip.copyFrom(crTip.computeWorldMatrix(true).getTranslation());
@@ -1500,6 +1510,11 @@ const G = window.G = {};   // 確かめ用の口
         if (from.x > bb.minimumWorld.x - 0.3 && from.x < bb.maximumWorld.x + 0.3 && from.z > bb.minimumWorld.z - 0.3 && from.z < bb.maximumWorld.z + 0.3 && bb.maximumWorld.y < bottom + 0.01) gy = Math.max(gy, bb.maximumWorld.y + 0.03);
       }
       mark.position.set(from.x, gy, from.z);
+      // 丸影: 高いほど薄く大きく
+      const hl = bd.hanging, h1 = Math.max(0, bottom - gy), fade = B.Scalar.Clamp(1 - h1 / 30, 0.25, 1);
+      if (hl) { const ex = hl.m.getBoundingInfo().boundingBox.extendSizeWorld; loadBlob.position.set(from.x, gy - 0.005, from.z); loadBlob.scaling.set(ex.x * 2.6 + h1 * 0.05, 1, ex.z * 2.6 + h1 * 0.05); loadBlob.visibility = fade; }
+      loadBlob.setEnabled(!!hl);
+      hookBlob.position.set(hp.x, (hl ? gy : gy) - 0.004, hp.z); hookBlob.scaling.setAll(1.3 + h1 * 0.03); hookBlob.visibility = fade * 0.8;
       markM.diffuseColor.set(bd.near ? 0.3 : 1, bd.near ? 1 : 0.55, bd.near ? 0.3 : 0.1);
       setRope(markLine, new B.Vector3(from.x, bottom, from.z), new B.Vector3(from.x, gy, from.z));
     }
