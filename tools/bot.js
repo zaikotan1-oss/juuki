@@ -153,13 +153,16 @@
     const bd = G.bd; if (bd.done) return false;
     // 置き場の建材の上へ → 下げて吊る
     const y = bd.yard; if (!y) { await BOT.step(30); return true; }
-    const ym = y.m.position, top = ym.y + 0.5;
-    await BOT.hookTo(new B.Vector3(ym.x, Math.max(G.cr.tgt.y, top + 4), ym.z), 0.4);
+    const ym = y.at || y.m.position, top = (y.rest || y.m.position).y + 0.5;
+    await BOT.hookTo(new B.Vector3(ym.x, Math.max(G.cr.tgt.y, top + 4), ym.z), 0.3);
     for (let i = 0; i < 300 && !bd.hanging; i++) { R.y = -1; await BOT.step(1); } clear();
+    // 掛けたら巻き上げて地面から離す（地切り）
+    for (let i = 0; i < 400 && bd.hanging && !bd.hanging.lifted; i++) { R.y = 1; await BOT.step(1); } clear();
+    await BOT.step(20);
     if (!bd.hanging) { BOT.rec("吊れず やり直し"); return true; }
     BOT.rec("吊った");
     // 枠の上まで上げて運び、下ろして手を離す
-    const p = bd.hanging.p, hy = p.pos.y + 0.75 + p.size[1] / 2;
+    const p = bd.hanging.p, hy = p.pos.y - p.size[1] / 2 + bd.hanging.hang;
     await BOT.hookTo(new B.Vector3(G.cr.tgt.x, Math.max(hy + 3, G.cr.tgt.y), G.cr.tgt.z), 0.5);
     await BOT.hookTo(new B.Vector3(p.pos.x, hy + 3, p.pos.z), 0.3);
     await BOT.hookTo(new B.Vector3(p.pos.x, hy, p.pos.z), 0.15);
@@ -168,5 +171,21 @@
     return true;
   };
   BOT.playBuild = async (maxSec = 900) => { const t0 = BOT.t; while (BOT.t - t0 < maxSec && !G.bd.done) { if (!(await BOT.placeOne())) break; } BOT.rec(G.bd.done ? "ビル完成！" : "打ち切り"); return BOT.t - t0; };
+  // クレーンの見た目の評価用: 車体を 5 方向から撮る → 柱・梁・床板を 1 つずつ吊って置く所を近くから 0.25 秒ごとに撮る
+  BOT.filmCrane = async (tag) => {
+    const bd = G.bd, cp = G.cr.pos.clone(), V = (x, y, z) => new B.Vector3(x, y, z);
+    G.camAt = () => cp.add(V(0, 3, 0)); G.tp.radius = 19;   // 15 だとカメラがブームの中に入る角度があった
+    const angs = [[-Math.PI / 2 - 0.6, 1.15], [-Math.PI / 2 + 0.9, 1.1], [Math.PI / 2 + 0.5, 1.15], [0, 1.35], [-Math.PI / 2 - 0.2, 0.55]];
+    for (let i = 0; i < angs.length; i++) { G.tp.alpha = angs[i][0]; G.tp.beta = angs[i][1]; await BOT.step(2); await BOT.snap(`${tag}_crane_${String(i).padStart(3, "0")}.jpg`); }
+    G.camAt = () => { if (!bd.hanging && bd.yard) return bd.yard.at.add(V(-1, 1.5, 0)); if (bd.hanging) { const p = bd.hanging.m.position; return (!bd.hanging.lifted || B.Vector3.Distance(p, bd.ghost.position) > 5) ? p.clone() : bd.ghost.position.clone(); } return bd.ghost ? bd.ghost.position.clone() : G.hook.position.clone(); };
+    const names = { 0: "col", 4: "beam", 8: "slab" };
+    while (bd.step <= 8 && bd.floor === 0 && !bd.done) {
+      const nm = names[bd.step];
+      if (nm) { G.tp.radius = nm === "slab" ? 15 : 11; G.tp.alpha = -Math.PI / 2 - 0.9; G.tp.beta = 1.15; BOT.film(`${tag}_${nm}`, 0.25); }
+      const st = bd.step; await BOT.placeOne(); BOT.cut();
+      if (st === 8) break;
+    }
+    G.camAt = null; return BOT.shots.length;
+  };
   window.BOT_READY = true;
 })();
