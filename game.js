@@ -1573,7 +1573,7 @@ const G = window.G = {};   // 確かめ用の口
     // 吊る: フックを置き場の建材のすぐ上まで下ろすと掛かる
     if (!bd.hanging && !bd.snap && bd.yard) {
       const y = bd.yard, top = y.rest.y + (y.p.kind === "柱" ? y.p.size[0] / 2 : y.p.size[1] / 2);
-      if (Math.hypot(hp.x - y.at.x, hp.z - y.at.z) < (y.col ? 1.0 : 0.6) && hp.y - HOOK_DROP < top + 0.06) {   // 平らな荷は真ん中近くで掛ける（片寄ると梁が傾いて見えた 評価 k4）
+      if (Math.hypot(hp.x - y.at.x, hp.z - y.at.z) < (y.col ? 1.6 : 1.1) && hp.y - HOOK_DROP < top + 0.35) {   // 掛かる範囲: 柱 1.0→1.6m・平らな荷 0.6→1.1m・高さ 0.06→0.35m（10-13 本人「両方とも大きく」）。平らな荷の傾きは最大 1 度に抑えてある
         bd.hanging = y; bd.yard = null; bd.hookT = 0; y.lifted = false; y.bot = y.rest.add(new B.Vector3(-y.p.size[1] / 2, 0, 0));
         if (!playS("sling_hook", 0.8)) thud(0.3, 1200); chime([7], 0.1, 0.1); popup("かけた！ まきあげよう ↑", "load");
       }
