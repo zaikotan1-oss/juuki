@@ -176,10 +176,13 @@ const G = window.G = {};   // 確かめ用の口
   const STAGES = [
     // trucks: ダンプが この台数 出発したら さら地 かんせい（10-12 本人「全部は入らないから回数を決める」→ 少なめ 4/6/8/10・建物が残っていても台数だけで終わり）
     // 瓦礫の全部は 1 面で ダンプ約 19 台分（4 面は約 47 台分）。★ の時間は 1 台 45 秒ほどの見込みで決めた推測（人の実測はまだ）
-    { floors: 2, name: "小さな ビル", trucks: 4, star3: 200, star2: 330 },
-    { floors: 3, name: "3かいだての ビル", trucks: 6, star3: 290, star2: 480 },
-    { floors: 4, name: "4かいだての ビル", trucks: 8, star3: 380, star2: 620 },
-    { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true }];   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
+    // bld: クレーンで建てる物（10-13 本人「ステージごとに違う建物」）
+    { floors: 2, name: "小さな ビル", trucks: 4, star3: 200, star2: 330, bld: "biru" },
+    { floors: 3, name: "3かいだての ビル", trucks: 6, star3: 290, star2: 480, bld: "mansion" },
+    { floors: 4, name: "4かいだての ビル", trucks: 8, star3: 380, star2: 620, bld: "tower" },
+    { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true, bld: "house" }];
+  const BLD = { biru: "じゅうきビル", mansion: "じゅうきマンション", tower: "じゅうきタワー", house: "あたらしい おうち" };
+  const bldType = () => STAGES[stage].bld || "biru";   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
   const UPGRADES = ["うでと はしりが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
   const prog = (() => { try { return JSON.parse(localStorage.getItem("juuki_prog")) || { stars: [] }; } catch (e) { return { stars: [] }; } })();
   const saveProg = () => { try { localStorage.setItem("juuki_prog", JSON.stringify(prog)); } catch (e) {} };
@@ -1344,19 +1347,35 @@ const G = window.G = {};   // 確かめ用の口
   const ghostM = new B.StandardMaterial("ghostM", scene); ghostM.diffuseColor = new B.Color3(0.2, 0.9, 1); ghostM.emissiveColor = new B.Color3(0.1, 0.6, 0.8); ghostM.alpha = 0.35;
   const ghostOk = new B.StandardMaterial("ghostOk", scene); ghostOk.diffuseColor = new B.Color3(0.3, 1, 0.3); ghostOk.emissiveColor = new B.Color3(0.15, 0.8, 0.15); ghostOk.alpha = 0.6;
   let BUILD_GOAL = 99; const bd_goal = () => BUILD_GOAL;   // 何階だてか（最後の階に看板を足す）。bd より前に呼ばれるので別の変数
-  const signM = (() => {
+  const signMs = {};
+  const signM = (text) => signMs[text] || (signMs[text] = (() => {
     const t = new B.DynamicTexture("signT", { width: 512, height: 200 }, scene, true), c = t.getContext();
     c.fillStyle = "#1c5fb8"; c.fillRect(0, 0, 512, 200); c.strokeStyle = "#fff"; c.lineWidth = 10; c.strokeRect(8, 8, 496, 184);
-    c.fillStyle = "#fff"; c.font = "bold 92px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("じゅうきビル", 256, 104); t.update();
+    c.fillStyle = "#fff"; c.textAlign = "center"; c.textBaseline = "middle";
+    let fs = 92; do { c.font = "bold " + fs + "px sans-serif"; fs -= 4; } while (c.measureText(text).width > 470 && fs > 30);
+    c.fillText(text, 256, 104); t.update();
     const m = new B.StandardMaterial("signM", scene); m.diffuseTexture = t; m.emissiveColor = new B.Color3(0.35, 0.35, 0.35); return m;
-  })();
+  })());
+  // 建物ごとの色（写真素材が無いので色だけ）
+  const solidM = (name, rgb, rough) => { const m = new B.PBRMaterial(name, scene); m.albedoColor = new B.Color3(...rgb).toLinearSpace(); m.metallic = 0; m.roughness = rough; return m; };
+  const woodM = solidM("woodM", [0.6, 0.4, 0.22], 0.8), woodFloorM = solidM("woodFloorM", [0.72, 0.55, 0.36], 0.7), roofTM = solidM("roofTM", [0.2, 0.25, 0.36], 0.5), whiteM = solidM("whiteM", [0.88, 0.88, 0.85], 0.45);
+  const glassWM = solidM("glassWM", [0.3, 0.55, 0.78], 0.06); glassWM.metallic = 0.4; glassWM.alpha = 0.7;
+  // 1 階ぶんの段取り。建物の種類（bldType）で色と足す物が変わる
+  //   biru: 赤い鉄骨＋床＋屋上の看板 / mansion: 白い骨組み＋各階の前にベランダ / tower: 各階の前面に青いガラスの壁 / house: 木の柱と梁・木の床＋最後に三角屋根 2 枚
   function planFloor(f) {
-    const y0 = f * FLOOR_H, L = [];
-    for (const x of [-3.8, 3.8]) for (const z of [14.2, 19.8]) L.push({ kind: "柱", size: [0.35, FLOOR_H, 0.35], pos: new B.Vector3(x, y0 + FLOOR_H / 2, z), m: steelM });
-    for (const z of [14.2, 19.8]) L.push({ kind: "梁", size: [7.3, 0.4, 0.3], pos: new B.Vector3(0, y0 + FLOOR_H - 0.2, z), m: steelM });
-    for (const x of [-3.8, 3.8]) L.push({ kind: "梁", size: [0.3, 0.4, 5.3], pos: new B.Vector3(x, y0 + FLOOR_H - 0.2, SC.z), m: steelM });
-    L.push({ kind: "床板", size: [8.2, 0.22, 6.2], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.11, SC.z), m: slabM });
-    if (f === bd_goal() - 1) L.push({ kind: "かんばん", size: [4, 1.6, 0.25], pos: new B.Vector3(0, y0 + FLOOR_H + 0.22 + 0.8, 14.6), m: signM });   // 最後の 1 個は屋上の看板
+    const y0 = f * FLOOR_H, L = [], T = bldType(), last = f === bd_goal() - 1;
+    const fm = T === "house" ? woodM : T === "mansion" ? whiteM : steelM;
+    for (const x of [-3.8, 3.8]) for (const z of [14.2, 19.8]) L.push({ kind: "柱", size: [0.35, FLOOR_H, 0.35], pos: new B.Vector3(x, y0 + FLOOR_H / 2, z), m: fm });
+    for (const z of [14.2, 19.8]) L.push({ kind: "梁", size: [7.3, 0.4, 0.3], pos: new B.Vector3(0, y0 + FLOOR_H - 0.2, z), m: fm });
+    for (const x of [-3.8, 3.8]) L.push({ kind: "梁", size: [0.3, 0.4, 5.3], pos: new B.Vector3(x, y0 + FLOOR_H - 0.2, SC.z), m: fm });
+    L.push({ kind: "床板", size: [8.2, 0.22, 6.2], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.11, SC.z), m: T === "house" ? woodFloorM : slabM });
+    if (T === "mansion") L.push({ kind: "ベランダ", size: [8.2, 0.18, 1.3], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.09, 13.9 - 0.65), m: whiteM });
+    if (T === "tower") L.push({ kind: "ガラス", size: [7.4, FLOOR_H - 0.5, 0.12], pos: new B.Vector3(0, y0 + (FLOOR_H - 0.5) / 2 + 0.05, 13.8), m: glassWM });   // 床板の縁（z 13.9）より外: ワイヤーが床を突き抜けて見えないように
+    if (last && T === "house") {
+      // 三角屋根: 床の上で 30 度。手前の 1 枚 → 奥の 1 枚。軒は 0.5m 出す
+      const a = Math.PI / 6, run = 3.1 + 0.5, len = run / Math.cos(a), yb = y0 + FLOOR_H + 0.22;
+      for (const sg of [-1, 1]) L.push({ kind: "やね", size: [8.9, 0.2, len], pos: new B.Vector3(SC.x, yb + Math.tan(a) * run / 2 - 0.05, SC.z + sg * run / 2), m: roofTM, q: B.Quaternion.RotationAxis(B.Axis.X, sg * a) });
+    } else if (last) L.push({ kind: "かんばん", size: [4, 1.6, 0.25], pos: new B.Vector3(0, y0 + FLOOR_H + 0.22 + 0.8, 14.6), m: signM(BLD[T]) });   // 最後の 1 個は屋上の看板
     return L;
   }
   const YARD = new B.Vector3(-7.5, 0, 10.5);              // 建材の置き場（クレーンの左前）。5.5 では置き場へ戻る 2〜3 秒が待ちになった（10-12 評価 b0）
@@ -1373,7 +1392,7 @@ const G = window.G = {};   // 確かめ用の口
     return B.Mesh.MergeMeshes([part(W, t, Hh / 2 - t / 2), part(W, t, -(Hh / 2 - t / 2)), part(t, Hh - 2 * t, 0)], true);
   }
   function pieceMesh(p, name) {
-    const m = p.kind === "床板" || p.kind === "かんばん" ? B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene) : hBeam(name, p.size);
+    const m = p.kind !== "柱" && p.kind !== "梁" ? B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene) : hBeam(name, p.size);
     m.material = p.m; shadow.addShadowCaster(m); m.receiveShadows = true; m.rotationQuaternion = B.Quaternion.Identity();
     return m;
   }
@@ -1382,7 +1401,7 @@ const G = window.G = {};   // 確かめ用の口
     if (bd.ghost) bd.ghost.dispose();
     // 枠は細い梁でも目立つよう、細い向きは 0.7m まで太らせる（評価役 3 人とも「緑の細線だけで目立たない」）
     bd.ghost = B.MeshBuilder.CreateBox("ghost", { width: Math.max(0.7, p.size[0] + 0.1), height: Math.max(0.7, p.size[1] + 0.1), depth: Math.max(0.7, p.size[2] + 0.1) }, scene);
-    bd.ghost.material = ghostM; bd.ghost.position.copyFrom(p.pos); bd.ghost.isPickable = false;
+    bd.ghost.material = ghostM; bd.ghost.position.copyFrom(p.pos); bd.ghost.isPickable = false; if (p.q) bd.ghost.rotationQuaternion = p.q.clone();
     // 置き場に寝かせて出す（柱は横倒し）
     const m = pieceMesh(p, "piece");
     // 柱は寝かせて、上になる端（+Y の端）を置き場の印の上に。吊ると、その端から起き上がる（建て起こし）
@@ -1400,7 +1419,7 @@ const G = window.G = {};   // 確かめ用の口
     if (p.kind === "柱") { const S = 0.7; return { pts: [new B.Vector3(0, sy / 2, 0)], S, hang: HOOK_DROP + S + sy, col: true }; }
     let pts;
     if (p.kind === "梁") { const ax = sx > sz ? "x" : "z", h = Math.max(sx, sz) / 2 - 0.6; pts = [-h, h].map(v => { const q = new B.Vector3(0, sy / 2, 0); q[ax] = v; return q; }); }
-    else if (p.kind === "かんばん") pts = [-1.4, 1.4].map(v => new B.Vector3(v, sy / 2, 0));
+    else if (p.kind === "かんばん" || p.kind === "ガラス") { const h = p.kind === "ガラス" ? sx / 2 - 1 : 1.4; pts = [-h, h].map(v => new B.Vector3(v, sy / 2, 0)); }   // 立てたまま上の縁に 2 本
     else pts = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => new B.Vector3(a * (sx / 2 - 0.5), sy / 2, b * (sz / 2 - 0.5)));
     const spread = Math.max(...pts.map(q => Math.hypot(q.x, q.z))), S = Math.max(0.9, spread * 1.15);
     return { pts, S, hang: HOOK_DROP + S + sy, col: false };
@@ -1602,7 +1621,7 @@ const G = window.G = {};   // 確かめ用の口
       const far = Math.hypot(hb.x - s2.to.x, hb.z - s2.to.z) > 0.8;
       if (s2.t < 1) {
         s2.t = Math.min(1, s2.t + dt / 0.9); const e = 1 - Math.pow(1 - s2.t, 3);   // 着地の手前ほどゆっくり（評価 k1: 0.35 秒で急に収まっていた）
-        B.Vector3.LerpToRef(s2.from, s2.to, e, s2.m.position); B.Quaternion.SlerpToRef(s2.q, B.Quaternion.Identity(), e, s2.m.rotationQuaternion);
+        B.Vector3.LerpToRef(s2.from, s2.to, e, s2.m.position); B.Quaternion.SlerpToRef(s2.q, s2.h.p.q || B.Quaternion.Identity(), e, s2.m.rotationQuaternion);   // 屋根は傾けて はめる
         if (far) drawSlings(null); else drawSlings(s2.h, hb);
         cr.tgt.x += (s2.to.x - cr.tgt.x) * Math.min(1, dt * 6); cr.tgt.z += (s2.to.z - cr.tgt.z) * Math.min(1, dt * 6);   // はまる間はフックも枠の真上へ（荷だけ横へ動くとワイヤーが横に伸びた 評価 k5）
         if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.1 : 0.15); dust(s2.to, s2.good ? 14 : 8); }
@@ -1663,7 +1682,7 @@ const G = window.G = {};   // 確かめ用の口
     const n = bd.plan.length, k = bd.floor * n + bd.step, all = bd.goal * n, pct = Math.round(k / all * 100);
     const nx = bd.plan[bd.step];
     $("gStage").textContent = `けんちく　${bd.goal}かいだてを たてよう`;
-    $("gText").textContent = bd.done ? "🎉 ビル かんせい！" : bd.hanging ? `🏗 ${nx.kind}を 光る わくの 上へ はこぼう` : `🪝 おきばの ${nx.kind}を つろう（右レバーを ↓）`;
+    $("gText").textContent = bd.done ? "🎉 " + BLD[bldType()] + " かんせい！" : bd.hanging ? `🏗 ${nx.kind}を 光る わくの 上へ はこぼう` : `🪝 おきばの ${nx.kind}を つろう（右レバーを ↓）`;
     $("gBld").style.width = pct + "%"; $("gBldT").textContent = `たてた ${pct}%　（${bd.floor + (bd.done ? 0 : 1)}かいめ ${bd.step}/${n}）`;
     $("gTr").style.width = Math.min(100, bd.streak * 20) + "%"; $("gTrT").textContent = bd.streak ? `ぴったり ${bd.streak}れんぞく` : "ぴったりで おくと ボーナス";
     $("gScore").textContent = "★ " + bd.score;
@@ -1671,15 +1690,15 @@ const G = window.G = {};   // 確かめ用の口
   // 決めた階数まで建てたら完成: 屋上に旗・紙吹雪・結果の札
   function buildDone() {
     bd.done = true; if (bd.ghost) { bd.ghost.dispose(); bd.ghost = null; }
-    const top = bd.goal * FLOOR_H + 0.3;
-    const pole = B.MeshBuilder.CreateCylinder("flagPole", { diameter: 0.08, height: 3 }, scene); pole.position.set(3.4, top + 1.5, 19.4); pole.material = steel;
-    const flag = B.MeshBuilder.CreatePlane("flag", { width: 1.6, height: 1.0 }, scene); flag.position.set(4.2, top + 2.5, 19.4);
+    const top = bd.goal * FLOOR_H + 0.3 + (bldType() === "house" ? 2.1 : 0);   // おうちは屋根の上
+    const pole = B.MeshBuilder.CreateCylinder("flagPole", { diameter: 0.08, height: 3 }, scene); const fz = bldType() === "house" ? SC.z : 19.4; pole.position.set(3.4, top + 1.5, fz); pole.material = steel;
+    const flag = B.MeshBuilder.CreatePlane("flag", { width: 1.6, height: 1.0 }, scene); flag.position.set(4.2, top + 2.5, fz);
     const fm = new B.StandardMaterial("flagM", scene); fm.diffuseColor = new B.Color3(1, 0.2, 0.15); fm.emissiveColor = new B.Color3(0.5, 0.08, 0.05); fm.backFaceCulling = false; flag.material = fm;
     scene.onBeforeRenderObservable.add(() => { flag.rotation.y = Math.sin(performance.now() / 300) * 0.25; });
     const st = STAGES[stage], n = bd.t <= st.floors * 150 ? 3 : bd.t <= st.floors * 240 ? 2 : 1;
     prog.build = prog.build || []; const first = !prog.build[stage]; prog.build[stage] = Math.max(prog.build[stage] || 0, n); saveProg();
     const mm = Math.floor(bd.t / 60), ss = String(Math.floor(bd.t % 60)).padStart(2, "0");
-    $("done").querySelector(".rT").textContent = "ビル かんせい！";
+    $("done").querySelector(".rT").textContent = BLD[bldType()] + " かんせい！";
     $("rStars").textContent = stars(n);
     const total = bd.placed.length;
     $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${total}　とくてん ${bd.score}` + (first && BUILD_UPS[stage] ? `\n🔓 パワーアップ: ${BUILD_UPS[stage]}` : "") + (STAGES[stage + 1] && prog.stars[stage] ? `\n▶ つぎは ${STAGES[stage + 1].name}を こわそう` : "");
