@@ -750,7 +750,7 @@ const G = window.G = {};   // 確かめ用の口
   function setLabels() {
     $("labL").textContent = "←→ 旋回 / ↑↓ アーム"; $("labR").textContent = "↑↓ ブーム / ← すくう → あける";
   }
-  $("bView").onclick = () => { view = view === "fp" ? "tp" : "fp"; scene.activeCamera = view === "fp" ? fp : tp; $("bView").textContent = view === "fp" ? "運転席" : "外から"; };
+  $("bView").onclick = () => { if (!ride) return; view = view === "fp" ? "tp" : "fp"; scene.activeCamera = view === "fp" ? fp : tp; $("bView").textContent = view === "fp" ? "運転席" : "外から"; };
   function setShadow(on) {
     shadowOn = on; sun.shadowEnabled = on;
     $("bShadow").textContent = on ? "影 ON" : "影 OFF"; $("bShadow").classList.toggle("on", !on);
@@ -1129,6 +1129,8 @@ const G = window.G = {};   // 確かめ用の口
   }
   let playT = 0;
   function goalText(pct, sd) {
+    if (craneHere) return ride === "ex" ? "🚶 「おりる」で ショベルから おりて、クレーン車に のろう" : "🏗 クレーン車まで あるいて「のる」";
+    if (!ride) return "🚜 ショベルカーに もどって「のる」";
     if (truck.state === "leave") return "🚚 ダンプが はこんで いくよ！";
     if (held > 0) return truck.state === "wait" ? "↩ ひだりに まわして、ダンプの 上で あけよう（みどりの 矢印）" : "⏳ ダンプが もどるまで まとう";
     if (finishAt >= 0) return "🎉 さいごの ダンプが しゅっぱつ！";
@@ -1169,7 +1171,7 @@ const G = window.G = {};   // 確かめ用の口
     const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
     $("rStars").textContent = stars(n);
     $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.sent}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "") + (first && STAGES[stage + 1] ? `\n🔓 つぎの ステージ: ${STAGES[stage + 1].name}` : "");
-    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = ""; $("bBuild").textContent = "クレーンで 建てる ▶"; $("bNext").textContent = "つぎの ビルへ ▶"; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
+    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = ""; $("bBuild").textContent = "クレーンに のりにいく ▶"; crArrive(); $("bNext").textContent = "つぎの ビルへ ▶"; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
     $("done").style.display = "";
     chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
   }
@@ -1219,6 +1221,9 @@ const G = window.G = {};   // 確かめ用の口
     ex.pos.set(0, 0, 2); ex.heading = 0; ex.swing = 0; ex.boom = -0.35; ex.stick = 1.3; ex.bucket = 0.6;
     look.yaw = 0; look.pitch = 0.12;
     applyPose(); syncColliders(exParts, true); placeTruck(); syncColliders(truck.parts, true);
+    // 乗り降り: 始めはショベルに乗っている。来ていたクレーン車は帰す
+    ride = "ex"; craneHere = false; exSlide = null; wkRoot.setEnabled(false); for (const n of crAll) n.setEnabled(false); drawSlings(null);
+    fp.parent = seat; fp.fov = 1.15; $("pedals").style.display = ""; setLabels();
   }
 
   // 重機が格子・ダンプに入り込まないか
@@ -1229,6 +1234,7 @@ const G = window.G = {};   // 確かめ用の口
     }
     const t = truck.root.position;
     if (Math.abs(t.x - p.x) < 1.25 + 1.9 && Math.abs(t.z - 0.6 - p.z) < 3.6 + 2.2) return true;
+    if (craneHere && Math.abs(cr.pos.x - p.x) < 4.5 && Math.abs(cr.pos.z - p.z) < 7) return true;
     return false;
   }
 
@@ -1530,10 +1536,10 @@ const G = window.G = {};   // 確かめ用の口
     if (nf !== boomFade) { boomFade = nf; for (const c of SEC) { c.t.visibility = nf; c.col.visibility = nf; } }
   }
   function updateBuild(dt) {
-    const L = sticks.L, R = sticks.R;
+    const onCr = ride === "cr", K = onCr ? kv : () => 0, L = onCr ? sticks.L : NO_STICK, R = onCr ? sticks.R : NO_STICK;   // 乗っていない時はレバーが効かない
     fadeBoom(dt); drawLoose(dt);
     // 左レバー: フックを 前後（遠く・近く）／左右。右レバー: 上げ下げ
-    const fwd = L.y + kv("KeyW", "KeyS"), side = L.x + kv("KeyD", "KeyA"), lift = R.y + kv("KeyI", "KeyK");
+    const fwd = L.y + K("KeyW", "KeyS"), side = L.x + K("KeyD", "KeyA"), lift = R.y + K("KeyI", "KeyK");
     const t = cr.tgt, hang = bd.hanging && bd.hanging.lifted ? bd.hanging.hang : bd.snap ? bd.snap.h.hang : 0, t0 = t.clone();   // 置いている間も吊りの長さは同じ（0 に戻すとブームが組み直しで動き、フックが 1.5m 流れた 評価 k5）
     const dx = t.x - cr.pos.x, dz = t.z - cr.pos.z, r = Math.max(3, Math.hypot(dx, dz));
     let ang = Math.atan2(dx, dz);
@@ -1682,7 +1688,7 @@ const G = window.G = {};   // 確かめ用の口
     const n = bd.plan.length, k = bd.floor * n + bd.step, all = bd.goal * n, pct = Math.round(k / all * 100);
     const nx = bd.plan[bd.step];
     $("gStage").textContent = `けんちく　${bd.goal}かいだてを たてよう`;
-    $("gText").textContent = bd.done ? "🎉 " + BLD[bldType()] + " かんせい！" : bd.hanging ? `🏗 ${nx.kind}を 光る わくの 上へ はこぼう` : `🪝 おきばの ${nx.kind}を つろう（右レバーを ↓）`;
+    $("gText").textContent = bd.done ? "🎉 " + BLD[bldType()] + " かんせい！" : !ride ? "🏗 クレーン車に もどって「のる」" : bd.hanging ? `🏗 ${nx.kind}を 光る わくの 上へ はこぼう` : `🪝 おきばの ${nx.kind}を つろう（右レバーを ↓）`;
     $("gBld").style.width = pct + "%"; $("gBldT").textContent = `たてた ${pct}%　（${bd.floor + (bd.done ? 0 : 1)}かいめ ${bd.step}/${n}）`;
     $("gTr").style.width = Math.min(100, bd.streak * 20) + "%"; $("gTrT").textContent = bd.streak ? `ぴったり ${bd.streak}れんぞく` : "ぴったりで おくと ボーナス";
     $("gScore").textContent = "★ " + bd.score;
@@ -1712,7 +1718,10 @@ const G = window.G = {};   // 確かめ用の口
     mode = "build";
     clearDebris(); for (const c of [...bld.cells.values()]) removeCell(c); rebuildCellMesh();
     // ショベルは横へ片づけ、ダンプは帰す
-    ex.pos.set(13, 0, 2); ex.heading = -Math.PI / 2; ex.swing = 0; ex.boom = -0.6; ex.stick = 1.6; ex.bucket = 1.5; applyPose(); syncColliders(exParts, true);
+    exSlide = null;
+    if ((Math.abs(ex.pos.x) < 6.5 && ex.pos.z > -5 && ex.pos.z < 22) || Q.has("build")) { ex.pos.set(13, 0, 2); ex.heading = -Math.PI / 2; }   // 建てる所・クレーンの邪魔になる時だけ片づける
+    ex.swing = 0; ex.boom = -0.6; ex.stick = 1.6; ex.bucket = 1.5; applyPose(); syncColliders(exParts, true);
+    craneHere = true; ride = "cr"; wkRoot.setEnabled(false);
     for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.state = "gone"; truck.z = -200; placeTruck(); syncColliders(truck.parts, true); truck.root.setEnabled(false);
     for (const n of crAll) n.setEnabled(true);
     cr.pos.set(0, 0, 3); cr.heading = 0; cr.sway.set(0, 0); cr.swayV.set(0, 0); tipInit = false;
@@ -1721,20 +1730,147 @@ const G = window.G = {};   // 確かめ用の口
     fp.parent = crSeat; fp.fov = 1.25; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35;
     if (view === "fp") $("bView").onclick();   // 建築は外からが最初（運転席からだとブームと柱でフックが隠れた 10-12 評価 b0）
     $("done").style.display = "none"; $("pedals").style.display = "none"; $("hint").style.display = "";   // クレーンは止めたまま届くのでペダルは隠す
-    $("labL").textContent = "フックを動かす ↑遠く ↓近く ←→左右"; $("labR").textContent = "↑ 上げる / ↓ 下げる";
+    craneLabels();
     nextPiece(); popup("けんちく スタート！ " + bd.goal + "かいだてを たてよう", "mile");
   }
-  $("bBuild").onclick = () => { if (mode === "build") { location.href = location.pathname + "?build&stage=" + (stage + 1); return; } $("done").style.display = "none"; enterBuild(); };
+  $("bBuild").onclick = () => { if (mode === "build") { location.href = location.pathname + "?build&stage=" + (stage + 1); return; } $("done").style.display = "none"; if (ride === "ex") popup("「おりる」で ショベルから おりよう", "mile"); };
   $("bNext").onclick = () => { if (mode === "build") { location.href = location.pathname + "?stage=" + (stage + 2); return; } $("done").style.display = "none"; startStage(stage + 1); };
   $("bAgain").onclick = () => { if (mode === "build") { location.href = location.pathname + "?stage=" + (stage + 1); return; } $("done").style.display = "none"; showStages("ステージを えらぼう"); };
+
+  // ================= 降りて歩く（10-14 本人「降りて歩けるように。乗り物に乗って動かす感じ」）=================
+  // 後ろから作業員を見る。乗れるのはショベル（解体の間）とクレーン車（さら地の後・建築）。近くで「のる」、乗っていたら「おりる」
+  let ride = "ex", craneHere = false, exSlide = null;   // ride: "ex" ショベル / "cr" クレーン車 / null 歩いている
+  const NO_STICK = { x: 0, y: 0 };
+  const wk = { pos: new B.Vector3(0, 0, 0), heading: 0, phase: 0, v: 0, camR: 7 };
+  const wkRoot = new B.TransformNode("worker", scene);
+  const wkM = { skin: mat("wkSkin", 0.86, 0.66, 0.5, 0.7), vest: mat("wkVest", 1, 0.42, 0.04, 0.6), stripe: mat("wkStripe", 0.85, 0.87, 0.85, 0.3), shirt: mat("wkShirt", 0.3, 0.45, 0.7, 0.8),
+    pants: mat("wkPants", 0.16, 0.2, 0.32, 0.85), boot: mat("wkBoot", 0.14, 0.11, 0.08, 0.8), helmet: mat("wkHelmet", 1, 0.82, 0.08, 0.35) };
+  const wkBox = (name, w, h, d, m, parent, x, y, z) => { const b = B.MeshBuilder.CreateBox(name, { width: w, height: h, depth: d }, scene); b.material = m; b.parent = parent; b.position.set(x, y, z); shadow.addShadowCaster(b); b.receiveShadows = true; b.isPickable = false; return b; };
+  const wkJoint = (name, x, y, z) => { const n = new B.TransformNode(name, scene); n.parent = wkRoot; n.position.set(x, y, z); return n; };
+  const hipL = wkJoint("hipL", -0.11, 0.9, 0), hipR = wkJoint("hipR", 0.11, 0.9, 0), shL = wkJoint("shL", -0.29, 1.46, 0), shR = wkJoint("shR", 0.29, 1.46, 0);
+  for (const h of [hipL, hipR]) { wkBox("leg", 0.17, 0.8, 0.19, wkM.pants, h, 0, -0.42, 0); wkBox("boot", 0.19, 0.12, 0.3, wkM.boot, h, 0, -0.84, 0.05); }
+  for (const h of [shL, shR]) { wkBox("arm", 0.13, 0.5, 0.14, wkM.shirt, h, 0, -0.26, 0); wkBox("hand", 0.11, 0.13, 0.12, wkM.skin, h, 0, -0.58, 0); }
+  wkBox("hips", 0.4, 0.18, 0.24, wkM.pants, wkRoot, 0, 0.93, 0);
+  wkBox("vest", 0.46, 0.56, 0.27, wkM.vest, wkRoot, 0, 1.25, 0);
+  for (const y of [1.12, 1.3]) wkBox("stripe", 0.47, 0.04, 0.28, wkM.stripe, wkRoot, 0, y, 0);   // 反射テープ
+  wkBox("neck", 0.12, 0.08, 0.12, wkM.skin, wkRoot, 0, 1.56, 0);
+  { const head = B.MeshBuilder.CreateSphere("head", { diameter: 0.25, segments: 10 }, scene); head.material = wkM.skin; head.parent = wkRoot; head.position.set(0, 1.71, 0); shadow.addShadowCaster(head); head.isPickable = false;
+    const hel = B.MeshBuilder.CreateSphere("helmet", { diameter: 0.31, segments: 10, slice: 0.5 }, scene); hel.material = wkM.helmet; hel.parent = wkRoot; hel.position.set(0, 1.75, 0); shadow.addShadowCaster(hel); hel.isPickable = false;
+    for (const x of [-0.05, 0.05]) wkBox("eye", 0.035, 0.035, 0.02, wkM.boot, wkRoot, x, 1.73, 0.12);   // 目（向きが分かるように）
+    const brim = B.MeshBuilder.CreateCylinder("brim", { diameter: 0.36, height: 0.025, tessellation: 18 }, scene); brim.material = wkM.helmet; brim.parent = wkRoot; brim.position.set(0, 1.75, 0.03); brim.scaling.z = 1.12; brim.isPickable = false; }
+  wkRoot.setEnabled(false);
+  // 歩いて通れない所: 建物の格子（低い所）・重機・ダンプ・仮囲い
+  function walkBlocked(p) {
+    for (const c of bld.cells.values()) { if (c.p.y > 1.9) continue; if (Math.abs(c.p.x - p.x) < 0.55 && Math.abs(c.p.z - p.z) < 0.55) return true; }
+    { const dx = p.x - ex.pos.x, dz = p.z - ex.pos.z, c = Math.cos(ex.heading), sn = Math.sin(ex.heading), lx = dx * c - dz * sn, lz = dx * sn + dz * c; if (Math.abs(lx) < 1.95 && Math.abs(lz) < 2.75) return true; }   // ショベル（キャタピラの外まで）
+    if (craneHere) { const dx = p.x - cr.pos.x, dz = p.z - cr.pos.z, c = Math.cos(cr.heading), sn = Math.sin(cr.heading), lx = dx * c - dz * sn, lz = dx * sn + dz * c; if (Math.abs(lx) < 1.7 && Math.abs(lz) < 5.6) return true; }
+    if (truck.root.isEnabled()) { const t = truck.root.position; if (Math.abs(t.x - p.x) < 1.6 && Math.abs(t.z - 0.6 - p.z) < 4.4) return true; }
+    return p.x < -23.4 || p.x > 23.4 || p.z < -13.4 || p.z > 41.4;
+  }
+  function updateWalk(dt) {
+    const L = sticks.L, R = sticks.R;
+    const mx0 = B.Scalar.Clamp(L.x + kv("KeyD", "KeyA") + kv("ArrowRight", "ArrowLeft"), -1, 1), my0 = B.Scalar.Clamp(L.y + kv("KeyW", "KeyS") + kv("ArrowUp", "ArrowDown"), -1, 1);
+    // 右レバーで見回す
+    tp.alpha -= R.x * 1.8 * dt; tp.beta = B.Scalar.Clamp(tp.beta - R.y * 1.2 * dt, 0.5, 1.45);
+    // カメラから見た前・右へ歩く
+    const fx = -Math.cos(tp.alpha), fz = -Math.sin(tp.alpha), rx = fz, rz = -fx;
+    let mx = fx * my0 + rx * mx0, mz = fz * my0 + rz * mx0; const m = Math.min(1, Math.hypot(mx, mz));
+    const want = m * 3.4;   // 走る速さ（m/秒）
+    wk.v += (want - wk.v) * Math.min(1, dt * 8);
+    if (m > 0.05) {
+      const h = Math.atan2(mx, mz); let dh = h - wk.heading; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+      wk.heading += dh * Math.min(1, dt * 10);
+    }
+    if (wk.v > 0.02) {
+      const step = new B.Vector3(Math.sin(wk.heading), 0, Math.cos(wk.heading)).scale(wk.v * dt);
+      const nx = wk.pos.add(new B.Vector3(step.x, 0, 0)); if (!walkBlocked(nx)) wk.pos.copyFrom(nx);   // 壁に沿って滑れるように x と z を分けて動かす
+      const nz = wk.pos.add(new B.Vector3(0, 0, step.z)); if (!walkBlocked(nz)) wk.pos.copyFrom(nz);
+      // 前へ歩いている間は、カメラがゆっくり背中側へ回り込む
+      if (!lookPtr && my0 > 0.3) { const back = Math.atan2(-Math.cos(wk.heading), -Math.sin(wk.heading)); let da = back - tp.alpha; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; tp.alpha += da * Math.min(1, dt * 1.2); }
+    }
+    // 歩く動き: 足と腕を逆に振る
+    wk.phase += wk.v * dt * 3.2; const sw = Math.sin(wk.phase) * Math.min(1, wk.v / 2.5) * 0.7;
+    hipL.rotation.x = sw; hipR.rotation.x = -sw; shL.rotation.x = -sw * 0.8; shR.rotation.x = sw * 0.8;
+    wkRoot.position.set(wk.pos.x, Math.abs(Math.cos(wk.phase)) * 0.04 * Math.min(1, wk.v / 2.5), wk.pos.z); wkRoot.rotation.y = wk.heading;
+    // カメラと作業員の間に重機・ダンプ・建物があれば、カメラを手前に寄せる（降りた直後にカメラが運転席の中に入った）
+    if (dt > 0) {
+      const tg = wk.pos.add(new B.Vector3(0, 1.4, 0)), dir = new B.Vector3(Math.cos(tp.alpha) * Math.sin(tp.beta), Math.cos(tp.beta), Math.sin(tp.alpha) * Math.sin(tp.beta));
+      const hit = scene.pickWithRay(new B.Ray(tg, dir, wk.camR), m => m.isEnabled() && m.isVisible && camBlockers().has(m));
+      const want = hit && hit.hit ? Math.max(2.4, hit.distance - 0.35) : wk.camR;   // 寄りすぎると顔しか見えない（1.2m で顔が画面いっぱいになった）
+      tp.radius += (want - tp.radius) * Math.min(1, dt * (want < tp.radius ? 20 : 3));   // 寄る時は速く、戻る時はゆっくり
+    }
+  }
+  let _camBl = null;
+  function camBlockers() {   // カメラをさえぎる物（重機・ダンプ・クレーン・建物・組んだ建材）
+    if (!_camBl || _camBl.n !== bd.placed.length) {
+      _camBl = new Set([cellMesh, ...scene.getTransformNodeByName("exRoot").getChildMeshes(), ...truck.root.getChildMeshes(), ...crRoot.getChildMeshes(), ...bd.placed]); _camBl.n = bd.placed.length;
+    }
+    return _camBl;
+  }
+  // 近くの乗り物（歩いている時）
+  function nearRide() {
+    if (mode !== "build" && Math.hypot(wk.pos.x - ex.pos.x, wk.pos.z - ex.pos.z) < 3.8) return "ex";
+    if (craneHere && Math.hypot(wk.pos.x - cr.pos.x, wk.pos.z - cr.pos.z) < 6.5) return "cr";
+    return null;
+  }
+  function craneLabels() { $("labL").textContent = "フックを動かす ↑遠く ↓近く ←→左右"; $("labR").textContent = "↑ 上げる / ↓ 下げる"; }
+  function getOff() {
+    if (!ride) return;
+    const onCr = ride === "cr", P = onCr ? cr.pos : ex.pos, h = onCr ? cr.heading : ex.heading;
+    const left = new B.Vector3(-Math.cos(h), 0, Math.sin(h));   // 運転席のある左側へ降りる
+    wk.pos.copyFrom(P.add(left.scale(onCr ? 3.2 : 2.6)));
+    for (let k = 0; k < 8 && walkBlocked(wk.pos); k++) wk.pos.addInPlace(left.scale(0.6));
+    wk.heading = Math.atan2(left.x, left.z); wk.v = 0;
+    ride = null; wkRoot.setEnabled(true); updateWalk(0);
+    for (const k in pedal) pedal[k] = 0; for (const st of Object.values(sticks)) releaseStick(st);
+    if (view === "fp") { view = "tp"; scene.activeCamera = tp; $("bView").textContent = "外から"; }
+    tp.radius = wk.camR; tp.beta = 1.25; tp.alpha = Math.atan2(left.z, left.x) + 0.6;   // 降りた所を少し前から（作業員と重機が両方見える）
+    $("pedals").style.display = "none"; $("labL").textContent = "あるく"; $("labR").textContent = "見回す";
+    playS("sling_hook", 0.4);
+  }
+  function getOn(v) {
+    ride = v; wkRoot.setEnabled(false); for (const st of Object.values(sticks)) releaseStick(st);
+    if (v === "cr") {
+      if (mode !== "build") { enterBuild(); return; }   // さら地の後に初めて乗ったら建築が始まる
+      fp.parent = crSeat; fp.fov = 1.25; tp.radius = 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35; craneLabels();
+    } else {
+      fp.parent = seat; fp.fov = 1.15; tp.radius = 18; tp.beta = 1.1; tp.alpha = -ex.heading - Math.PI / 2;
+      $("pedals").style.display = ""; setLabels();
+    }
+    look.yaw = 0; look.pitch = 0.12;
+    playS("sling_hook", 0.4); thud(0.2, 300);
+  }
+  function updateRideBtn() {
+    const b = $("bRide"); let t = "";
+    if (ride) t = "おりる"; else { const n = nearRide(); if (n) t = n === "ex" ? "のる（ショベル）" : "のる（クレーン）"; }
+    if (b.textContent !== t) b.textContent = t;
+    const show = !!t && !(mode === "build" && bd.done); if ((b.style.display !== "none") !== show) b.style.display = show ? "" : "none";
+    b.classList.toggle("on", !ride);
+  }
+  $("bRide").onclick = () => { wakeAudio(); if (ride) getOff(); else { const n = nearRide(); if (n) getOn(n); } };
+  addEventListener("keydown", e => { if (e.code === "KeyE" || e.code === "Enter") $("bRide").onclick(); });
+  // さら地になったら、クレーン車が来る（建てる所の手前。ショベルが邪魔なら横へずらす）
+  function crArrive() {
+    if (craneHere) return; craneHere = true;
+    for (const n of crAll) n.setEnabled(true);
+    cr.pos.set(0, 0, 3); cr.heading = 0; cr.sway.set(0, 0); cr.swayV.set(0, 0); tipInit = false;
+    cr.tgt.set(YARD.x, 6, YARD.z); const s = solveCrane(cr.tgt, 0); cr.swing = s.swing; cr.luff = s.luff; cr.ext = s.ext; cr.wire = s.wire; applyCranePose();
+    bd.plan = planFloor(0); bd.hanging = null; bd.yard = null; bd.snap = null;
+    if (Math.abs(ex.pos.x) < 6.5 && ex.pos.z > -5 && ex.pos.z < 11) exSlide = { from: ex.pos.clone(), to: new B.Vector3(9.5, 0, ex.pos.z), t: 0 };
+    dust(cr.pos.add(new B.Vector3(0, 0.6, 0)), 30); thud(0.4, 160);
+    popup("🏗 クレーン車が きたよ！", "mile");
+  }
 
   // ================= 毎フレーム =================
   let fpsAvg = 60, msAvg = 16, hudT = 0;
   scene.onBeforeRenderObservable.add(() => {
     const dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);   // 確かめる時は G.fixedDt で固定
+    if (!ride) updateWalk(dt);
     if (mode === "build") { updateBuild(dt); frameCommon(dt); return; }
-    const L = sticks.L, R = sticks.R;
-    const sw = L.x + kv("KeyD", "KeyA"), st = -L.y + kv("KeyS", "KeyW"), bo = -R.y + kv("KeyK", "KeyI"), bu = -R.x + kv("KeyJ", "KeyL");
+    if (craneHere) updateBuild(dt);   // さら地の後: 来たクレーン車は止まったまま（乗るまでレバーは効かない）
+    if (exSlide) { exSlide.t = Math.min(1, exSlide.t + dt / 1.5); B.Vector3.LerpToRef(exSlide.from, exSlide.to, 1 - Math.pow(1 - exSlide.t, 3), ex.pos); if (exSlide.t >= 1) exSlide = null; }
+    const onEx = ride === "ex", K = onEx ? kv : () => 0, L = onEx ? sticks.L : NO_STICK, R = onEx ? sticks.R : NO_STICK;   // 乗っていない時はレバーが効かない
+    const sw = L.x + K("KeyD", "KeyA"), st = -L.y + K("KeyS", "KeyW"), bo = -R.y + K("KeyK", "KeyI"), bu = -R.x + K("KeyJ", "KeyL");
     const prev = [ex.boom, ex.stick, ex.bucket], low0 = bucketLowest();
     const pw = POW();
     ex.swing += sw * 0.85 * pw * dt;
@@ -1752,10 +1888,10 @@ const G = window.G = {};   // 確かめ用の口
     }
     let moving = Math.abs(sw) + Math.abs(st) + Math.abs(bo) + Math.abs(bu);
     // ペダル: 目標の速さへじわっと近づける（急に止まらない）
-    const want = B.Scalar.Clamp(pedal.fwd - pedal.back + kv("ArrowUp", "ArrowDown"), -1, 1) * (pedal.back && !pedal.fwd ? 2.0 : 3.2) * (prog.stars[0] ? 1.3 : 1);
+    const want = B.Scalar.Clamp((onEx ? pedal.fwd - pedal.back : 0) + K("ArrowUp", "ArrowDown"), -1, 1) * (pedal.back && !pedal.fwd ? 2.0 : 3.2) * (prog.stars[0] ? 1.3 : 1);
     speed += (want - speed) * Math.min(1, dt * (want ? 2.5 : 4));
     if (Math.abs(speed) < 0.02 && !want) speed = 0;
-    const wantT = B.Scalar.Clamp(pedal.right - pedal.left + kv("ArrowRight", "ArrowLeft"), -1, 1) * 0.7;
+    const wantT = B.Scalar.Clamp((onEx ? pedal.right - pedal.left : 0) + K("ArrowRight", "ArrowLeft"), -1, 1) * 0.7;
     turnRate += (wantT - turnRate) * Math.min(1, dt * 5);
     if (speed || Math.abs(turnRate) > 0.005) {
       ex.heading += turnRate * dt;
@@ -1797,7 +1933,8 @@ const G = window.G = {};   // 確かめ用の口
     fp.rotation.set(look.pitch + (Math.random() - 0.5) * tr * 0.03, look.yaw + (Math.random() - 0.5) * tr * 0.03, (Math.random() - 0.5) * tr * 0.05);
     if (mode !== "build") { updateCombo(dt); playT += dt; }
     const camAt = G.camAt && G.camAt();   // 確かめ用: 撮る時だけ注目点を差し替える
-    tp.target.copyFrom(camAt || (mode === "build" ? cr.pos.add(new B.Vector3(0, 6, 6)) : ex.pos.add(new B.Vector3(0, 2.5, 0))));
+    tp.target.copyFrom(camAt || (!ride ? wk.pos.add(new B.Vector3(0, 1.4, 0)) : ride === "cr" ? cr.pos.add(new B.Vector3(0, 6, 6)) : ex.pos.add(new B.Vector3(0, 2.5, 0))));
+    updateRideBtn();
 
     // 数字
     const f = engine.getFps(); fpsAvg += (f - fpsAvg) * 0.05; msAvg += (engine.getDeltaTime() - msAvg) * 0.05;
@@ -2026,7 +2163,7 @@ const G = window.G = {};   // 確かめ用の口
   });
 
   // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
-  Object.assign(G, { applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
