@@ -8,3 +8,7 @@
 
 ## 効果音（assets/sfx/）
 - 自前で生成した音（音作りのセッション・bgm-pipeline、2026-10-13）。一覧と中身は assets/sfx/README.md と sfx.json
+
+## ステージ 2〜4 の背景写真（assets/hdri/*_bg3.jpg・assets/lite/hdri/*_bg3.jpg）
+- Poly Haven（CC0）: sunset_jhbcentral（ゆうがた）・potsdamer_platz（くもり）・stuttgart_suburbs（あさ）。https://polyhaven.com/
+- 2048×1024 の正距円筒の画像を取り、地平線より下を地面の色 (118,102,79) で塗った（今の construction_yard_bg3 と同じ作り）。軽い版は 1024×512

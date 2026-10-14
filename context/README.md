@@ -146,3 +146,13 @@
   - 1 はれ（前と同じ）／2 ゆうがた（オレンジ・太陽 16 度で影が長い）／3 くもり（青灰・あざやかさ -42・影が薄い・霞 200m）／4 あさ（黄みの光・地面は緑がかる）
 - applyLook(i) は起動時と startStage で呼ぶ（建築に移っても同じ空気のまま）。確かめ用 G.applyLook(i)
 - 確かめ: 4 つを同じ角度で撮り比べた（scratchpad looks.jpg）。iPad（軽い版）での見え方は未確認
+
+## 2026-10-14 ステージごとの背景写真（v73）
+- 本人「周りぐるっとの壁紙（背景）もステージごとに」。LOOKS[].bg と bgRot。applyLook が PhotoDome の photoTexture を差し替えて向きを回す
+  - 1 construction_yard（前と同じ）／2 sunset_jhbcentral（夕焼けの街並み・π 回す）／3 potsdamer_platz（曇りのビル街）／4 stuttgart_suburbs（郊外の町を見下ろす）
+- 作り方: Poly Haven の CDN（cdn.polyhaven.com/asset_img/primary/<名前>.png?width=2048）から取り、scratchpad の make_bg.py と同じ手順（2048×1024 に・地平線 0.52〜0.555 から下を (118,102,79) にぼかしながら塗る・軽い版 1024×512・名前は <名前>_bg3.jpg にして make_manifest の「軽い版では読まない」に入るように）
+- 落とし穴:
+  - 近くに塀や生け垣がある写真（twilight_sunset・urban_courtyard_02・suburban_parking_area）は背景にすると壁に囲まれて見えた → 遠くに建物が並ぶ開けた写真を選ぶ
+  - photoTexture を差し替える時の上下: new B.Texture(url, scene, true, !dome._useDirectMapping)。invertY を逆にすると空と地面が逆さ
+  - 向き: 6 通り回して撮って、開けた方が正面（ショベルの前）に来る向きを選んだ
+- 確かめ: 4 つを同じ角度で撮り比べた（scratchpad bgs.jpg）。iPad では未確認

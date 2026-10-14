@@ -63,7 +63,7 @@ const G = window.G = {};   // 確かめ用の口
   env.rotationY = ENV_ROT;
   scene.environmentTexture = env; scene.environmentIntensity = 1.0;
   const dome = new B.PhotoDome("bg", AS + "hdri/construction_yard_bg3.jpg", { resolution: 64, size: 1600 }, scene);
-  dome.mesh.rotation.y = ENV_ROT + Number(Q.get("domerot") || 0); dome.material.fogEnabled = false;
+  dome.mesh.rotation.y = ENV_ROT + Number(Q.get("domerot") || 0); dome.material.fogEnabled = false; dome._bg = "construction_yard"; dome._rot0 = dome.mesh.rotation.y;
   // 太陽: 写真の中の太陽の位置（高さ 34°）に合わせる。方位は写真の向きに合わせて DOME と同じだけ回す
   const SUN_EL = 33.8 * Math.PI / 180, SUN_AZ = Number(Q.get("sunaz") || 3.4);   // 写真の太陽の方位（カメラを向けて合わせた。回す前は 5.75）
   const sunDir = new B.Vector3(-Math.sin(SUN_AZ) * Math.cos(SUN_EL), -Math.sin(SUN_EL), -Math.cos(SUN_AZ) * Math.cos(SUN_EL));
@@ -1849,13 +1849,17 @@ const G = window.G = {};   // 確かめ用の口
   //   el: 太陽の高さ（度）／sun: 太陽の色／si: 強さ／hue・dens: 画面全体に掛ける色（色相と濃さ 0〜100）／sat: あざやかさ
   //   exp: 明るさ／fog: 遠くの霞の色／fogEnd: 霞で見えなくなる距離／ground: 地面に掛ける色／shade: 影の薄さ（0=真っ黒）
   const LOOKS = [
-    { name: "はれ", el: 33.8, sun: [1, 0.96, 0.9], si: 2.1, hue: 0, dens: 0, sat: -14, exp: 1.0, fog: [0.6, 0.58, 0.55], fogEnd: 380, ground: [1, 1, 1], shade: 0.12 },
-    { name: "ゆうがた", el: 16, sun: [1, 0.62, 0.36], si: 1.9, hue: 28, dens: 45, sat: -2, exp: 0.95, fog: [0.78, 0.55, 0.38], fogEnd: 320, ground: [1.1, 0.95, 0.8], shade: 0.2 },
-    { name: "くもり", el: 55, sun: [0.86, 0.9, 1], si: 0.8, hue: 215, dens: 24, sat: -42, exp: 0.93, fog: [0.56, 0.59, 0.63], fogEnd: 200, ground: [0.84, 0.88, 0.94], shade: 0.55 },
-    { name: "あさ", el: 24, sun: [1, 0.95, 0.8], si: 2.3, hue: 55, dens: 14, sat: 2, exp: 1.08, fog: [0.72, 0.74, 0.68], fogEnd: 380, ground: [0.78, 1.0, 0.66], shade: 0.15 }];
+    { name: "はれ", bg: "construction_yard", el: 33.8, sun: [1, 0.96, 0.9], si: 2.1, hue: 0, dens: 0, sat: -14, exp: 1.0, fog: [0.6, 0.58, 0.55], fogEnd: 380, ground: [1, 1, 1], shade: 0.12 },
+    { name: "ゆうがた", bg: "sunset_jhbcentral", bgRot: Math.PI, el: 16, sun: [1, 0.62, 0.36], si: 1.9, hue: 28, dens: 45, sat: -2, exp: 0.95, fog: [0.78, 0.55, 0.38], fogEnd: 320, ground: [1.1, 0.95, 0.8], shade: 0.2 },
+    { name: "くもり", bg: "potsdamer_platz", bgRot: 0, el: 55, sun: [0.86, 0.9, 1], si: 0.8, hue: 215, dens: 24, sat: -42, exp: 0.93, fog: [0.56, 0.59, 0.63], fogEnd: 200, ground: [0.84, 0.88, 0.94], shade: 0.55 },
+    { name: "あさ", bg: "stuttgart_suburbs", bgRot: 0, el: 24, sun: [1, 0.95, 0.8], si: 2.3, hue: 55, dens: 14, sat: 2, exp: 1.08, fog: [0.72, 0.74, 0.68], fogEnd: 380, ground: [0.78, 1.0, 0.66], shade: 0.15 }];
   const GROUND_MATS = ["groundM", "groundRingM", "gDirtM", "gMudM", "moundM"];
   function applyLook(i) {
     const L = LOOKS[i] || LOOKS[0], el = L.el * Math.PI / 180;
+    // 周りぐるっとの背景写真（Poly Haven・CC0。地平線より下は地面の色で塗ってある。tools は scratchpad の make_bg.py と同じ手順 → context に記録）
+    if (dome._bg !== L.bg) {   // 上下の向きは PhotoDome が最初に作る時と同じ（invertY = !_useDirectMapping。逆にすると空と地面が逆さになった）
+      dome._bg = L.bg; const old = dome.photoTexture; dome.photoTexture = new B.Texture(AS + "hdri/" + L.bg + "_bg3.jpg", scene, true, !dome._useDirectMapping); if (old && old !== dome.photoTexture) old.dispose(); }
+    dome.mesh.rotation.y = dome._rot0 + (L.bgRot || 0);   // 開けた方（夕焼け空・ビル街・遠くの町）が正面に来る向き（6 通り回して撮って選んだ）
     sun.direction.set(-Math.sin(SUN_AZ) * Math.cos(el), -Math.sin(el), -Math.cos(SUN_AZ) * Math.cos(el));
     sun.position = new B.Vector3(0, 0, 15).subtract(sun.direction.scale(110));
     sun.diffuse = new B.Color3(...L.sun); sun.intensity = L.si; shadow.darkness = L.shade;
