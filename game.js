@@ -1160,7 +1160,7 @@ const G = window.G = {};   // 確かめ用の口
     const u = document.createElement("div"); u.className = "stUp"; u.textContent = "パワーアップ（ステージを クリアすると ふえる）\n" + ups; el.appendChild(u);
     el.style.display = ""; $("goal").style.display = "none";
   }
-  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
+  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(i); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
   // さら地の結果
   function showResult() {
     const st = STAGES[stage], n = playT <= st.star3 ? 3 : playT <= st.star2 ? 2 : 1;
@@ -1844,6 +1844,31 @@ const G = window.G = {};   // 確かめ用の口
   pipe.fxaaEnabled = true; pipe.samples = 1;
   pipe.bloomEnabled = true; pipe.bloomThreshold = 0.85; pipe.bloomWeight = 0.12; pipe.bloomKernel = 48;
   pipe.sharpenEnabled = true; pipe.sharpen.edgeAmount = 0.18;
+  // ---- ステージごとの空気（10-13 本人「ステージごとに背景や地面の色を変えて」）----
+  // 新しい写真は使わず、画面全体の色合い（色カーブ）・太陽の色と高さ・霧・地面の色で変える
+  //   el: 太陽の高さ（度）／sun: 太陽の色／si: 強さ／hue・dens: 画面全体に掛ける色（色相と濃さ 0〜100）／sat: あざやかさ
+  //   exp: 明るさ／fog: 遠くの霞の色／fogEnd: 霞で見えなくなる距離／ground: 地面に掛ける色／shade: 影の薄さ（0=真っ黒）
+  const LOOKS = [
+    { name: "はれ", el: 33.8, sun: [1, 0.96, 0.9], si: 2.1, hue: 0, dens: 0, sat: -14, exp: 1.0, fog: [0.6, 0.58, 0.55], fogEnd: 380, ground: [1, 1, 1], shade: 0.12 },
+    { name: "ゆうがた", el: 16, sun: [1, 0.62, 0.36], si: 1.9, hue: 28, dens: 45, sat: -2, exp: 0.95, fog: [0.78, 0.55, 0.38], fogEnd: 320, ground: [1.1, 0.95, 0.8], shade: 0.2 },
+    { name: "くもり", el: 55, sun: [0.86, 0.9, 1], si: 0.8, hue: 215, dens: 24, sat: -42, exp: 0.93, fog: [0.56, 0.59, 0.63], fogEnd: 200, ground: [0.84, 0.88, 0.94], shade: 0.55 },
+    { name: "あさ", el: 24, sun: [1, 0.95, 0.8], si: 2.3, hue: 55, dens: 14, sat: 2, exp: 1.08, fog: [0.72, 0.74, 0.68], fogEnd: 380, ground: [0.78, 1.0, 0.66], shade: 0.15 }];
+  const GROUND_MATS = ["groundM", "groundRingM", "gDirtM", "gMudM", "moundM"];
+  function applyLook(i) {
+    const L = LOOKS[i] || LOOKS[0], el = L.el * Math.PI / 180;
+    sun.direction.set(-Math.sin(SUN_AZ) * Math.cos(el), -Math.sin(el), -Math.cos(SUN_AZ) * Math.cos(el));
+    sun.position = new B.Vector3(0, 0, 15).subtract(sun.direction.scale(110));
+    sun.diffuse = new B.Color3(...L.sun); sun.intensity = L.si; shadow.darkness = L.shade;
+    const ip = pipe.imageProcessing, cc = ip.colorCurves;
+    cc.globalHue = L.hue; cc.globalDensity = L.dens; cc.globalSaturation = L.sat; ip.exposure = L.exp;
+    scene.fogColor = new B.Color3(...L.fog); scene.fogEnd = L.fogEnd;
+    for (const n of GROUND_MATS) {
+      const m = scene.getMaterialByName(n); if (!m) continue;
+      if (!m._baseCol) m._baseCol = (m.albedoColor || B.Color3.White()).clone();
+      m.albedoColor = new B.Color3(m._baseCol.r * L.ground[0], m._baseCol.g * L.ground[1], m._baseCol.b * L.ground[2]);
+    }
+  }
+  applyLook(stage);
   let ssao = null;
   function setQuality(hq) {
     HQ = hq;
@@ -1997,7 +2022,7 @@ const G = window.G = {};   // 確かめ用の口
   });
 
   // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
-  Object.assign(G, { sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
