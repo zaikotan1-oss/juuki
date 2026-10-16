@@ -2405,7 +2405,7 @@ const G = window.G = {};   // 確かめ用の口
   Object.assign(G, { carveAt, blds, sinks, chunks, planFloor, nextPiece, SC, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
-    testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
+    testMode() { G.fixedDt = 1 / 60; scene.useConstantAnimationDeltaTime = true;   /* 粒（土けむり）も 1/60 秒ずつ進める */ plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
 })().catch(e => {
   console.error(e); const m = $("msg"); m.style.display = "";
   // GPU が使えない状態（前に GPU のメモリ不足で止まった後、Safari がこのページの 3D を止めていることがある）かどうかも出す
