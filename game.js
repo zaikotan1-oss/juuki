@@ -180,7 +180,10 @@ const G = window.G = {};   // 確かめ用の口
     { floors: 2, name: "小さな ビル", trucks: 4, star3: 200, star2: 330, bld: "biru" },
     { floors: 3, name: "3かいだての ビル", trucks: 6, star3: 290, star2: 480, bld: "mansion" },
     { floors: 4, name: "4かいだての ビル", trucks: 8, star3: 380, star2: 620, bld: "tower" },
-    { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true, bld: "house" }];
+    { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true, bld: "house" },
+    // 10-16 本人「何十階建てのビルも」「街丸ごと好きなように」。大きい建物は 1 階を削ると沈むように崩れる
+    { floors: 30, name: "ちょうこうそう ビル（30かい）", trucks: 12, star3: 720, star2: 1100, sky: true, look: 1 },
+    { floors: 2, name: "まち まるごと", trucks: 999, star3: 1200, star2: 2000, wide: true, free: true, look: 0 }];
   const BLD = { biru: "じゅうきビル", mansion: "じゅうきマンション", tower: "じゅうきタワー", house: "あたらしい おうち" };
   // クレーンで建てるステージ（10-16 本人「ショベルとクレーンを完全に分ける」）。look は空気（LOOKS の番号）
   const BSTAGES = [
@@ -200,18 +203,31 @@ const G = window.G = {};   // 確かめ用の口
   const FASTT = () => (prog.stars[2] ? 1.6 : 1);         // 3 面クリア: ダンプが速い
   const bld = { cells: new Map(), origin: new B.Vector3(-BW / 2, 0, 14) };
   const SITE = {};   // さら地にする範囲（buildBuilding で決める。まちのステージは広い）
-  const cellShape = new B.PhysicsShapeBox(B.Vector3.Zero(), B.Quaternion.Identity(), new B.Vector3(CELL, CELL, CELL), scene);
-  cellShape.material = { friction: 0.8, restitution: 0 };
-  const key = (x, y, z) => x + "," + y + "," + z;
-  // 見た目: 見えている面だけを 1 枚のメッシュに組む（模様は世界の座標で貼るので、格子の境目で切れない）
-  const cellMesh = new B.Mesh("bld", scene);
+  const AREA = { x0: -23.4, x1: 23.4, z0: -13.4, z1: 41.4 }, hoards = [];   // 歩ける範囲・仮囲い（まち まるごとでは囲いを外して広くする）
+  let SUN_D = 110; const sunC = new B.Vector3(0, 0, 15);                    // 太陽（影の中心）までの距離と影の中心
+  // 格子の番号は数（文字列だと 2 万個の建物で探すのが遅い 10-16）。x・z は ±1024、y は 0〜2047
+  const key = (x, y, z) => (x + 1024) + (z + 1024) * 2048 + y * 4194304;
+  const sk = (x, y, z) => x + "," + y + "," + z;      // 窓の印は文字列のまま
+  // 見た目: 見えている面だけをメッシュに組む（模様は世界の座標で貼るので、格子の境目で切れない）
+  // 16 格子（8m）角の「塊」ごとに 1 つのメッシュ＋1 つの当たり（形はメッシュそのもの）。壊した塊だけ組み直す
+  // （前は格子 1 つずつに物理の体を持たせていた。30 階・まち全部の 2 万格子では重すぎる 10-16）
   const bldM = pbrTex("bldM", "dirty_concrete", 1, [1.0, 0.97, 0.92], "dirty_concrete_soft_diff.jpg");   // しみの濃さを半分にした写真
   bldM.backFaceCulling = false;   // 格子の面は向きによって裏返しに組まれる（後ろ・左から見ると壁が抜けていた 10-12。行の途中のコメントに飲まれて効いていなかった）
-  cellMesh.material = bldM; cellMesh.receiveShadows = true;
-  // 壊れた断面（元は隣に壁があった面）は別のメッシュ: 荒いコンクリート＋飛び出した鉄筋
-  const brokeMesh = new B.Mesh("bldBroken", scene);
+  // 壊れた断面（元は隣に壁があった面）は同じメッシュの 2 つ目の材質: 荒いコンクリート＋飛び出した鉄筋
   const brokeM = pbrTex("brokeM", "concrete_debris", 1, [0.85, 0.83, 0.8]); brokeM.backFaceCulling = false;
-  brokeMesh.material = brokeM; brokeMesh.receiveShadows = true;
+  const cellMM = new B.MultiMaterial("cellMM", scene); cellMM.subMaterials.push(bldM, brokeM);
+  const cellShapeM = { friction: 0.8, restitution: 0 };
+  const CH = 16, chunks = new Map(); let chunkGen = 0;
+  function chunkOf(x, y, z, make) {
+    const ck = key(Math.floor(x / CH), Math.floor(y / CH), Math.floor(z / CH));
+    let ch = chunks.get(ck);
+    if (!ch && make) {
+      const mesh = new B.Mesh("bld", scene); mesh.material = cellMM; mesh.receiveShadows = true; shadow.addShadowCaster(mesh); mesh.setEnabled(false);
+      ch = { cells: new Set(), wins: [], mesh, body: null, shape: null, bars: [], frames: [], pp: [], pn: [], dirty: true };
+      chunks.set(ck, ch); chunkGen++;
+    }
+    return ch;
+  }
   const rebar = B.MeshBuilder.CreateCylinder("rebar", { diameter: 0.022, height: 1, tessellation: 5 }, scene);
   rebar.material = mat("rebarM", 0.3, 0.17, 0.1, 0.75, 0.6); rebar.isPickable = false; rebar.receiveShadows = true;
   // 窓枠（アルミ）
@@ -227,18 +243,21 @@ const G = window.G = {};   // 確かめ用の口
   const paneM = new B.PBRMaterial("paneM", scene); paneM.albedoColor = new B.Color3(0.015, 0.02, 0.025); paneM.metallic = 0; paneM.roughness = 0.03; paneM.alpha = 0.88; paneM.backFaceCulling = false;   // 空が映り込む古いガラス
   paneMesh.material = paneM;
   const winSet = new Set();      // 窓の穴（格子の座標）。上下の壁が残っている間だけガラスを出す
+  // 建物ごとの記録: 1 階の壁がどれだけ残っているか（sink の建物は少なくなると丸ごと沈むように崩れる）
+  const blds = [], dirtyB = new Set(); let curB = null;
+  function newB(H, sink) { curB = { cells: new Set(), baseY: H - 1, base0: 0, baseN: 0, sink, warned: false }; blds.push(curB); return curB; }
 
   function cellWorld(x, y, z) { return new B.Vector3(bld.origin.x + (x + 0.5) * CELL, bld.origin.y + (y + 0.5) * CELL, bld.origin.z + (z + 0.5) * CELL); }
   function addCell(x, y, z, kind) {
-    const p = cellWorld(x, y, z);
-    const node = new B.TransformNode("c", scene); node.position.copyFrom(p);
-    const body = new B.PhysicsBody(node, B.PhysicsMotionType.STATIC, false, scene);
-    body.shape = cellShape;
-    bld.cells.set(key(x, y, z), { x, y, z, kind, node, body, p });
+    const k = key(x, y, z), old = bld.cells.get(k); if (old) { old.kind = kind; return; }
+    const c = { x, y, z, kind, p: cellWorld(x, y, z), b: curB };
+    bld.cells.set(k, c); chunkOf(x, y, z, true).cells.add(c);
+    if (curB) { curB.cells.add(c); if (y < curB.baseY) curB.base0++; }
   }
   // 格子で家を 1 軒組む。ox, oz は格子の座標（ビルの左手前の角が 0,0）、W・D は格子の数、H は 1 階の段数
   function addHouse(ox, oz, W, D, floors, H, o = {}) {
     const K = Object.assign({ wall: "wall", pillar: "pillar", slab: "slab", roof: "parapet", winRows: [2, 3], door: [W / 2 - 3, W / 2 + 2, 4] }, o);
+    newB(H, !!K.sink);
     for (let f = 0; f < floors; f++) {
       for (let r = 0; r < H; r++) {
         const y = f * H + r;
@@ -251,8 +270,8 @@ const G = window.G = {};   // 確かめ用の口
           // 窓: 柱以外の壁を 2 格子おきにあける
           const zFace = z === 0 || z === D - 1, along = zFace ? x : z;
           if (K.winRows.includes(r) && !pillar && (Math.floor(along / 2) % 2 === 1)) {
-            const sg = zFace ? (z === 0 ? -1 : 1) : (x === 0 ? -1 : 1);
-            winSet.add(key(ox + x, y, oz + z) + (zFace ? ",z," : ",x,") + sg); continue;
+            const sg = zFace ? (z === 0 ? -1 : 1) : (x === 0 ? -1 : 1), w = sk(ox + x, y, oz + z) + (zFace ? ",z," : ",x,") + sg;
+            winSet.add(w); chunkOf(ox + x, y, oz + z, true).wins.push(w); continue;
           }
           // 1 階の正面（z=0）の入口
           if (K.door && f === 0 && z === 0 && x >= K.door[0] && x <= K.door[1] && r < K.door[2] && !pillar) continue;
@@ -272,23 +291,57 @@ const G = window.G = {};   // 確かめ用の口
     }
   }
   // 塀: 長さ len・高さ h（格子）。x 向き
-  function addFence(ox, oz, len, h, kind) { for (let x = 0; x < len; x++) for (let y = 0; y < h; y++) addCell(ox + x, y, oz, kind); }
+  function addFence(ox, oz, len, h, kind) { newB(1, false); for (let x = 0; x < len; x++) for (let y = 0; y < h; y++) addCell(ox + x, y, oz, kind); }
+  // 世界の m で置く（まち まるごと用）。大きさは 1m 単位（格子が偶数になる）
+  const gx = wx => Math.round((wx - bld.origin.x) / CELL), gz = wz => Math.round((wz - bld.origin.z) / CELL);
+  const houseW = (wx, wz, wm, dm, floors, o = {}, Hm = FH) => addHouse(gx(wx), gz(wz), wm / CELL, dm / CELL, floors, Math.round(Hm / CELL), o);
+  const WOOD = { wall: "wood", pillar: "beam", slab: "wfloor", roof: "gable", door: [2, 4, 4] };
+  const TIN = { wall: "tin", pillar: "steelc", slab: "tinroof", roof: "flat", winRows: [5], door: [4, 9, 5] };
+  const PRE = { wall: "prefab", pillar: "prefab", slab: "tinroof", roof: "flat", winRows: [2, 3], door: [1, 2, 4] };
+  const BIG = { sink: true };
+  function buildTown() {
+    // まち まるごと（10-16 本人「街丸ごと好きなようにぶっ壊せる」）: 15 棟＋塀。3 階より高い建物は 1 階を削ると沈むように崩れる
+    houseW(-4, 14, 8, 6, 4, BIG);                 // まんなかの ビル
+    houseW(8, 14, 6, 5, 2, WOOD, 2.5);            // 木の家
+    addFence(gx(8), gz(11), 18, 3, "block");
+    houseW(-15, 14, 7, 5, 1, TIN, 3.5);           // トタンの倉庫
+    houseW(-30, 10, 10, 8, 6, BIG);               // マンション
+    houseW(20, 24, 4, 3, 1, PRE);                 // プレハブ
+    houseW(-10, 30, 12, 8, 7, BIG);               // 会社のビル
+    houseW(6, 31, 6, 5, 2, WOOD, 2.5);
+    houseW(16, 38, 6, 5, 2, WOOD, 2.5);
+    houseW(-32, 32, 7, 5, 1, TIN, 3.5);
+    houseW(26, -2, 6, 5, 2, WOOD, 2.5);
+    houseW(24, -16, 8, 6, 3, BIG);                // 店
+    houseW(-30, -14, 4, 3, 1, PRE);
+    houseW(-24, 48, 8, 8, 10, BIG);               // 10 階の塔
+    houseW(10, 50, 8, 8, 5, BIG);
+    addFence(gx(-14), gz(26), 20, 3, "block"); addFence(gx(28), gz(12), 16, 3, "block");
+  }
   function buildBuilding() {
-    for (const c of bld.cells.values()) { c.body.dispose(); c.node.dispose(); }
-    bld.cells.clear(); winSet.clear();
-    addHouse(0, 0, BW / CELL, BD / CELL, FLOORS, FH / CELL);     // 真ん中のビル 16 × 12、1 階 6 段
-    const town = STAGES[stage].town;
-    if (town) {
+    for (const ch of chunks.values()) { if (ch.body) { ch.body.dispose(); ch.shape.dispose(); } ch.mesh.dispose(); }
+    chunks.clear(); chunkGen++; bld.cells.clear(); winSet.clear(); blds.length = 0; dirtyB.clear(); curB = null;
+    for (const q of sinks) q.m.dispose(); sinks.length = 0; for (const q of fading) q.m.dispose(); fading.length = 0;
+    const S = STAGES[stage];
+    if (S.sky) addHouse(-4, 0, 24, 16, FLOORS, FH / CELL, BIG);       // 30 階: 12m × 8m・高さ 90m
+    else if (S.wide) buildTown();
+    else addHouse(0, 0, BW / CELL, BD / CELL, FLOORS, FH / CELL);     // 真ん中のビル 16 × 12、1 階 6 段
+    if (S.town) {
       // まち: 右に木造の家（2 階・切妻屋根）とブロック塀、左にトタンの倉庫、右奥にプレハブ小屋（格子 0.5m。ビルの左手前の角 = 世界の x -4, z 14）
-      addHouse(24, -2, 12, 10, 2, 5, { wall: "wood", pillar: "beam", slab: "wfloor", roof: "gable", door: [2, 4, 4] });
+      addHouse(24, -2, 12, 10, 2, 5, WOOD);
       addFence(20, -8, 18, 3, "block");
-      addHouse(-26, -2, 14, 10, 1, 7, { wall: "tin", pillar: "steelc", slab: "tinroof", roof: "flat", winRows: [5], door: [4, 9, 5] });
+      addHouse(-26, -2, 14, 10, 1, 7, TIN);
       addHouse(24, 16, 8, 6, 1, 6, { wall: "prefab", pillar: "prefab", slab: "tinroof", roof: "flat", winRows: [2, 3], door: [1, 2, 4] });
     }
+    for (const b of blds) b.baseN = b.base0;
     // さら地にする範囲: 格子の外側 3m
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const c of bld.cells.values()) { x0 = Math.min(x0, c.p.x); x1 = Math.max(x1, c.p.x); z0 = Math.min(z0, c.p.z); z1 = Math.max(z1, c.p.z); }
     Object.assign(SITE, { x0: x0 - 3, x1: x1 + 3, z0: z0 - 3, z1: z1 + 3 });
+    Object.assign(AREA, S.wide ? { x0: -66, x1: 66, z0: -58, z1: 74 } : { x0: -23.4, x1: 23.4, z0: -13.4, z1: 41.4 });
+    for (const h of hoards) h.setEnabled(!S.wide);
+    // 影: 30 階は太陽を遠くへ（近いと上の階の影が切れる）。まちは影の範囲がショベルについていく
+    SUN_D = S.sky ? 240 : 110; sun.shadowMaxZ = SUN_D + 130; sunC.set(0, 0, 15); sun.position = sunC.subtract(sun.direction.scale(SUN_D));
     bld.total = bld.cells.size;
     bld.orig = new Set(bld.cells.keys());
     rebuildCellMesh();
@@ -302,25 +355,31 @@ const G = window.G = {};   // 確かめ用の口
     { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] }, { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
     { n: [0, 0, 1], u: [1, 0, 0], v: [0, 1, 0] }, { n: [0, 0, -1], u: [1, 0, 0], v: [0, 1, 0] }];
   const TEXM = 4;     // 写真素材 1 枚が何 m 四方か
-  function rebuildCellMesh() {
+  const QUAD = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  // 格子 c の面 f を 1 枚足す（sc: 模様の大きさ m・dim: 暗さ）
+  function pushFace(c, f, k, vary, sc, dim, pos, nor, uv, col, idx) {
+    const b = pos.length / 3, h = CELL / 2;
+    for (const [su, sv] of QUAD) {
+      const px = c.p.x + (f.n[0] + f.u[0] * su + f.v[0] * sv) * h, py = c.p.y + (f.n[1] + f.u[1] * su + f.v[1] * sv) * h, pz = c.p.z + (f.n[2] + f.u[2] * su + f.v[2] * sv) * h;
+      pos.push(px, py, pz); nor.push(f.n[0], f.n[1], f.n[2]);
+      uv.push((px * f.u[0] + py * f.u[1] + pz * f.u[2]) / sc, (px * f.v[0] + py * f.v[1] + pz * f.v[2]) / sc);
+      col.push(k[0] * vary * dim, k[1] * vary * dim, k[2] * vary * dim, 1);
+    }
+    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  function buildChunk(ch) {
     const pos = [], nor = [], uv = [], col = [], idx = [], h = CELL / 2;
     const bp = [], bn = [], bu = [], bc = [], bi = [], bars = [];
-    for (const c of bld.cells.values()) {
+    for (const c of ch.cells) {
       const k = KIND_COL[c.kind], vary = 0.94 + ((c.x * 7 + c.y * 13 + c.z * 5) % 7) * 0.012;
       for (const f of FACE) {
         const nk = key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2]);
         if (bld.cells.has(nk)) continue;     // 隣が埋まっている面は見えない
         if (bld.orig && bld.orig.has(nk)) {   // 壊れた断面
-          const b2 = bp.length / 3;
-          for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-            const px = c.p.x + (f.n[0] + f.u[0] * su + f.v[0] * sv) * h, py = c.p.y + (f.n[1] + f.u[1] * su + f.v[1] * sv) * h, pz = c.p.z + (f.n[2] + f.u[2] * su + f.v[2] * sv) * h;
-            bp.push(px, py, pz); bn.push(...f.n); bu.push((px * f.u[0] + py * f.u[1] + pz * f.u[2]) / 1.4, (px * f.v[0] + py * f.v[1] + pz * f.v[2]) / 1.4);
-            bc.push(k[0] * vary, k[1] * vary, k[2] * vary, 1);
-          }
-          bi.push(b2, b2 + 1, b2 + 2, b2, b2 + 2, b2 + 3);
+          pushFace(c, f, k, vary, 1.4, 1, bp, bn, bu, bc, bi);
           // 鉄筋: 面ごとに 0〜2 本、少し曲がって飛び出す（位置は格子の座標から決まるので毎回同じ）
           const hsh = Math.abs((c.x * 73856093) ^ (c.y * 19349663) ^ (c.z * 83492791) ^ (f.n[0] * 3 + f.n[1] * 5 + f.n[2] * 7)) % 1000;
-          const nb = hsh % 3; if (bars.length < 1600)
+          const nb = hsh % 3; if (bars.length < 400)
           for (let j = 0; j < nb; j++) {
             const o1 = ((hsh >> (j * 2)) % 5 - 2) * 0.09, o2 = (((hsh * 7) >> j) % 5 - 2) * 0.09, L = 0.15 + ((hsh * (j + 3)) % 30) / 100;
             const dir = new B.Vector3(f.n[0] + f.u[0] * o2 * 1.5 + f.v[0] * -0.25 * j, f.n[1] + f.u[1] * o2 * 1.5 + f.v[1] * -0.25 * j, f.n[2] + f.u[2] * o2 * 1.5 + f.v[2] * -0.25 * j).normalize();
@@ -330,62 +389,176 @@ const G = window.G = {};   // 確かめ用の口
           }
           continue;
         }
-        const b = pos.length / 3;
-        for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-          const px = c.p.x + (f.n[0] + f.u[0] * su + f.v[0] * sv) * h, py = c.p.y + (f.n[1] + f.u[1] * su + f.v[1] * sv) * h, pz = c.p.z + (f.n[2] + f.u[2] * su + f.v[2] * sv) * h;
-          pos.push(px, py, pz); nor.push(...f.n);
-          uv.push((px * f.u[0] + py * f.u[1] + pz * f.u[2]) / TEXM, (px * f.v[0] + py * f.v[1] + pz * f.v[2]) / TEXM);
-          // 内側（壊して見えた所・床の裏）は少し暗く
-          const inner = f.n[1] < 0 ? 0.7 : 1;
-          col.push(k[0] * vary * inner, k[1] * vary * inner, k[2] * vary * inner, 1);
-        }
-        idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+        pushFace(c, f, k, vary, TEXM, f.n[1] < 0 ? 0.7 : 1, pos, nor, uv, col, idx);   // 内側（床の裏）は少し暗く
       }
     }
-    const vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx;
-    // 空の形を渡すと WebGPU の影の描画が止まる（古い数のまま描こうとする）ので、空なら隠すだけ
-    if (idx.length) { vd.applyToMesh(cellMesh, false); cellMesh.setEnabled(true); } else cellMesh.setEnabled(false);
-    if (bi.length) { const bv = new B.VertexData(); bv.positions = bp; bv.normals = bn; bv.uvs = bu; bv.colors = bc; bv.indices = bi; bv.applyToMesh(brokeMesh, false); brokeMesh.setEnabled(true); } else brokeMesh.setEnabled(false);
-    setThin(rebar, bars);
-    const frames = [];
-    // 窓ガラス: 窓の穴の上と下の壁が残っている時だけ
-    const pp = [], pn = [], pi = [];
-    for (const w of winSet) {
+    ch.bars = bars;
+    // 窓ガラスと窓枠: 窓の穴の上と下の壁が残っている時だけ
+    const frames = [], pp = [], pn = [];
+    for (const w of ch.wins) {
       const [x, y, z, ax, sg] = w.split(","), X = +x, Y = +y, Z = +z;
       if (!bld.cells.has(key(X, Y - 1, Z)) && !bld.cells.has(key(X, Y + 1, Z))) continue;
       if (!bld.cells.has(key(X, Y + 1, Z)) && !bld.cells.has(key(X, Y + 2, Z)) && !bld.cells.has(key(X, Y - 1, Z))) continue;
-      const p = cellWorld(X, Y, Z), b = pp.length / 3;
+      const p = cellWorld(X, Y, Z);
       const u = ax === "z" ? [h, 0, 0] : [0, 0, h], n = ax === "z" ? [0, 0, 1] : [1, 0, 0];
       // 窓枠: 格子 1 つ（0.5m 四方）の上下左右に細い枠
       const T = 0.05, Dp = 0.12;
       for (const [ox, oy, w, hh] of [[0, h - T / 2, CELL, T], [0, -h + T / 2, CELL, T], [h - T / 2, 0, T, CELL], [-h + T / 2, 0, T, CELL]])
         frames.push(B.Matrix.Compose(ax === "z" ? new B.Vector3(w, hh, Dp) : new B.Vector3(Dp, hh, w), B.Quaternion.Identity(), new B.Vector3(p.x + (ax === "z" ? ox : 0), p.y + oy, p.z + (ax === "z" ? 0 : ox))));
       // 窓の下の水切り（外へ少し出る）
-      if (bld.cells.has(key(X, Y - 1, Z)) && !winSet.has(key(X, Y - 1, Z) + "," + ax + "," + sg)) {
+      if (bld.cells.has(key(X, Y - 1, Z)) && !winSet.has(sk(X, Y - 1, Z) + "," + ax + "," + sg)) {
         const out = +sg * 0.3;   // 外へ出す向き（家ごとに違うので窓を作った時に覚えておく）
         frames.push(B.Matrix.Compose(ax === "z" ? new B.Vector3(CELL + 0.02, 0.05, 0.22) : new B.Vector3(0.22, 0.05, CELL + 0.02), B.Quaternion.Identity(), new B.Vector3(p.x + (ax === "x" ? out : 0), p.y - h - 0.02, p.z + (ax === "z" ? out : 0))));
       }
       if ((X * 7 + Y * 3 + Z * 5) % 5 === 0) continue;     // 割れてガラスの無い窓
-      for (const [su, sv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { pp.push(p.x + u[0] * su, p.y + sv * h, p.z + u[2] * su); pn.push(...n); }
-      pi.push(b, b + 1, b + 2, b, b + 2, b + 3);
+      for (const [su, sv] of QUAD) { pp.push(p.x + u[0] * su, p.y + sv * h, p.z + u[2] * su); pn.push(...n); }
     }
+    ch.frames = frames; ch.pp = pp; ch.pn = pn;
+    const m = ch.mesh;
+    // 空の形を渡すと WebGPU の影の描画が止まる（古い数のまま描こうとする）ので、空なら隠すだけ
+    if (!idx.length && !bi.length) { m.setEnabled(false); if (ch.body) { ch.body.dispose(); ch.shape.dispose(); ch.body = ch.shape = null; } return; }
+    const nMain = idx.length, off = pos.length / 3;
+    for (let i = 0; i < bp.length; i++) pos.push(bp[i]);
+    for (let i = 0; i < bn.length; i++) nor.push(bn[i]);
+    for (let i = 0; i < bu.length; i++) uv.push(bu[i]);
+    for (let i = 0; i < bc.length; i++) col.push(bc[i]);
+    for (let i = 0; i < bi.length; i++) idx.push(bi[i] + off);
+    const vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx;
+    vd.applyToMesh(m, false);
+    const nv = pos.length / 3; m.subMeshes = [];
+    if (nMain) new B.SubMesh(0, 0, nv, 0, nMain, m);
+    if (bi.length) new B.SubMesh(1, 0, nv, nMain, bi.length, m);
+    m.setEnabled(true);
+    // 当たり: 見えている面そのもの（物理の体は塊に 1 つ。形だけ取り替える）
+    const shape = new B.PhysicsShapeMesh(m, scene); shape.material = cellShapeM;
+    if (!ch.body) ch.body = new B.PhysicsBody(m, B.PhysicsMotionType.STATIC, false, scene);
+    const old = ch.shape; ch.body.shape = shape; ch.shape = shape; if (old) old.dispose();
+  }
+  // 壊れた塊だけ組み直す。鉄筋・窓枠・ガラスは全部の塊のをまとめて 1 回で描く
+  function rebuildCellMesh() {
+    let any = false;
+    for (const ch of chunks.values()) if (ch.dirty) { ch.dirty = false; buildChunk(ch); any = true; }
+    if (!any) return;
+    const bars = [], frames = [], pp = [], pn = [], pi = [];
+    for (const ch of chunks.values()) {
+      for (const m of ch.bars) if (bars.length < 1600) bars.push(m);
+      for (const m of ch.frames) frames.push(m);
+      const b0 = pp.length / 3;
+      for (const v of ch.pp) pp.push(v); for (const v of ch.pn) pn.push(v);
+      for (let i = 0; i < ch.pp.length / 12; i++) { const b = b0 + i * 4; pi.push(b, b + 1, b + 2, b, b + 2, b + 3); }
+    }
+    setThin(rebar, bars); setThin(frame, frames);
     if (pp.length) { const pv = new B.VertexData(); pv.positions = pp; pv.normals = pn; pv.indices = pi; pv.applyToMesh(paneMesh, false); paneMesh.setEnabled(true); }
     else paneMesh.setEnabled(false);
-    setThin(frame, frames);
   }
-  function removeCell(c) { c.body.dispose(); c.node.dispose(); bld.cells.delete(key(c.x, c.y, c.z)); }
+  const NBD = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [0, 2, 0], [0, -2, 0]];
+  function removeCell(c) {
+    bld.cells.delete(key(c.x, c.y, c.z));
+    const ch = chunkOf(c.x, c.y, c.z, false); if (ch) { ch.cells.delete(c); ch.dirty = true; }
+    for (const d of NBD) { const n = chunkOf(c.x + d[0], c.y + d[1], c.z + d[2], false); if (n) n.dirty = true; }   // 隣の塊の面・窓も変わる
+    if (c.b) { c.b.cells.delete(c); if (c.y < c.b.baseY) c.b.baseN--; dirtyB.add(c.b); }
+  }
+  // p の周り（x ±rx・z ±rz・高さ ymax まで）に格子があるか（全部の格子を調べずに、その辺りの番号だけ見る）
+  function cellsNear(p, rx, rz, ymax) {
+    const x0 = Math.ceil((p.x - rx - bld.origin.x) / CELL - 0.5), x1 = Math.floor((p.x + rx - bld.origin.x) / CELL - 0.5);
+    const z0 = Math.ceil((p.z - rz - bld.origin.z) / CELL - 0.5), z1 = Math.floor((p.z + rz - bld.origin.z) / CELL - 0.5);
+    const y1 = Math.floor((ymax - bld.origin.y) / CELL - 0.5);
+    for (let y = 0; y <= y1; y++) for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) if (bld.cells.has(key(x, y, z))) return true;
+    return false;
+  }
 
-  // 地面(y=0)につながっていない格子を探す
+  // 地面(y=0)につながっていない格子を探す（壊した建物の中だけ）
+  const N6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
   function floatingCells() {
-    const seen = new Set(), q = [];
-    for (const c of bld.cells.values()) if (c.y === 0) { const k = key(c.x, c.y, c.z); seen.add(k); q.push(c); }
-    const N = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
-    while (q.length) {
-      const c = q.pop();
-      for (const d of N) { const k = key(c.x + d[0], c.y + d[1], c.z + d[2]); if (!seen.has(k) && bld.cells.has(k)) { seen.add(k); q.push(bld.cells.get(k)); } }
+    const out = [];
+    for (const b of dirtyB) {
+      const seen = new Set(), q = [];
+      for (const c of b.cells) if (c.y === 0) { seen.add(c); q.push(c); }
+      while (q.length) {
+        const c = q.pop();
+        for (const d of N6) { const n = bld.cells.get(key(c.x + d[0], c.y + d[1], c.z + d[2])); if (n && n.b === b && !seen.has(n)) { seen.add(n); q.push(n); } }
+      }
+      for (const c of b.cells) if (!seen.has(c)) out.push(c);
     }
-    const out = []; for (const [k, c] of bld.cells) if (!seen.has(k)) out.push(c);
+    dirtyB.clear();
     return out;
+  }
+  // 沈むように崩れる: 大きな建物（または大きな浮いた塊）を 1 つのメッシュにして、地面へ沈めながら瓦礫と粉塵を出す
+  // （2 万格子を全部瓦礫にすると物理が止まる。iPad でも動く重さにする 10-16）
+  const sinks = [], fading = [];
+  function sinkSet(list) {
+    const set = new Set(list), pos = [], nor = [], uv = [], col = [], idx = [];
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, y0 = 1e9, y1 = -1e9; const kinds = {};
+    for (const c of list) {
+      x0 = Math.min(x0, c.p.x); x1 = Math.max(x1, c.p.x); z0 = Math.min(z0, c.p.z); z1 = Math.max(z1, c.p.z); y0 = Math.min(y0, c.p.y); y1 = Math.max(y1, c.p.y);
+      kinds[c.kind] = (kinds[c.kind] || 0) + 1;
+      const k = KIND_COL[c.kind], vary = 0.94 + ((c.x * 7 + c.y * 13 + c.z * 5) % 7) * 0.012;
+      for (const f of FACE) { const n = bld.cells.get(key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2])); if (n && set.has(n)) continue; pushFace(c, f, k, vary, TEXM, f.n[1] < 0 ? 0.7 : 1, pos, nor, uv, col, idx); }
+    }
+    // 窓ガラスも一緒に沈める（無いと窓が全部 穴に見えた）
+    const pp = [], pn = [], pi = [], h2 = CELL / 2;
+    for (const w of winSet) {
+      const [x, y, z, ax] = w.split(","), X = +x, Y = +y, Z = +z, up = bld.cells.get(key(X, Y + 1, Z)), dn = bld.cells.get(key(X, Y - 1, Z));
+      if (!(up && set.has(up)) && !(dn && set.has(dn))) continue;
+      const q = cellWorld(X, Y, Z), b = pp.length / 3, u = ax === "z" ? [h2, 0, 0] : [0, 0, h2];
+      for (const [su, sv] of QUAD) { pp.push(q.x + u[0] * su, q.y + sv * h2, q.z + u[2] * su); pn.push(ax === "z" ? 0 : 1, 0, ax === "z" ? 1 : 0); }
+      pi.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    for (const c of list) removeCell(c);
+    if (!idx.length) return;
+    const m = new B.Mesh("sink", scene), vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx; vd.applyToMesh(m, false);
+    m.material = bldM; m.receiveShadows = true; m.isPickable = false; shadow.addShadowCaster(m);
+    if (pi.length) { const g = new B.Mesh("sinkPane", scene), pv = new B.VertexData(); pv.positions = pp; pv.normals = pn; pv.indices = pi; pv.applyToMesh(g, false); g.material = paneM; g.parent = m; g.isPickable = false; }
+    const h = CELL / 2; m.setPivotPoint(new B.Vector3((x0 + x1) / 2, y0 - h, (z0 + z1) / 2));
+    const kind = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0][0];
+    sinks.push({ m, v: 0, d: 0, y0: y0 - h, H: y1 - y0 + CELL, x0: x0 - h, x1: x1 + h, z0: z0 - h, z1: z1 + h, total: Math.min(150, Math.max(6, Math.round(list.length / 90))), made: 0,
+      tx: (Math.random() - 0.5) * 0.14, tz: (Math.random() - 0.5) * 0.14, snd: 0, dT: 0, kind });
+    crash(1); shake(1); popup(list.length > 4000 ? "ドドドドド…!! たおれる！" : "ガラガラガラ…！", "big");
+  }
+  function updateSinks(dt) {
+    for (let i = sinks.length - 1; i >= 0; i--) {
+      const q = sinks[i], air = q.y0 - q.d > 0.5;           // 浮いた塊はまず落ちる
+      q.v = Math.min(q.v + dt * (air ? 9.8 : 4), air ? 20 : 9); q.d += q.v * dt;
+      q.m.position.y = -q.d;
+      const k = Math.min(1, q.d / q.H); q.m.rotation.x = q.tx * k; q.m.rotation.z = q.tz * k;
+      const under = q.d - q.y0;                              // 地面より下へ入った深さ
+      if (under > 0) {
+        const want = Math.min(q.total, Math.ceil(under / q.H * q.total));
+        const col = KIND_COL[q.kind];
+        while (q.made < want) {
+          q.made++;
+          const p = new B.Vector3(q.x0 - 1 + Math.random() * (q.x1 - q.x0 + 2), 1 + Math.random() * 2.5, q.z0 - 1 + Math.random() * (q.z1 - q.z0 + 2));
+          const out = new B.Vector3(p.x - (q.x0 + q.x1) / 2, 0, p.z - (q.z0 + q.z1) / 2).normalize().scale(1.5 + Math.random() * 2.5);
+          spawnDebris(p, new B.Vector3(0.9 + Math.random() * 0.7, 0.55 + Math.random() * 0.5, 0.9 + Math.random() * 0.7), col, out.addInPlaceFromFloats(0, 1.5, 0));
+        }
+        if ((q.dT -= dt) <= 0) { q.dT = 0.14; dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.5, q.z0 + Math.random() * (q.z1 - q.z0)), 22); cloudAt(q, q.H > 20 ? 5 : 2); }
+        if ((q.snd -= dt) <= 0) { q.snd = 0.5; crash(0.8); shake(0.3); }
+      }
+      if (under > q.H + 0.5) { q.m.dispose(); sinks.splice(i, 1); for (let j = 0; j < 4; j++) dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.6, q.z0 + Math.random() * (q.z1 - q.z0)), 30); }
+    }
+  }
+  // 沈む時の大きな土けむり（粒は大きく・長く残る。1 つだけ作って使い回す）
+  let cloud = null;
+  function cloudAt(q, n) {
+    if (!cloud) {
+      cloud = new B.ParticleSystem("cloud", LITE ? 120 : 240, scene); cloud.particleTexture = dustTex;
+      cloud.color1 = new B.Color4(0.62, 0.57, 0.5, 0.32); cloud.color2 = new B.Color4(0.52, 0.48, 0.42, 0.26); cloud.colorDead = new B.Color4(0.6, 0.56, 0.5, 0);
+      cloud.addSizeGradient(0, 2.5, 4); cloud.addSizeGradient(1, 8, 13); cloud.minLifeTime = 2.5; cloud.maxLifeTime = 4.5; cloud.emitRate = 0; cloud.manualEmitCount = 0;
+      cloud.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; cloud.gravity = new B.Vector3(0, 0.3, 0);
+      cloud.direction1 = new B.Vector3(-2, 0.3, -2); cloud.direction2 = new B.Vector3(2, 1.5, 2); cloud.minEmitPower = 1; cloud.maxEmitPower = 3;
+      cloud.minAngularSpeed = -0.3; cloud.maxAngularSpeed = 0.3; cloud.maxInitialRotation = 6.28; cloud.renderingGroupId = 1; cloud.start();
+    }
+    const hx = (q.x1 - q.x0) / 2 + 1, hz = (q.z1 - q.z0) / 2 + 1;
+    cloud.emitter = new B.Vector3((q.x0 + q.x1) / 2, 1.5, (q.z0 + q.z1) / 2); cloud.minEmitBox = new B.Vector3(-hx, -1, -hz); cloud.maxEmitBox = new B.Vector3(hx, 1, hz);
+    cloud.manualEmitCount = Math.max(0, cloud.manualEmitCount) + n;
+  }
+  // 瓦礫を消す時は、ぱっと消さずに 0.8 秒で小さくする
+  function fadeOut(d) { physOff(d); fading.push({ m: d.m, t: 0, s: d.m.scaling.clone() }); }
+  function updateFading(dt) {
+    for (let i = fading.length - 1; i >= 0; i--) {
+      const f = fading[i]; f.t += dt; const k = 1 - f.t / 0.8;
+      if (k <= 0) { f.m.dispose(); fading.splice(i, 1); } else f.m.scaling.copyFrom(f.s).scaleInPlace(k);
+    }
   }
 
   // ================= 破片 =================
@@ -422,7 +595,7 @@ const G = window.G = {};   // 確かめ用の口
     debris.push(d);
     while (debris.length > MAX_DEBRIS) {
       const i = debris.findIndex(o => !o.held); if (i < 0) break;
-      const o = debris.splice(i, 1)[0]; physOff(o); o.m.dispose();
+      fadeOut(debris.splice(i, 1)[0]);
     }
     return d;
   }
@@ -764,7 +937,7 @@ const G = window.G = {};   // 確かめ用の口
   }
   $("bShadow").onclick = () => setShadow(!shadowOn);
   $("bReset").onclick = () => { if (mode === "build") location.reload(); else reset(); };
-  shadow.addShadowCaster(cellMesh); shadow.addShadowCaster(debrisSrc);
+  shadow.addShadowCaster(debrisSrc);
   setShadow(shadowOn); setLabels();
   for (const [id, k] of [["pFwd", "fwd"], ["pBack", "back"], ["pLeft", "left"], ["pRight", "right"]]) {
     const el = $(id);
@@ -1143,13 +1316,15 @@ const G = window.G = {};   // 確かめ用の口
     if (finishAt >= 0) return "🎉 さいごの ダンプが しゅっぱつ！";
     if (bld.cells.size === 0) return "🪣 がれきを すくって ダンプへ（あと " + Math.max(0, STAGES[stage].trucks - truck.sent) + "だい）";
     if (sd >= 12) return "🪣 がれきを すくおう（右レバーを ←）";
+    if (STAGES[stage].free) return "🏙 すきな たてものを こわそう！ ダンプにも つめるよ";
+    if (STAGES[stage].sky) return sinks.length ? "🏢 たおれる！ はなれて みよう" : "🏢 1かいの かべを けずると…？";
     return STAGES[stage].town ? "🏠 バケットを いえに ぶつけて こわそう！" : "🏢 バケットを ビルに ぶつけて こわそう！";
   }
   function updateGoal(pct, sd) {
     $("gText").textContent = goalText(pct, sd);
     $("gBld").style.width = pct + "%"; $("gBldT").textContent = "かいたい " + pct + "%";
     const tp = Math.min(100, Math.round(truck.amount / TRUCK_CAP * 100));
-    $("gTr").style.width = tp + "%"; $("gTrT").textContent = "ダンプ " + tp + "%　" + truck.sent + " / " + STAGES[stage].trucks + "だい";
+    $("gTr").style.width = tp + "%"; $("gTrT").textContent = "ダンプ " + tp + "%　" + (STAGES[stage].free ? truck.sent + "だい はこんだ" : truck.sent + " / " + STAGES[stage].trucks + "だい");
     $("gScore").textContent = "★ " + score;
     $("gStage").textContent = "ステージ " + (stage + 1) + "　" + STAGES[stage].name;
   }
@@ -1189,7 +1364,7 @@ const G = window.G = {};   // 確かめ用の口
     const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
     $("rStars").textContent = stars(n);
     $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.sent}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "");
-    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = "none"; $("bNext").textContent = "つぎの ステージ ▶"; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
+    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = "none"; $("bNext").textContent = "つぎの ステージ ▶"; $("done").querySelector(".rT").textContent = STAGES[stage].free ? "まち ぜんぶ こわした！" : "さら地 かんせい！";
     $("done").style.display = "";
     chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
   }
@@ -1218,7 +1393,8 @@ const G = window.G = {};   // 確かめ用の口
   // 決めた台数を運んだら、残っている建物も片付け係が崩して持っていく（さら地にする）
   function clearRest() {
     let k = 0;
-    for (const c of [...bld.cells.values()]) { if (k++ % 25 === 0) dust(c.p, 18); removeCell(c); }
+    const every = Math.max(25, Math.ceil(bld.cells.size / 40));
+    for (const c of [...bld.cells.values()]) { if (k++ % every === 0) dust(c.p, 18); removeCell(c); }
     if (k) { rebuildCellMesh(); crash(0.6); shake(0.3); }
     sweepRest();
   }
@@ -1246,10 +1422,7 @@ const G = window.G = {};   // 確かめ用の口
 
   // 重機が格子・ダンプに入り込まないか
   function blockedAt(p) {
-    for (const c of bld.cells.values()) {
-      if (c.p.y > 2) continue;
-      if (Math.abs(c.p.x - p.x) < 2.0 && Math.abs(c.p.z - p.z) < 2.3) return true;
-    }
+    if (cellsNear(p, 2.0, 2.3, 2)) return true;
     const t = truck.root.position;
     if (Math.abs(t.x - p.x) < 1.25 + 1.9 && Math.abs(t.z - 0.6 - p.z) < 3.6 + 2.2) return true;
     if (craneHere && Math.abs(cr.pos.x - p.x) < 4.5 && Math.abs(cr.pos.z - p.z) < 7) return true;
@@ -1779,11 +1952,11 @@ const G = window.G = {};   // 確かめ用の口
   wkRoot.setEnabled(false);
   // 歩いて通れない所: 建物の格子（低い所）・重機・ダンプ・仮囲い
   function walkBlocked(p) {
-    for (const c of bld.cells.values()) { if (c.p.y > 1.9) continue; if (Math.abs(c.p.x - p.x) < 0.55 && Math.abs(c.p.z - p.z) < 0.55) return true; }
+    if (cellsNear(p, 0.55, 0.55, 1.9)) return true;
     { const dx = p.x - ex.pos.x, dz = p.z - ex.pos.z, c = Math.cos(ex.heading), sn = Math.sin(ex.heading), lx = dx * c - dz * sn, lz = dx * sn + dz * c; if (Math.abs(lx) < 1.95 && Math.abs(lz) < 2.75) return true; }   // ショベル（キャタピラの外まで）
     if (craneHere) { const dx = p.x - cr.pos.x, dz = p.z - cr.pos.z, c = Math.cos(cr.heading), sn = Math.sin(cr.heading), lx = dx * c - dz * sn, lz = dx * sn + dz * c; if (Math.abs(lx) < 1.7 && Math.abs(lz) < 5.6) return true; }
     if (truck.root.isEnabled()) { const t = truck.root.position; if (Math.abs(t.x - p.x) < 1.6 && Math.abs(t.z - 0.6 - p.z) < 4.4) return true; }
-    return p.x < -23.4 || p.x > 23.4 || p.z < -13.4 || p.z > 41.4;
+    return p.x < AREA.x0 || p.x > AREA.x1 || p.z < AREA.z0 || p.z > AREA.z1;
   }
   function updateWalk(dt) {
     const L = sticks.L, R = sticks.R;
@@ -1820,8 +1993,9 @@ const G = window.G = {};   // 確かめ用の口
   }
   let _camBl = null;
   function camBlockers() {   // カメラをさえぎる物（重機・ダンプ・クレーン・建物・組んだ建材）
-    if (!_camBl || _camBl.n !== bd.placed.length) {
-      _camBl = new Set([cellMesh, ...scene.getTransformNodeByName("exRoot").getChildMeshes(), ...truck.root.getChildMeshes(), ...crRoot.getChildMeshes(), ...bd.placed]); _camBl.n = bd.placed.length;
+    const sig = bd.placed.length + "/" + chunkGen;
+    if (!_camBl || _camBl.n !== sig) {
+      _camBl = new Set([...[...chunks.values()].map(c => c.mesh), ...scene.getTransformNodeByName("exRoot").getChildMeshes(), ...truck.root.getChildMeshes(), ...crRoot.getChildMeshes(), ...bd.placed]); _camBl.n = sig;
     }
     return _camBl;
   }
@@ -1935,8 +2109,15 @@ const G = window.G = {};   // 確かめ用の口
     // 削った後、少し置いてから「支えのない塊」を落とす（揺れの間）
     if (dirty) { collapseTimer += dt; if (collapseTimer > 0.25) {
       dirty = false; collapseTimer = 0;
+      // 大きな建物: 1 階の壁が 45% より減ったら丸ごと沈む。75% で「ぐらぐら」の合図
+      for (const b of [...dirtyB]) if (b.sink && b.cells.size) {
+        const r = b.baseN / Math.max(1, b.base0);
+        if (r < 0.45) sinkSet([...b.cells]);
+        else if (r < 0.75 && !b.warned) { b.warned = true; popup("ぐらぐら…！ あと すこし！", "mid"); shake(0.5); }
+      }
       const fl = floatingCells();
-      if (fl.length) { const c0 = fl[0].p.clone(), m = fl.length; collapse(fl); broke(m, c0, true); }
+      if (fl.length > 900) sinkSet(fl);       // 大きすぎる塊は瓦礫にせず沈める
+      else if (fl.length) { const c0 = fl[0].p.clone(), m = fl.length; collapse(fl); broke(m, c0, true); }
       rebuildCellMesh();
     } }
     updateGrab();
@@ -1950,6 +2131,8 @@ const G = window.G = {};   // 確かめ用の口
     fp.position.set((Math.random() - 0.5) * tr * 0.22, (Math.random() - 0.5) * tr * 0.22, 0);
     fp.rotation.set(look.pitch + (Math.random() - 0.5) * tr * 0.03, look.yaw + (Math.random() - 0.5) * tr * 0.03, (Math.random() - 0.5) * tr * 0.05);
     if (mode !== "build") { updateCombo(dt); playT += dt; }
+    if (sinks.length) updateSinks(dt);
+    if (fading.length) updateFading(dt);
     const camAt = G.camAt && G.camAt();   // 確かめ用: 撮る時だけ注目点を差し替える
     tp.target.copyFrom(camAt || (!ride ? wk.pos.add(new B.Vector3(0, 1.4, 0)) : ride === "cr" ? cr.pos.add(new B.Vector3(0, 6, 6)) : ex.pos.add(new B.Vector3(0, 2.5, 0))));
     updateRideBtn();
@@ -1960,7 +2143,17 @@ const G = window.G = {};   // 確かめ用の口
     if (hudT > 0.25) {
       hudT = 0;
       let awake = 0;
-      for (const d of debris) { if (!d.ag) continue; d.ag.body.getLinearVelocityToRef(_v); if (_v.lengthSquared() > 0.04) awake++; }
+      // まち まるごと: 止まって 18 秒たった瓦礫（ダンプの近く以外）は消していく（いくら壊しても重くならないように）
+      const free = STAGES[stage].free && mode !== "build", tpos = truck.root.position;
+      for (let i = debris.length - 1; i >= 0; i--) {
+        const d = debris[i]; if (!d.ag) continue; d.ag.body.getLinearVelocityToRef(_v);
+        if (_v.lengthSquared() > 0.04) { awake++; d.rest = 0; }
+        else if (free && !d.held && (d.rest = (d.rest || 0) + 0.25) > 18 && B.Vector3.DistanceSquared(d.m.position, tpos) > 49) { debris.splice(i, 1); fadeOut(d); }
+      }
+      if (STAGES[stage].wide && mode !== "build") {   // 影の範囲をショベル（歩いている時は人）の辺りへ（16m ごとに動かす）
+        const at = ride ? ex.pos : wk.pos, cx = Math.round(at.x / 16) * 16, cz = Math.round(at.z / 16) * 16 + 8;
+        if (cx !== sunC.x || cz !== sunC.z) { sunC.set(cx, 0, cz); sun.position = sunC.subtract(sun.direction.scale(SUN_D)); }
+      }
       const pct = Math.round((1 - bld.cells.size / bld.total) * 100), sd = siteDebris();
       const tstate = { wait: "待っている", leave: "出発！", back: "戻ってくる" }[truck.state];
       if (mode === "build") {
@@ -1984,6 +2177,7 @@ const G = window.G = {};   // 確かめ用の口
       // さら地: ビルが残っておらず、範囲のがれきが 10 個以下
       updateGoal(pct, sd);
       if (!siteDone && finishAt >= 0 && playT >= finishAt) { siteDone = true; clearRest(); showResult(); }
+      else if (!siteDone && STAGES[stage].free && pct >= 95) { siteDone = true; clearRest(); showResult(); }   // まち まるごと: ほとんど壊したら おしまい
       else if (!siteDone && bld.cells.size === 0 && sd <= CLEAR_LEFT) { siteDone = true; sweepRest(); showResult(); }   // 台数の前に拾う物が無くなった時の逃げ道
     }
   }
@@ -2016,7 +2210,7 @@ const G = window.G = {};   // 確かめ用の口
       dome._bg = L.bg; const old = dome.photoTexture; dome.photoTexture = new B.Texture(AS + "hdri/" + L.bg + "_bg3.jpg", scene, true, !dome._useDirectMapping); if (old && old !== dome.photoTexture) old.dispose(); }
     dome.mesh.rotation.y = dome._rot0 + (L.bgRot || 0);   // 開けた方（夕焼け空・ビル街・遠くの町）が正面に来る向き（6 通り回して撮って選んだ）
     sun.direction.set(-Math.sin(SUN_AZ) * Math.cos(el), -Math.sin(el), -Math.cos(SUN_AZ) * Math.cos(el));
-    sun.position = new B.Vector3(0, 0, 15).subtract(sun.direction.scale(110));
+    sun.position = sunC.subtract(sun.direction.scale(SUN_D));
     sun.diffuse = new B.Color3(...L.sun); sun.intensity = L.si; shadow.darkness = L.shade;
     const ip = pipe.imageProcessing, cc = ip.colorCurves;
     cc.globalHue = L.hue; cc.globalDensity = L.dens; cc.globalSaturation = L.sat; ip.exposure = L.exp;
@@ -2074,9 +2268,9 @@ const G = window.G = {};   // 確かめ用の口
       const len = Math.hypot(x1 - x0, z1 - z0), m = pbrTex("hoardM", "box_profile_metal_sheet", 1, [1, 1, 1], "hoard_diff.jpg");
       for (const t of [m.albedoTexture, m.bumpTexture, m.metallicTexture]) { t.uScale = len / 2.4; t.vScale = 1.25; }
       const b = B.MeshBuilder.CreateBox("hoard", { width: len, height: 3, depth: 0.06 }, scene);
-      b.position.set((x0 + x1) / 2, 1.5, (z0 + z1) / 2); b.rotation.y = -Math.atan2(z1 - z0, x1 - x0); b.material = m; b.receiveShadows = true; b.isPickable = false; shadow.addShadowCaster(b);
+      b.position.set((x0 + x1) / 2, 1.5, (z0 + z1) / 2); b.rotation.y = -Math.atan2(z1 - z0, x1 - x0); b.material = m; b.receiveShadows = true; b.isPickable = false; shadow.addShadowCaster(b); hoards.push(b);
       // 支柱
-      for (let t = 0; t <= len; t += 3) { const q = B.MeshBuilder.CreateBox("hoardPost", { width: 0.06, height: 3.1, depth: 0.06 }, scene); q.position.set(x0 + (x1 - x0) * t / len, 1.55, z0 + (z1 - z0) * t / len); q.material = steel; q.isPickable = false; }
+      for (let t = 0; t <= len; t += 3) { const q = B.MeshBuilder.CreateBox("hoardPost", { width: 0.06, height: 3.1, depth: 0.06 }, scene); q.position.set(x0 + (x1 - x0) * t / len, 1.55, z0 + (z1 - z0) * t / len); q.material = steel; q.isPickable = false; hoards.push(q); }
     };
     wall(-24, 42, 24, 42); wall(-24, -14, -24, 42); wall(24, -14, 24, 42); wall(-24, -14, -6, -14); wall(6, -14, 24, -14);
   }
@@ -2181,7 +2375,7 @@ const G = window.G = {};   // 確かめ用の口
   });
 
   // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
-  Object.assign(G, { getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { carveAt, blds, sinks, chunks, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
