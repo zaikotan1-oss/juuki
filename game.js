@@ -190,7 +190,9 @@ const G = window.G = {};   // 確かめ用の口
     { name: "じゅうきビル", bld: "biru", floors: 2, look: 0 },
     { name: "じゅうきマンション", bld: "mansion", floors: 3, look: 1 },
     { name: "じゅうきタワー", bld: "tower", floors: 4, look: 2 },
-    { name: "あたらしい おうち", bld: "house", floors: 2, look: 3 }];
+    { name: "あたらしい おうち", bld: "house", floors: 2, look: 3 },
+    { name: "たかい タワー（10かい）", bld: "tower", floors: 10, look: 2, wind: 1.5, unit: true },   // 上へ行くほど風が強い。柱と梁は工場で組んだ「わく」1 つで吊る（1 階 10 個だと 10 階で 40 分かかる）
+    { name: "おうち 3けん", bld: "house", floors: 2, look: 0, sites: [[0, 17], [-10.5, 21], [10.5, 21]] }];   // 3 か所に順に建てる
   let bstage = Math.min(BSTAGES.length - 1, Math.max(0, (Number(Q.get("build")) || 1) - 1));
   const bldType = () => BSTAGES[bstage].bld || "biru";   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
   const UPGRADES = ["うでと はしりが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
@@ -1438,7 +1440,7 @@ const G = window.G = {};   // 確かめ用の口
   // 吊り荷は物理なし（フックの下にぶら下げるだけ）。フックは振り子で少しだけ揺れる
   const cr = { pos: new B.Vector3(0, 0, 3), heading: 0, swing: 0, luff: 0.8, ext: 4, wire: 6, sway: new B.Vector2(0, 0), swayV: new B.Vector2(0, 0),
     tgt: new B.Vector3(-7.5, 7, 5.5) };   // tgt = フックをここへ持っていきたい（本人が動かすのはこれ）
-  const CLIM = { luff: [0.12, 1.4], ext: [0, 25], wire: [1.2, 50] };   // ext は 25 まで（内側の筒 9.2m を 3 段で出すので、25.8 を超えると段の間にすき間が空いた 10-12 評価 k2）
+  const CLIM = { luff: [0.12, 1.4], ext: [0, 33], wire: [1.2, 50] };   // 10 階のタワーまで届くよう筒を 4 段にして 33 まで（各段 8.25m 出ても 9.2m の筒は重なる 10-16）   // ext は 25 まで（内側の筒 9.2m を 3 段で出すので、25.8 を超えると段の間にすき間が空いた 10-12 評価 k2）
   const crRoot = new B.TransformNode("crane", scene);
   const crRed = paintM("crRed", "paint_red_diff.jpg", 0.38, 0.6), white = paintM("white", "paint_white_diff.jpg", 0.4, 0.6);
   const crRoofGlass = mat("crRoofGlass", 0.2, 0.25, 0.28, 0.05); crRoofGlass.alpha = 0.12;   // 屋根は上を見て吊るので薄く
@@ -1485,7 +1487,7 @@ const G = window.G = {};   // 確かめ用の口
   makeBox("crBoom1", [0.9, 0.9, BOOM0], crBoomJ, [0, 0, BOOM0 / 2], crRed).isVisible = false;
   const crBoom2 = makeBox("crBoom2", [0.62, 0.62, 1], crBoomJ, [0, 0, 0], white); crBoom2.isVisible = false;
   // 見た目のブーム: 太い順に 4 段の六角形の筒。伸ばした分を内側の 3 段で等分して出す。筒の口には濃い色の帯
-  const SEC = [{ d: 0.98, L: BOOM0, m: crRed }, { d: 0.82, L: 9.2, m: white }, { d: 0.68, L: 9.2, m: white }, { d: 0.55, L: 9.2, m: white }].map((c, i) => {
+  const SEC = [{ d: 0.98, L: BOOM0, m: crRed }, { d: 0.82, L: 9.2, m: white }, { d: 0.68, L: 9.2, m: white }, { d: 0.55, L: 9.2, m: white }, { d: 0.43, L: 9.2, m: white }].map((c, i) => {
     const t = B.MeshBuilder.CreateCylinder("crSec" + i, { diameter: c.d, height: c.L, tessellation: 6 }, scene);
     t.rotation.y = Math.PI / 6; t.bakeCurrentTransformIntoVertices();   // 六角形の向きは筒の軸まわりに先に焼き込む（rotation.y と x を同時に入れると Y が後に掛かり、筒が横へ 30 度ねじれて段が途切れて見えた 10-12 評価 k2）
     t.parent = crBoomJ; t.rotation.x = Math.PI / 2; t.scaling.x = 0.82; t.material = c.m;
@@ -1495,7 +1497,7 @@ const G = window.G = {};   // 確かめ用の口
     return { ...c, t, col };
   });
   function placeBoomSecs(ext) {
-    SEC.forEach((c, i) => { const a = i ? 0.6 * i + ext * i / 3 : 0; c.t.position.z = a + c.L / 2; c.col.position.z = a + c.L - 0.11; });
+    SEC.forEach((c, i) => { const a = i ? 0.6 * i + ext * i / (SEC.length - 1) : 0; c.t.position.z = a + c.L / 2; c.col.position.z = a + c.L - 0.11; });
   }
   // 起伏シリンダー: 旋回台からブームの腹へ
   piston("crLuff", anchor("lA", crUpper, [0.45, 0.35, 0.2]), anchor("lB", crBoomJ, [0, -0.5, 4.2]), 0.42, white);
@@ -1562,17 +1564,25 @@ const G = window.G = {};   // 確かめ用の口
   function planFloor(f) {
     const y0 = f * FLOOR_H, L = [], T = bldType(), last = f === bd_goal() - 1;
     const fm = T === "house" ? woodM : T === "mansion" ? whiteM : steelM;
-    for (const x of [-3.8, 3.8]) for (const z of [14.2, 19.8]) L.push({ kind: "柱", size: [0.35, FLOOR_H, 0.35], pos: new B.Vector3(x, y0 + FLOOR_H / 2, z), m: fm });
-    for (const z of [14.2, 19.8]) L.push({ kind: "梁", size: [7.3, 0.4, 0.3], pos: new B.Vector3(0, y0 + FLOOR_H - 0.2, z), m: fm });
-    for (const x of [-3.8, 3.8]) L.push({ kind: "梁", size: [0.3, 0.4, 5.3], pos: new B.Vector3(x, y0 + FLOOR_H - 0.2, SC.z), m: fm });
+    const X = SC.x, Z = SC.z - 17;   // 建てる場所（おうち 3けん では場所が変わる）
+    if (BSTAGES[bstage].unit) {        // わく（柱 4 本＋梁 4 本を組んだ物）→ 床板 → ガラス（→ 最後に看板）
+      L.push({ kind: "わく", size: [7.95, FLOOR_H, 5.95], pos: new B.Vector3(X, y0 + FLOOR_H / 2, SC.z), m: fm });
+      L.push({ kind: "床板", size: [8.2, 0.22, 6.2], pos: new B.Vector3(X, y0 + FLOOR_H + 0.11, SC.z), m: slabM });
+      L.push({ kind: "ガラス", size: [7.4, FLOOR_H - 0.5, 0.12], pos: new B.Vector3(X, y0 + (FLOOR_H - 0.5) / 2 + 0.05, Z + 13.8), m: glassWM });
+      if (last) L.push({ kind: "かんばん", size: [4, 1.6, 0.25], pos: new B.Vector3(X, y0 + FLOOR_H + 0.22 + 0.8, Z + 14.6), m: signM(BLD[T]) });
+      return L;
+    }
+    for (const x of [-3.8, 3.8]) for (const z of [14.2, 19.8]) L.push({ kind: "柱", size: [0.35, FLOOR_H, 0.35], pos: new B.Vector3(X + x, y0 + FLOOR_H / 2, Z + z), m: fm });
+    for (const z of [14.2, 19.8]) L.push({ kind: "梁", size: [7.3, 0.4, 0.3], pos: new B.Vector3(X, y0 + FLOOR_H - 0.2, Z + z), m: fm });
+    for (const x of [-3.8, 3.8]) L.push({ kind: "梁", size: [0.3, 0.4, 5.3], pos: new B.Vector3(X + x, y0 + FLOOR_H - 0.2, SC.z), m: fm });
     L.push({ kind: "床板", size: [8.2, 0.22, 6.2], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.11, SC.z), m: T === "house" ? woodFloorM : slabM });
-    if (T === "mansion") L.push({ kind: "ベランダ", size: [8.2, 0.18, 1.3], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.09, 13.9 - 0.65), m: whiteM });
-    if (T === "tower") L.push({ kind: "ガラス", size: [7.4, FLOOR_H - 0.5, 0.12], pos: new B.Vector3(0, y0 + (FLOOR_H - 0.5) / 2 + 0.05, 13.8), m: glassWM });   // 床板の縁（z 13.9）より外: ワイヤーが床を突き抜けて見えないように
+    if (T === "mansion") L.push({ kind: "ベランダ", size: [8.2, 0.18, 1.3], pos: new B.Vector3(SC.x, y0 + FLOOR_H + 0.09, Z + 13.9 - 0.65), m: whiteM });
+    if (T === "tower") L.push({ kind: "ガラス", size: [7.4, FLOOR_H - 0.5, 0.12], pos: new B.Vector3(X, y0 + (FLOOR_H - 0.5) / 2 + 0.05, Z + 13.8), m: glassWM });   // 床板の縁（z 13.9）より外: ワイヤーが床を突き抜けて見えないように
     if (last && T === "house") {
       // 三角屋根: 床の上で 30 度。手前の 1 枚 → 奥の 1 枚。軒は 0.5m 出す
       const a = Math.PI / 6, run = 3.1 + 0.5, len = run / Math.cos(a), yb = y0 + FLOOR_H + 0.22;
       for (const sg of [-1, 1]) L.push({ kind: "やね", size: [8.9, 0.2, len], pos: new B.Vector3(SC.x, yb + Math.tan(a) * run / 2 - 0.05, SC.z + sg * run / 2), m: roofTM, q: B.Quaternion.RotationAxis(B.Axis.X, sg * a) });
-    } else if (last) L.push({ kind: "かんばん", size: [4, 1.6, 0.25], pos: new B.Vector3(0, y0 + FLOOR_H + 0.22 + 0.8, 14.6), m: signM(BLD[T]) });   // 最後の 1 個は屋上の看板
+    } else if (last) L.push({ kind: "かんばん", size: [4, 1.6, 0.25], pos: new B.Vector3(X, y0 + FLOOR_H + 0.22 + 0.8, Z + 14.6), m: signM(BLD[T]) });   // 最後の 1 個は屋上の看板
     return L;
   }
   const YARD = new B.Vector3(-7.5, 0, 10.5);              // 建材の置き場（クレーンの左前）。5.5 では置き場へ戻る 2〜3 秒が待ちになった（10-12 評価 b0）
@@ -1588,8 +1598,15 @@ const G = window.G = {};   // 確かめ用の口
     const part = (a, b, off) => { const d = [0, 0, 0]; d[ax] = L; d[o[0]] = a; d[o[1]] = b; const m = B.MeshBuilder.CreateBox(name, { width: d[0], height: d[1], depth: d[2] }, scene); m.position.set(0, 0, 0); if (off) m.position[["x", "y", "z"][o[1]]] = off; return m; };
     return B.Mesh.MergeMeshes([part(W, t, Hh / 2 - t / 2), part(W, t, -(Hh / 2 - t / 2)), part(t, Hh - 2 * t, 0)], true);
   }
+  function frameUnit(name, size) {   // わく: 4 隅の柱と上の梁 4 本を 1 つに
+    const [W, H, D] = size, hx = W / 2 - 0.18, hz = D / 2 - 0.18, ps = [];
+    for (const x of [-hx, hx]) for (const z of [-hz, hz]) { const c = hBeam(name, [0.35, H, 0.35]); c.position.set(x, 0, z); ps.push(c); }
+    for (const z of [-hz, hz]) { const b = hBeam(name, [W - 0.65, 0.4, 0.3]); b.position.set(0, H / 2 - 0.2, z); ps.push(b); }
+    for (const x of [-hx, hx]) { const b = hBeam(name, [0.3, 0.4, D - 0.65]); b.position.set(x, H / 2 - 0.2, 0); ps.push(b); }
+    return B.Mesh.MergeMeshes(ps, true);
+  }
   function pieceMesh(p, name) {
-    const m = p.kind !== "柱" && p.kind !== "梁" ? B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene) : hBeam(name, p.size);
+    const m = p.kind === "わく" ? frameUnit(name, p.size) : p.kind !== "柱" && p.kind !== "梁" ? B.MeshBuilder.CreateBox(name, { width: p.size[0], height: p.size[1], depth: p.size[2] }, scene) : hBeam(name, p.size);
     m.material = p.m; shadow.addShadowCaster(m); m.receiveShadows = true; m.rotationQuaternion = B.Quaternion.Identity();
     return m;
   }
@@ -1766,8 +1783,8 @@ const G = window.G = {};   // 確かめ用の口
     // 2 かいめからは風: ときどき突風でフックが横に押される（同じ繰り返しにしないため 10-12 評価 b0）
     if (bd.floor >= 1 && !bd.done) {
       bd.windT -= dt;
-      if (bd.windT <= 0) { bd.windT = 7 + Math.random() * 6; bd.gust = 1.2; bd.gustDir = Math.random() * 6.28; popup("💨 かぜだ！ ゆれに 気をつけて", "mile"); if (!playS("wind_gust", 0.7)) chime([12, 7], 0.09, 0.08); }
-      if (bd.gust > 0) { bd.gust -= dt; const w = 2.2 * WIND_MUL() * Math.sin(Math.min(1, bd.gust) * Math.PI); cr.swayV.x += Math.cos(bd.gustDir) * w * dt; cr.swayV.y += Math.sin(bd.gustDir) * w * dt; }
+      if (bd.windT <= 0) { bd.windT = (BSTAGES[bstage].wind ? 6 : 7) + Math.random() * 6; bd.gust = 1.2; bd.gustDir = Math.random() * 6.28; popup("💨 かぜだ！ ゆれに 気をつけて", "mile"); if (!playS("wind_gust", 0.7)) chime([12, 7], 0.09, 0.08); }
+      if (bd.gust > 0) { bd.gust -= dt; const wk2 = BSTAGES[bstage].wind || 1, w = 2.2 * WIND_MUL() * wk2 * (wk2 > 1 ? 1 + bd.floor * 0.07 : 1) * Math.sin(Math.min(1, bd.gust) * Math.PI); cr.swayV.x += Math.cos(bd.gustDir) * w * dt; cr.swayV.y += Math.sin(bd.gustDir) * w * dt; }
     }
     cr.swayV.scaleInPlace(Math.max(0, 1 - 0.9 * dt));   // 2.6 では揺れがすぐ消えて見えなかった（評価 k1）
     cr.sway.addInPlace(cr.swayV.scale(dt));
@@ -1833,6 +1850,12 @@ const G = window.G = {};   // 確かめ用の口
         bd.placed.push(s2.m); bd.snap = null; bd.step++;
         if (bd.step >= bd.plan.length) {
           bd.floor++; bd.step = 0; bd.score += 150; chime([0, 4, 7, 12], 0.12); shake(0.25); popup(`${bd.floor}かい かんせい！ +150`, "big");
+          const sites = BSTAGES[bstage].sites;
+          if (bd.floor >= bd.goal && sites && bd.site < sites.length - 1) {   // おうち 3けん: 次の場所へ
+            flagAt(SC.x, bd.goal * FLOOR_H + 2.4, SC.z);
+            bd.site++; SC.x = sites[bd.site][0]; SC.z = sites[bd.site][1]; bd.floor = 0;
+            popup(`🏠 ${bd.site}けん できた！ つぎの おうちへ`, "big"); chime([0, 7, 12, 16], 0.12);
+          }
           if (bd.floor >= bd.goal) { buildDone(); return; }
           bd.plan = planFloor(bd.floor);
         }
@@ -1885,14 +1908,17 @@ const G = window.G = {};   // 確かめ用の口
     $("gScore").textContent = "★ " + bd.score;
   }
   // 決めた階数まで建てたら完成: 屋上に旗・紙吹雪・結果の札
+  function flagAt(x, top, z) {
+    const pole = B.MeshBuilder.CreateCylinder("flagPole", { diameter: 0.08, height: 3 }, scene); pole.position.set(x + 3.4, top + 1.5, z); pole.material = steel;
+    const flag = B.MeshBuilder.CreatePlane("flag", { width: 1.6, height: 1.0 }, scene); flag.position.set(x + 4.2, top + 2.5, z);
+    const fm = new B.StandardMaterial("flagM", scene); fm.diffuseColor = new B.Color3(1, 0.2, 0.15); fm.emissiveColor = new B.Color3(0.5, 0.08, 0.05); fm.backFaceCulling = false; flag.material = fm;
+    scene.onBeforeRenderObservable.add(() => { flag.rotation.y = Math.sin(performance.now() / 300) * 0.25; });
+  }
   function buildDone() {
     bd.done = true; if (bd.ghost) { bd.ghost.dispose(); bd.ghost = null; }
     const top = bd.goal * FLOOR_H + 0.3 + (bldType() === "house" ? 2.1 : 0);   // おうちは屋根の上
-    const pole = B.MeshBuilder.CreateCylinder("flagPole", { diameter: 0.08, height: 3 }, scene); const fz = bldType() === "house" ? SC.z : 19.4; pole.position.set(3.4, top + 1.5, fz); pole.material = steel;
-    const flag = B.MeshBuilder.CreatePlane("flag", { width: 1.6, height: 1.0 }, scene); flag.position.set(4.2, top + 2.5, fz);
-    const fm = new B.StandardMaterial("flagM", scene); fm.diffuseColor = new B.Color3(1, 0.2, 0.15); fm.emissiveColor = new B.Color3(0.5, 0.08, 0.05); fm.backFaceCulling = false; flag.material = fm;
-    scene.onBeforeRenderObservable.add(() => { flag.rotation.y = Math.sin(performance.now() / 300) * 0.25; });
-    const st = BSTAGES[bstage], n = bd.t <= st.floors * 150 ? 3 : bd.t <= st.floors * 240 ? 2 : 1;
+    flagAt(SC.x, top, bldType() === "house" ? SC.z : SC.z + 2.4);
+    const st = BSTAGES[bstage], per = st.unit ? [80, 130] : [150, 240], n = bd.t <= st.floors * (st.sites ? 3 : 1) * per[0] ? 3 : bd.t <= st.floors * (st.sites ? 3 : 1) * per[1] ? 2 : 1;
     prog.build = prog.build || []; const first = !prog.build[bstage]; prog.build[bstage] = Math.max(prog.build[bstage] || 0, n); saveProg();
     const mm = Math.floor(bd.t / 60), ss = String(Math.floor(bd.t % 60)).padStart(2, "0");
     $("done").querySelector(".rT").textContent = BLD[bldType()] + " かんせい！";
@@ -1901,10 +1927,11 @@ const G = window.G = {};   // 確かめ用の口
     $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${total}　とくてん ${bd.score}` + (first && BUILD_UPS[bstage] ? `\n🔓 パワーアップ: ${BUILD_UPS[bstage]}` : "");
     $("bNext").textContent = "つぎの ステージ ▶"; $("bNext").style.display = BSTAGES[bstage + 1] ? "" : "none"; $("bBuild").textContent = "もういちど 建てる"; $("bBuild").style.display = ""; $("done").style.display = "";
     $("hint").style.display = "none";
-    confettiPS.emitter = new B.Vector3(0, top + 4, 17); chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti(); shake(0.3);
+    confettiPS.emitter = new B.Vector3(SC.x, top + 4, SC.z); chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti(); shake(0.3);
   }
   function enterBuild() {
-    bd.goal = BSTAGES[bstage].floors; bd.t = 0; bd.streak = 0; bd.perfect = 0; bd.done = false; bd.score = 0; bd.windT = 4; BUILD_GOAL = bd.goal; bd.plan = planFloor(0);
+    const BS = BSTAGES[bstage]; bd.site = 0; if (BS.sites) { SC.x = BS.sites[0][0]; SC.z = BS.sites[0][1]; }
+    bd.goal = BS.floors; bd.t = 0; bd.streak = 0; bd.perfect = 0; bd.done = false; bd.score = 0; bd.windT = 4; BUILD_GOAL = bd.goal; bd.plan = planFloor(0);
     $("goal").style.display = ""; $("stages").style.display = "none";   // 建築でも左上に目標と進み具合
     mode = "build";
     clearDebris(); for (const c of [...bld.cells.values()]) removeCell(c); rebuildCellMesh();
@@ -1918,7 +1945,7 @@ const G = window.G = {};   // 確かめ用の口
     cr.pos.set(0, 0, 3); cr.heading = 0; cr.sway.set(0, 0); cr.swayV.set(0, 0); tipInit = false;
     cr.tgt.set(YARD.x, 6, YARD.z);                           // 最初は置き場の真上。あとは「下げる」だけで吊れる
     const s = solveCrane(cr.tgt, 0); cr.swing = s.swing; cr.luff = s.luff; cr.ext = s.ext; cr.wire = s.wire;
-    fp.parent = crSeat; fp.fov = 1.25; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35;
+    fp.parent = crSeat; fp.fov = 1.25; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = BS.floors > 4 ? 44 : BS.sites ? 38 : 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35;
     if (view === "fp") $("bView").onclick();   // 建築は外からが最初（運転席からだとブームと柱でフックが隠れた 10-12 評価 b0）
     $("done").style.display = "none"; $("pedals").style.display = "none"; $("hint").style.display = "";   // クレーンは止めたまま届くのでペダルは隠す
     craneLabels();
@@ -2134,7 +2161,7 @@ const G = window.G = {};   // 確かめ用の口
     if (sinks.length) updateSinks(dt);
     if (fading.length) updateFading(dt);
     const camAt = G.camAt && G.camAt();   // 確かめ用: 撮る時だけ注目点を差し替える
-    tp.target.copyFrom(camAt || (!ride ? wk.pos.add(new B.Vector3(0, 1.4, 0)) : ride === "cr" ? cr.pos.add(new B.Vector3(0, 6, 6)) : ex.pos.add(new B.Vector3(0, 2.5, 0))));
+    tp.target.copyFrom(camAt || (!ride ? wk.pos.add(new B.Vector3(0, 1.4, 0)) : ride === "cr" ? cr.pos.add(new B.Vector3(SC.x * 0.5, 6 + (mode === "build" ? Math.min(bd.floor, bd.goal - 1) * FLOOR_H * 0.6 : 0), 6)) : ex.pos.add(new B.Vector3(0, 2.5, 0))));
     updateRideBtn();
 
     // 数字
@@ -2375,7 +2402,7 @@ const G = window.G = {};   // 確かめ用の口
   });
 
   // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
-  Object.assign(G, { carveAt, blds, sinks, chunks, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { carveAt, blds, sinks, chunks, planFloor, nextPiece, SC, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
