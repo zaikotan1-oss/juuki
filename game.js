@@ -182,7 +182,14 @@ const G = window.G = {};   // 確かめ用の口
     { floors: 4, name: "4かいだての ビル", trucks: 8, star3: 380, star2: 620, bld: "tower" },
     { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true, bld: "house" }];
   const BLD = { biru: "じゅうきビル", mansion: "じゅうきマンション", tower: "じゅうきタワー", house: "あたらしい おうち" };
-  const bldType = () => STAGES[stage].bld || "biru";   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
+  // クレーンで建てるステージ（10-16 本人「ショベルとクレーンを完全に分ける」）。look は空気（LOOKS の番号）
+  const BSTAGES = [
+    { name: "じゅうきビル", bld: "biru", floors: 2, look: 0 },
+    { name: "じゅうきマンション", bld: "mansion", floors: 3, look: 1 },
+    { name: "じゅうきタワー", bld: "tower", floors: 4, look: 2 },
+    { name: "あたらしい おうち", bld: "house", floors: 2, look: 3 }];
+  let bstage = Math.min(BSTAGES.length - 1, Math.max(0, (Number(Q.get("build")) || 1) - 1));
+  const bldType = () => BSTAGES[bstage].bld || "biru";   // 10-12 本人「周りにいろんな家があってもいい・別のステージで」。★の時間は推測（まだ通しで測っていない）
   const UPGRADES = ["うでと はしりが はやくなる（油圧パワーアップ）", "バケットが 大きくなる（たくさん すくえる）", "ダンプが 速くなる（すぐ もどってくる）"];
   const prog = (() => { try { return JSON.parse(localStorage.getItem("juuki_prog")) || { stars: [] }; } catch (e) { return { stars: [] }; } })();
   const saveProg = () => { try { localStorage.setItem("juuki_prog", JSON.stringify(prog)); } catch (e) {} };
@@ -1148,21 +1155,32 @@ const G = window.G = {};   // 確かめ用の口
   }
   // ステージを選ぶ札（最初と、クリアの後）
   function stars(n) { return "★".repeat(n) + "☆".repeat(3 - n); }
-  function showStages(title) {
+  // ステージ選び: 左に「こわす（ショベル）」、右に「たてる（クレーン）」。いつでも右上の「ステージ」から開ける（10-16 本人「飽きたら帰れるように」）
+  // 全部最初から選べる。こわす→たてる・たてる→こわす はページを読み直して始める（重機や建材を確実に片づけるため）
+  function goStage(kind, i) {
+    if (kind === "d" && mode !== "build") { $("stages").style.display = "none"; $("done").style.display = "none"; startStage(i); return; }
+    location.href = location.pathname + (kind === "d" ? "?stage=" + (i + 1) : "?build=" + (i + 1));
+  }
+  function showStages(title, canClose) {
     const el = $("stages"); el.innerHTML = "";
     const h = document.createElement("div"); h.className = "stTitle"; h.textContent = title; el.appendChild(h);
-    STAGES.forEach((st, i) => {
-      const open = i === 0 || prog.stars[i - 1] || st.open;
-      const b = document.createElement("button"); b.className = "btn stBtn" + (open ? "" : " locked");
-      b.textContent = open ? `${i + 1}. ${st.name}　${stars(prog.stars[i] || 0)}` : `${i + 1}. 🔒 ${i}つめを クリアで ひらく`;
-      if (open) b.onclick = () => { wakeAudio(); el.style.display = "none"; startStage(i); };
-      el.appendChild(b);
-    });
-    const ups = UPGRADES.map((u, i) => (prog.stars[i] ? "✔ " : "🔒 ") + u).join("\n");
-    const u = document.createElement("div"); u.className = "stUp"; u.textContent = "パワーアップ（ステージを クリアすると ふえる）\n" + ups; el.appendChild(u);
+    const cols = document.createElement("div"); cols.className = "stCols"; el.appendChild(cols);
+    for (const [kind, head, list, got] of [["d", "🚜 ショベルで こわす", STAGES, prog.stars], ["b", "🏗 クレーンで たてる", BSTAGES, prog.build || []]]) {
+      const col = document.createElement("div"); col.className = "stCol"; cols.appendChild(col);
+      const hh = document.createElement("div"); hh.className = "stHead"; hh.textContent = head; col.appendChild(hh);
+      list.forEach((st, i) => {
+        const now = (kind === "b") === (mode === "build") && i === (kind === "b" ? bstage : stage) && canClose;
+        const b = document.createElement("button"); b.className = "btn stBtn" + (now ? " now" : "");
+        b.textContent = `${i + 1}. ${st.name}　${st.free ? "♾" : stars(got[i] || 0)}`;
+        b.onclick = () => { wakeAudio(); goStage(kind, i); };
+        col.appendChild(b);
+      });
+    }
+    if (canClose) { const c = document.createElement("button"); c.className = "btn stClose"; c.textContent = "◀ もどる"; c.onclick = () => { el.style.display = "none"; $("goal").style.display = ""; }; el.appendChild(c); }
     el.style.display = ""; $("goal").style.display = "none";
   }
-  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(i); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
+  $("bStage").onclick = () => { wakeAudio(); if ($("stages").style.display === "none") showStages("ステージを えらぼう", true); else $("stages").style.display = "none"; };
+  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(STAGES[i].look ?? i); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
   // さら地の結果
   function showResult() {
     const st = STAGES[stage], n = playT <= st.star3 ? 3 : playT <= st.star2 ? 2 : 1;
@@ -1170,8 +1188,8 @@ const G = window.G = {};   // 確かめ用の口
     prog.stars[stage] = Math.max(prog.stars[stage] || 0, n); saveProg();
     const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
     $("rStars").textContent = stars(n);
-    $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.sent}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "") + (first && STAGES[stage + 1] ? `\n🔓 つぎの ステージ: ${STAGES[stage + 1].name}` : "");
-    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = ""; $("bBuild").textContent = "クレーンに のりにいく ▶"; crArrive(); $("bNext").textContent = "つぎの ビルへ ▶"; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
+    $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.sent}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "");
+    $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = "none"; $("bNext").textContent = "つぎの ステージ ▶"; $("done").querySelector(".rT").textContent = "さら地 かんせい！";
     $("done").style.display = "";
     chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
   }
@@ -1701,25 +1719,25 @@ const G = window.G = {};   // 確かめ用の口
     const flag = B.MeshBuilder.CreatePlane("flag", { width: 1.6, height: 1.0 }, scene); flag.position.set(4.2, top + 2.5, fz);
     const fm = new B.StandardMaterial("flagM", scene); fm.diffuseColor = new B.Color3(1, 0.2, 0.15); fm.emissiveColor = new B.Color3(0.5, 0.08, 0.05); fm.backFaceCulling = false; flag.material = fm;
     scene.onBeforeRenderObservable.add(() => { flag.rotation.y = Math.sin(performance.now() / 300) * 0.25; });
-    const st = STAGES[stage], n = bd.t <= st.floors * 150 ? 3 : bd.t <= st.floors * 240 ? 2 : 1;
-    prog.build = prog.build || []; const first = !prog.build[stage]; prog.build[stage] = Math.max(prog.build[stage] || 0, n); saveProg();
+    const st = BSTAGES[bstage], n = bd.t <= st.floors * 150 ? 3 : bd.t <= st.floors * 240 ? 2 : 1;
+    prog.build = prog.build || []; const first = !prog.build[bstage]; prog.build[bstage] = Math.max(prog.build[bstage] || 0, n); saveProg();
     const mm = Math.floor(bd.t / 60), ss = String(Math.floor(bd.t % 60)).padStart(2, "0");
     $("done").querySelector(".rT").textContent = BLD[bldType()] + " かんせい！";
     $("rStars").textContent = stars(n);
     const total = bd.placed.length;
-    $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${total}　とくてん ${bd.score}` + (first && BUILD_UPS[stage] ? `\n🔓 パワーアップ: ${BUILD_UPS[stage]}` : "") + (STAGES[stage + 1] && prog.stars[stage] ? `\n▶ つぎは ${STAGES[stage + 1].name}を こわそう` : "");
-    $("bNext").textContent = "つぎの ステージ ▶"; $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").textContent = "もういちど 建てる"; $("bBuild").style.display = ""; $("done").style.display = "";
+    $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${total}　とくてん ${bd.score}` + (first && BUILD_UPS[bstage] ? `\n🔓 パワーアップ: ${BUILD_UPS[bstage]}` : "");
+    $("bNext").textContent = "つぎの ステージ ▶"; $("bNext").style.display = BSTAGES[bstage + 1] ? "" : "none"; $("bBuild").textContent = "もういちど 建てる"; $("bBuild").style.display = ""; $("done").style.display = "";
     $("hint").style.display = "none";
     confettiPS.emitter = new B.Vector3(0, top + 4, 17); chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti(); shake(0.3);
   }
   function enterBuild() {
-    bd.goal = STAGES[stage].floors; bd.t = 0; bd.streak = 0; bd.perfect = 0; bd.done = false; bd.score = 0; bd.windT = 4; BUILD_GOAL = bd.goal; bd.plan = planFloor(0);
+    bd.goal = BSTAGES[bstage].floors; bd.t = 0; bd.streak = 0; bd.perfect = 0; bd.done = false; bd.score = 0; bd.windT = 4; BUILD_GOAL = bd.goal; bd.plan = planFloor(0);
     $("goal").style.display = ""; $("stages").style.display = "none";   // 建築でも左上に目標と進み具合
     mode = "build";
     clearDebris(); for (const c of [...bld.cells.values()]) removeCell(c); rebuildCellMesh();
     // ショベルは横へ片づけ、ダンプは帰す
     exSlide = null;
-    if ((Math.abs(ex.pos.x) < 6.5 && ex.pos.z > -5 && ex.pos.z < 22) || Q.has("build")) { ex.pos.set(13, 0, 2); ex.heading = -Math.PI / 2; }   // 建てる所・クレーンの邪魔になる時だけ片づける
+    ex.pos.set(13, 0, 2); ex.heading = -Math.PI / 2;   // 建てる面ではショベルは横に置いてあるだけ（乗れない）
     ex.swing = 0; ex.boom = -0.6; ex.stick = 1.6; ex.bucket = 1.5; applyPose(); syncColliders(exParts, true);
     craneHere = true; ride = "cr"; wkRoot.setEnabled(false);
     for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.state = "gone"; truck.z = -200; placeTruck(); syncColliders(truck.parts, true); truck.root.setEnabled(false);
@@ -1733,9 +1751,9 @@ const G = window.G = {};   // 確かめ用の口
     craneLabels();
     nextPiece(); popup("けんちく スタート！ " + bd.goal + "かいだてを たてよう", "mile");
   }
-  $("bBuild").onclick = () => { if (mode === "build") { location.href = location.pathname + "?build&stage=" + (stage + 1); return; } $("done").style.display = "none"; if (ride === "ex") popup("「おりる」で ショベルから おりよう", "mile"); };
-  $("bNext").onclick = () => { if (mode === "build") { location.href = location.pathname + "?stage=" + (stage + 2); return; } $("done").style.display = "none"; startStage(stage + 1); };
-  $("bAgain").onclick = () => { if (mode === "build") { location.href = location.pathname + "?stage=" + (stage + 1); return; } $("done").style.display = "none"; showStages("ステージを えらぼう"); };
+  $("bBuild").onclick = () => { if (mode === "build") goStage("b", bstage); };   // もういちど 建てる
+  $("bNext").onclick = () => { if (mode === "build") goStage("b", bstage + 1); else goStage("d", stage + 1); };
+  $("bAgain").onclick = () => { $("done").style.display = "none"; showStages("ステージを えらぼう"); };
 
   // ================= 降りて歩く（10-14 本人「降りて歩けるように。乗り物に乗って動かす感じ」）=================
   // 後ろから作業員を見る。乗れるのはショベル（解体の間）とクレーン車（さら地の後・建築）。近くで「のる」、乗っていたら「おりる」
@@ -2009,7 +2027,7 @@ const G = window.G = {};   // 確かめ用の口
       m.albedoColor = new B.Color3(m._baseCol.r * L.ground[0], m._baseCol.g * L.ground[1], m._baseCol.b * L.ground[2]);
     }
   }
-  applyLook(stage);
+  applyLook(Q.has("build") ? BSTAGES[bstage].look : (STAGES[stage].look ?? stage));
   let ssao = null;
   function setQuality(hq) {
     HQ = hq;
@@ -2122,8 +2140,8 @@ const G = window.G = {};   // 確かめ用の口
   })();
 
   reset();
-  if (Q.has("build")) enterBuild();   // ?build で最初から建築モード（確かめ用）
-  else if (!Q.has("stage") && !Q.has("nostage")) showStages("ステージを えらぼう");
+  if (Q.has("build")) enterBuild();   // ?build=N でクレーンの N 面
+  else if (!Q.has("stage") && !Q.has("nostage")) showStages("ステージを えらぼう", false);
   $("msg").style.display = "none";
   engine.resize();   // WebGPU は作った時点で canvas の大きさを拾わないことがある（300×150 のままになった）
   engine.runRenderLoop(() => scene.render());

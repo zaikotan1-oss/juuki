@@ -48,8 +48,11 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 .pop{position:absolute;left:0;top:0;transform:translate(-50%,0);white-space:nowrap;color:#fff;font-weight:900;font-size:28px;text-shadow:0 3px 0 #000a,0 0 8px #000;animation:popup 1.3s ease-out forwards}
 .pop.mid{font-size:36px;color:#ffd23f} .pop.big{font-size:46px;color:#ff922b} .pop.mile{font-size:34px;color:#8ce99a;top:60px} .pop.load{font-size:26px;color:#8ce99a;top:110px}
 @keyframes popup{0%{opacity:0;transform:translate(-50%,20px) scale(.6)}15%{opacity:1;transform:translate(-50%,0) scale(1.15)}30%{transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-70px)}}
-#stages{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);background:#ffd23fee;border-radius:18px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 6px 0 #0005;width:min(86vw,460px)}
-.stTitle{font-size:30px;font-weight:900;color:#223;text-align:center} .stBtn{font-size:24px;text-align:left;padding:14px 16px} .stBtn.locked{opacity:.55}
+#stages{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#ffd23fee;border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 6px 0 #0005;width:min(94vw,860px);max-height:92vh;overflow:auto;z-index:20}
+.stCols{display:flex;gap:14px;flex-wrap:wrap} .stCol{flex:1 1 300px;display:flex;flex-direction:column;gap:8px}
+.stHead{font-size:22px;font-weight:900;color:#223;text-align:center;background:#fff8;border-radius:10px;padding:4px}
+.stBtn.now{outline:4px solid #1c5fb8} .stClose{font-size:20px;align-self:center}
+.stTitle{font-size:28px;font-weight:900;color:#223;text-align:center} .stBtn{font-size:24px;text-align:left;padding:14px 16px} .stBtn.locked{opacity:.55}
 .stUp{font-size:17px;color:#223;white-space:pre-line;font-weight:bold}
 #toast{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%);color:#fff;font-size:26px;font-weight:bold;background:#0009;padding:10px 22px;border-radius:14px;pointer-events:none;white-space:nowrap}
 #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(36px + env(safe-area-inset-bottom));max-width:46vw;text-align:center;color:#fff;font-size:21px;font-weight:bold;background:#000b;padding:10px 16px;border-radius:14px;pointer-events:none}
@@ -61,6 +64,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 <canvas id="cv"></canvas>
 <div id="hud">読み込み中…</div>
 <div id="btns">
+  <button class="btn" id="bStage">ステージ</button>
   <button class="btn" id="bView">運転席</button>
   <button class="btn" id="bShadow">影 ON</button>
   <button class="btn" id="bQuality">画質 高</button>
@@ -106,7 +110,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "準備中…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=74"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=75"]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();
