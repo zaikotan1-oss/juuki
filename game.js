@@ -182,7 +182,7 @@ const G = window.G = {};   // 確かめ用の口
     { floors: 4, name: "4かいだての ビル", trucks: 8, star3: 380, star2: 620, bld: "tower" },
     { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true, bld: "house" },
     // 10-16 本人「何十階建てのビルも」「街丸ごと好きなように」。大きい建物は 1 階を削ると沈むように崩れる
-    { floors: 30, name: "ちょうこうそう ビル（30かい）", trucks: 12, star3: 720, star2: 1100, sky: true, look: 1 },
+    { floors: 30, name: "30かいだての ビル", trucks: 12, star3: 720, star2: 1100, sky: true, look: 1 },
     { floors: 2, name: "まち まるごと", trucks: 999, star3: 1200, star2: 2000, wide: true, free: true, look: 0 }];
   const BLD = { biru: "じゅうきビル", mansion: "じゅうきマンション", tower: "じゅうきタワー", house: "あたらしい おうち" };
   // クレーンで建てるステージ（10-16 本人「ショベルとクレーンを完全に分ける」）。look は空気（LOOKS の番号）
