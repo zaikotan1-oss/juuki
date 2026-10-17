@@ -898,7 +898,7 @@ const G = window.G = {};   // 確かめ用の口
   }
   function stickCenter(s) { const r = s.el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }
   function setStick(s, e) {
-    const [cx, cy] = stickCenter(s), R = 65;
+    const [cx, cy] = stickCenter(s), R = s.el.offsetWidth * 0.43;   // 輪の大きさに合わせる（10-17 UI を小さくした）
     let dx = e.clientX - cx, dy = e.clientY - cy; const l = Math.hypot(dx, dy);
     if (l > R) { dx *= R / l; dy *= R / l; }
     s.x = dx / R; s.y = -dy / R;
