@@ -1343,7 +1343,7 @@ const G = window.G = {};   // 確かめ用の口
     const h = document.createElement("div"); h.className = "stTitle"; h.textContent = title; el.appendChild(h);
     const cols = document.createElement("div"); cols.className = "stCols"; el.appendChild(cols);
     for (const [kind, head, list, got] of [["d", "🚜 ショベルで こわす", STAGES, prog.stars], ["b", "🏗 クレーンで たてる", BSTAGES, prog.build || []]]) {
-      const col = document.createElement("div"); col.className = "stCol"; cols.appendChild(col);
+      const col = document.createElement("div"); col.className = "stCol " + kind; cols.appendChild(col);   // こわす＝オレンジ・たてる＝青
       const hh = document.createElement("div"); hh.className = "stHead"; hh.textContent = head; col.appendChild(hh);
       list.forEach((st, i) => {
         const now = (kind === "b") === (mode === "build") && i === (kind === "b" ? bstage : stage) && canClose;
@@ -1586,7 +1586,7 @@ const G = window.G = {};   // 確かめ用の口
     return L;
   }
   const YARD = new B.Vector3(-7.5, 0, 10.5);              // 建材の置き場（クレーンの左前）。5.5 では置き場へ戻る 2〜3 秒が待ちになった（10-12 評価 b0）
-  const SNAP = { xz: 2.0, y: 1.8 };                       // 枠のこの範囲に入るとピタッとはまる
+  const SNAP = { xz: 2.8, y: 2.4 };   // 10-18 本人「置く判定を甘く」2.0/1.8 → 2.8/2.4                       // 枠のこの範囲に入るとピタッとはまる
   const bd = { floor: 0, step: 0, plan: planFloor(0), placed: [], score: 0, hanging: null, yard: null, snap: null, ghost: null, toastT: 0, near: false, goal: 2, t: 0, streak: 0, perfect: 0, done: false, windT: 4, gust: 0, gustDir: 0, hookT: 0 };
   const CRANE_SPD = () => (prog.build && prog.build[0] ? 1.4 : 1);   // 建築 1 つめクリア: フックが 1.4 倍速
   const SNAP_MUL = () => (prog.build && prog.build[1] ? 1.35 : 1);   // 建築 2 つめクリア: はまる範囲が広い
@@ -1623,7 +1623,7 @@ const G = window.G = {};   // 確かめ用の口
     else m.position.set(YARD.x, p.size[1] / 2 + 0.15, YARD.z);
     bd.yard = { p, m, at: new B.Vector3(YARD.x, 0, YARD.z), rest: m.position.clone(), q0: m.rotationQuaternion.clone(), ...rigOf(p) };
     // 掛ける所に黄色い吊りリング（フックをどこへ下ろすか見て分かるように）。はまったら外す
-    bd.yard.rings = bd.yard.pts.map((q, i) => { const r = B.MeshBuilder.CreateTorus("ring" + i, { diameter: 0.46, thickness: 0.09, tessellation: 14 }, scene); r.parent = m; r.position.copyFrom(q).addInPlaceFromFloats(0, 0.2, 0); r.rotation.x = Math.PI / 2; r.material = ringM; r.isPickable = false; return r; });
+    bd.yard.rings = bd.yard.pts.map((q, i) => { const r = B.MeshBuilder.CreateTorus("ring" + i, { diameter: 0.7, thickness: 0.14, tessellation: 14 }, scene); r.parent = m; r.position.copyFrom(q).addInPlaceFromFloats(0, 0.2, 0); r.rotation.x = Math.PI / 2; r.material = ringM; r.isPickable = false; return r; });
   }
   // 玉掛け: 柱は上の端に 1 本（建て起こし）、梁は 2 本、床板・看板は 4 本。
   // ワイヤーの長さは「広がりの半分 × 1.15」以上（吊り角度がおよそ 80 度以下。広げすぎると本物らしくない）
@@ -1639,7 +1639,15 @@ const G = window.G = {};   // 確かめ用の口
     return { pts, S, hang: HOOK_DROP + S + sy, col: false };
   }
   const slingM = mat("slingM", 0.36, 0.36, 0.37, 0.6, 0.6);   // 玉掛けワイヤー（評価 k1: 細く明るいと見えにくい → 太く暗めの灰）
-  const ringM = mat("ringM", 1, 0.8, 0.1, 0.4); ringM.emissiveColor = new B.Color3(0.3, 0.22, 0);
+  const ringM = mat("ringM", 1, 0.8, 0.1, 0.4); ringM.emissiveColor = new B.Color3(0.6, 0.45, 0);
+  const GRAB_R = y => (y.col ? 2.4 : 2.0);
+  // 取る場所の目印（10-18 本人「取る場所を分かりやすく」）: 置き場の地面に掛かる範囲の光る輪＋空へ伸びる光の柱
+  const yardMk = new B.TransformNode("yardMk", scene);
+  const ymM = new B.StandardMaterial("ymM", scene); ymM.disableLighting = true; ymM.emissiveColor = new B.Color3(1, 0.8, 0.1); ymM.alpha = 0.85; ymM.backFaceCulling = false;
+  const ymRing = B.MeshBuilder.CreateTorus("ymRing", { diameter: 2, thickness: 0.12, tessellation: 48 }, scene); ymRing.parent = yardMk; ymRing.position.y = 0.06; ymRing.material = ymM; ymRing.isPickable = false;
+  const ymBeamM = ymM.clone("ymBeamM"); ymBeamM.alpha = 0.18;
+  const ymBeam = B.MeshBuilder.CreateCylinder("ymBeam", { diameter: 0.9, height: 30, tessellation: 16 }, scene); ymBeam.parent = yardMk; ymBeam.position.y = 15; ymBeam.material = ymBeamM; ymBeam.isPickable = false;
+  yardMk.setEnabled(false);
   const slings = [0, 1, 2, 3].map(i => { const w = B.MeshBuilder.CreateCylinder("sling" + i, { diameter: 0.095, height: 1, tessellation: 6 }, scene); w.material = slingM; w.isPickable = false; w.setEnabled(false); return w; });
   const slings2 = slings.map((w, i) => { const v = w.clone("slingB" + i); v.setEnabled(false); return v; });   // たるんだ時の下半分
   // sag > 0 の時はワイヤーがたるむ（真ん中が下がった 2 本の線で描く）
@@ -1788,6 +1796,7 @@ const G = window.G = {};   // 確かめ用の口
     }
     cr.swayV.scaleInPlace(Math.max(0, 1 - 0.9 * dt));   // 2.6 では揺れがすぐ消えて見えなかった（評価 k1）
     cr.sway.addInPlace(cr.swayV.scale(dt));
+    if (!isFinite(cr.sway.x + cr.sway.y + cr.swayV.x + cr.swayV.y)) { cr.sway.set(0, 0); cr.swayV.set(0, 0); }   // 念のため: 壊れた揺れは止める
     const sl = cr.sway.length(), smax = Math.min(1.2, cr.wire * 0.15); if (sl > smax) cr.sway.scaleInPlace(smax / sl);
     const hp = hookPos();
     if (bd.snap && bd.snap.drop) hp.y -= bd.snap.drop;   // 置いた後、フックを少し下げてワイヤーをゆるめる
@@ -1803,11 +1812,18 @@ const G = window.G = {};   // 確かめ用の口
     setRope(wireM, _tip.add(off), hp.add(off).addInPlaceFromFloats(0, 0.4, 0));
     setRope(wireM2, _tip.subtract(off), hp.subtract(off).addInPlaceFromFloats(0, 0.4, 0));
 
+    // 取る場所の目印: 掛かる範囲の輪。フックが輪の真上に来たら緑・ゆっくり脈打つ
+    yardMk.setEnabled(!!(bd.yard && !bd.hanging && !bd.snap));
+    if (bd.yard && !bd.hanging) {
+      const y = bd.yard, R = GRAB_R(y), inR = Math.hypot(hp.x - y.at.x, hp.z - y.at.z) < R, k = 1 + 0.06 * Math.sin(performance.now() / 200);
+      yardMk.position.set(y.at.x, 0, y.at.z); ymRing.scaling.set(R * k, 1, R * k);
+      ymM.emissiveColor.set(inR ? 0.3 : 1, inR ? 1 : 0.8, inR ? 0.3 : 0.1); ymBeamM.emissiveColor.copyFrom(ymM.emissiveColor);
+    }
     // 吊る: フックを置き場の建材のすぐ上まで下ろすと掛かる
     if (!bd.hanging && !bd.snap && bd.yard) {
       const y = bd.yard, top = y.rest.y + (y.p.kind === "柱" ? y.p.size[0] / 2 : y.p.size[1] / 2);
-      if (Math.hypot(hp.x - y.at.x, hp.z - y.at.z) < (y.col ? 1.6 : 1.1) && hp.y - HOOK_DROP < top + 0.35) {   // 掛かる範囲: 柱 1.0→1.6m・平らな荷 0.6→1.1m・高さ 0.06→0.35m（10-13 本人「両方とも大きく」）。平らな荷の傾きは最大 1 度に抑えてある
-        bd.hanging = y; bd.yard = null; bd.hookT = 0; y.lifted = false; y.bot = y.rest.add(new B.Vector3(-y.p.size[1] / 2, 0, 0));
+      if (Math.hypot(hp.x - y.at.x, hp.z - y.at.z) < GRAB_R(y) && hp.y - HOOK_DROP < top + 0.8) {   // 10-18 本人「取る判定を甘く」: 柱 1.6→2.4m・平らな荷 1.1→2.0m・高さ 0.35→0.8m   // 掛かる範囲: 柱 1.0→1.6m・平らな荷 0.6→1.1m・高さ 0.06→0.35m（10-13 本人「両方とも大きく」）。平らな荷の傾きは最大 1 度に抑えてある
+        bd.hanging = y; bd.yard = null; bd.hookT = 0; y.lifted = false; yardMk.setEnabled(false); y.bot = y.rest.add(new B.Vector3(-y.p.size[1] / 2, 0, 0));
         if (!playS("sling_hook", 0.8)) thud(0.3, 1200); chime([7], 0.1, 0.1); popup("かけた！ まきあげよう ↑", "load");
       }
     }
@@ -1820,7 +1836,7 @@ const G = window.G = {};   // 確かめ用の口
       const d = Math.hypot(h.m.position.x - h.p.pos.x, h.m.position.z - h.p.pos.z), dy = h.m.position.y - h.p.pos.y;
       bd.near = d < SNAP.xz * SNAP_MUL(); bd.dist = d; bd.dy = dy;
       // 通り過ぎただけでははまらない。レバーを離して止めた時（またはほぼ真上でゆっくり）にはまる
-      if (h.lifted && d < SNAP.xz * SNAP_MUL() && Math.abs(dy) < SNAP.y * SNAP_MUL() && (tgtSpeed < 0.3 || (d < 0.5 && Math.abs(dy) < 0.5 && tgtSpeed < 2.5))) {
+      if (h.lifted && d < SNAP.xz * SNAP_MUL() && Math.abs(dy) < SNAP.y * SNAP_MUL() && (tgtSpeed < 0.7 || (d < 0.8 && Math.abs(dy) < 0.8 && tgtSpeed < 3))) {
         let pts = Math.max(40, Math.round(100 - d * 14 - Math.abs(dy) * 8));   // 25/15 では真上で止めても 77〜80 で「ぴったり」がほぼ出なかった（10-12 台本）
         const good = pts >= 85; bd.streak = good ? bd.streak + 1 : 0; if (good) bd.perfect++;
         if (bd.streak >= 2) pts += 20 * (bd.streak - 1);          // 続けてぴったりだと上乗せ
@@ -2084,6 +2100,7 @@ const G = window.G = {};   // 確かめ用の口
   let fpsAvg = 60, msAvg = 16, hudT = 0;
   scene.onBeforeRenderObservable.add(() => {
     const dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);   // 確かめる時は G.fixedDt で固定
+    if (!(dt > 0.0001)) return;   // 経過 0 のコマは飛ばす（フックの揺れを dt で割っていて、0 だとフックが NaN になり二度と戻らなかった 10-18）
     if (!ride) updateWalk(dt);
     if (mode === "build") { updateBuild(dt); frameCommon(dt); return; }
     if (craneHere) updateBuild(dt);   // さら地の後: 来たクレーン車は止まったまま（乗るまでレバーは効かない）
