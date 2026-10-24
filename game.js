@@ -62,7 +62,7 @@ const G = window.G = {};   // 確かめ用の口
   const env = new B.HDRCubeTexture("assets/hdri/construction_yard_2k.hdr", scene, LITE ? 64 : 256, false, true, false, !LITE);   // 軽い版は読み込み時の下ごしらえ（float の描画先を何枚も作る）を省く
   env.rotationY = ENV_ROT;
   scene.environmentTexture = env; scene.environmentIntensity = 1.0;
-  const dome = new B.PhotoDome("bg", AS + "hdri/construction_yard_bg3.jpg", { resolution: 64, size: 1600 }, scene);
+  const dome = new B.PhotoDome("bg", AS + "hdri/construction_yard_bg3.jpg?v=2", { resolution: 64, size: 1600 }, scene);
   dome.mesh.rotation.y = ENV_ROT + Number(Q.get("domerot") || 0); dome.material.fogEnabled = false; dome._bg = "construction_yard"; dome._rot0 = dome.mesh.rotation.y;
   // 太陽: 写真の中の太陽の位置（高さ 34°）に合わせる。方位は写真の向きに合わせて DOME と同じだけ回す
   const SUN_EL = 33.8 * Math.PI / 180, SUN_AZ = Number(Q.get("sunaz") || 3.4);   // 写真の太陽の方位（カメラを向けて合わせた。回す前は 5.75）
@@ -134,7 +134,7 @@ const G = window.G = {};   // 確かめ用の口
     const pos = [], uv = [], col = [], idx = [], N = 96;
     for (let i = 0; i <= N; i++) {
       const a = i / N * Math.PI * 2, c = Math.cos(a), sn = Math.sin(a);
-      for (const [r, al] of [[GR - 0.01, 1], [GR + 25, 0.85], [GR2, 0]]) {
+      for (const [r, al] of [[GR - 0.01, 1], [GR + 15, 0.6], [125, 0]]) {   // 外ほど暗く見えて帯になっていたので早めに消す（10-24 改善ループ 軸4）
         pos.push(c * r, 0.002, sn * r); uv.push((c * r) / (GR * 2) + 0.5, (sn * r) / (GR * 2) + 0.5); col.push(1, 1, 1, al);
       }
     }
@@ -1105,9 +1105,9 @@ const G = window.G = {};   // 確かめ用の口
   }
   function broke(n, p, big) {      // 格子が n 個こわれた（p はその辺り）
     combo += n; comboT = 0.5; comboP = p; score += n;
-    if (big || playT - lastDustT > 0.15) { lastDustT = playT; dust(p, (big ? 30 : 6) + n * (big ? 8 : 3)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
+    if (big || playT - lastDustT > 0.15) { lastDustT = playT; dust(p, (big ? 34 : 10) + n * (big ? 8 : 4)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
     crash(Math.min(1, (big ? 0.35 : 0.05) + n * (big ? 0.06 : 0.03)));
-    shake(Math.min(0.6, (big ? 0.25 : 0.04) + n * (big ? 0.03 : 0.012)));
+    shake(Math.min(0.6, (big ? 0.28 : 0.08) + n * (big ? 0.03 : 0.012)));
   }
   function updateCombo(dt) {
     if (comboT <= 0) return;
@@ -1349,6 +1349,7 @@ const G = window.G = {};   // 確かめ用の口
         const now = (kind === "b") === (mode === "build") && i === (kind === "b" ? bstage : stage) && canClose;
         const b = document.createElement("button"); b.className = "btn stBtn" + (now ? " now" : "");
         b.textContent = `${i + 1}. ${st.name}　${st.free ? "♾" : stars(got[i] || 0)}`;
+        const sub = document.createElement("small"); sub.textContent = kind === "d" ? (st.free ? "じゆうに こわす" : `ダンプ ${st.trucks}だい`) : (st.sites ? "3か所に たてる" : st.unit ? "わくを つむ・かぜ つよい" : `${st.floors}かいだて`); b.appendChild(sub);
         b.onclick = () => { wakeAudio(); goStage(kind, i); };
         col.appendChild(b);
       });
@@ -1357,7 +1358,8 @@ const G = window.G = {};   // 確かめ用の口
     el.style.display = ""; $("goal").style.display = "none";
   }
   $("bStage").onclick = () => { wakeAudio(); if ($("stages").style.display === "none") showStages("ステージを えらぼう", true); else $("stages").style.display = "none"; };
-  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(STAGES[i].look ?? i); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); }
+  function startHint() { const h = $("hint"); h.textContent = "左レバーで うでを のばして、バケットを ビルに ぶつけよう"; h.style.display = ""; clearTimeout(startHint.t); startHint.t = setTimeout(() => { if (mode !== "build") h.style.display = "none"; }, 7000); }
+  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(STAGES[i].look ?? i); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); startHint(); }
   // さら地の結果
   function showResult() {
     const st = STAGES[stage], n = playT <= st.star3 ? 3 : playT <= st.star2 ? 2 : 1;
@@ -1408,6 +1410,7 @@ const G = window.G = {};   // 確かめ用の口
     return n;
   }
 
+  const lv = { sw: 0, st: 0, bo: 0, bu: 0 };   // 腕のレバーのなめらかにした値
   function reset() {
     clearDebris(); buildBuilding();
     for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips = 0; truck.sent = 0; finishAt = -1; truck.state = "wait"; truck.z = TRUCK_HOME.z;
@@ -1854,7 +1857,7 @@ const G = window.G = {};   // 確かめ用の口
         B.Vector3.LerpToRef(s2.from, s2.to, e, s2.m.position); B.Quaternion.SlerpToRef(s2.q, s2.h.p.q || B.Quaternion.Identity(), e, s2.m.rotationQuaternion);   // 屋根は傾けて はめる
         if (far) drawSlings(null); else drawSlings(s2.h, hb);
         cr.tgt.x += (s2.to.x - cr.tgt.x) * Math.min(1, dt * 6); cr.tgt.z += (s2.to.z - cr.tgt.z) * Math.min(1, dt * 6);   // はまる間はフックも枠の真上へ（荷だけ横へ動くとワイヤーが横に伸びた 評価 k5）
-        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.1 : 0.15); dust(s2.to, s2.good ? 14 : 8); }
+        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.16 : 0.22); dust(s2.to, s2.good ? 26 : 14); }
       } else {
         s2.slack += dt; s2.drop = Math.min(0.4, s2.slack * 1.2); s2.hx = s2.hx || hb.clone();
         if (Math.hypot(hb.x - s2.hx.x, hb.z - s2.hx.z) > 0.5 || Math.hypot(hb.x - s2.to.x, hb.z - s2.to.z) > 0.8) s2.slack = 0.55;   // フックが横へ動き出したら、すぐ外す（ワイヤーが横へ引き伸ばされて見えた 評価 k4）
@@ -1961,7 +1964,7 @@ const G = window.G = {};   // 確かめ用の口
     cr.pos.set(0, 0, 3); cr.heading = 0; cr.sway.set(0, 0); cr.swayV.set(0, 0); tipInit = false;
     cr.tgt.set(YARD.x, 6, YARD.z);                           // 最初は置き場の真上。あとは「下げる」だけで吊れる
     const s = solveCrane(cr.tgt, 0); cr.swing = s.swing; cr.luff = s.luff; cr.ext = s.ext; cr.wire = s.wire;
-    fp.parent = crSeat; fp.fov = 1.25; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = BS.floors > 4 ? 44 : BS.sites ? 38 : 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35;
+    fp.parent = crSeat; fp.fov = 1.32; look.yaw = 0; look.pitch = -0.1; lookIdle = 9; tp.radius = BS.floors > 4 ? 44 : BS.sites ? 38 : 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35;
     if (view === "fp") $("bView").onclick();   // 建築は外からが最初（運転席からだとブームと柱でフックが隠れた 10-12 評価 b0）
     $("done").style.display = "none"; $("pedals").style.display = "none"; $("hint").style.display = "";   // クレーンは止めたまま届くのでペダルは隠す
     craneLabels();
@@ -2067,7 +2070,7 @@ const G = window.G = {};   // 確かめ用の口
     ride = v; wkRoot.setEnabled(false); for (const st of Object.values(sticks)) releaseStick(st);
     if (v === "cr") {
       if (mode !== "build") { enterBuild(); return; }   // さら地の後に初めて乗ったら建築が始まる
-      fp.parent = crSeat; fp.fov = 1.25; tp.radius = 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35; craneLabels();
+      fp.parent = crSeat; fp.fov = 1.32; tp.radius = 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35; craneLabels();
     } else {
       fp.parent = seat; fp.fov = 1.15; tp.radius = 18; tp.beta = 1.1; tp.alpha = -ex.heading - Math.PI / 2;
       $("pedals").style.display = ""; setLabels();
@@ -2106,7 +2109,10 @@ const G = window.G = {};   // 確かめ用の口
     if (craneHere) updateBuild(dt);   // さら地の後: 来たクレーン車は止まったまま（乗るまでレバーは効かない）
     if (exSlide) { exSlide.t = Math.min(1, exSlide.t + dt / 1.5); B.Vector3.LerpToRef(exSlide.from, exSlide.to, 1 - Math.pow(1 - exSlide.t, 3), ex.pos); if (exSlide.t >= 1) exSlide = null; }
     const onEx = ride === "ex", K = onEx ? kv : () => 0, L = onEx ? sticks.L : NO_STICK, R = onEx ? sticks.R : NO_STICK;   // 乗っていない時はレバーが効かない
-    const sw = L.x + K("KeyD", "KeyA"), st = -L.y + K("KeyS", "KeyW"), bo = -R.y + K("KeyK", "KeyI"), bu = -R.x + K("KeyJ", "KeyL");
+    const sw0 = L.x + K("KeyD", "KeyA"), st0 = -L.y + K("KeyS", "KeyW"), bo0 = -R.y + K("KeyK", "KeyI"), bu0 = -R.x + K("KeyJ", "KeyL");
+    // 腕の油圧らしさ: レバーの値へじわっと寄せる（動き出し dt*6・止める時は dt*10 で速め）（10-24 改善ループ 軸6）
+    const ease = (k, v) => { const c = lv[k], a = Math.abs(v) < Math.abs(c) ? 10 : 6; return (lv[k] = c + (v - c) * Math.min(1, dt * a)); };
+    const sw = ease("sw", sw0), st = ease("st", st0), bo = ease("bo", bo0), bu = ease("bu", bu0);
     const prev = [ex.boom, ex.stick, ex.bucket], low0 = bucketLowest();
     const pw = POW();
     ex.swing += sw * 0.85 * pw * dt;
@@ -2230,7 +2236,7 @@ const G = window.G = {};   // 確かめ用の口
   const pipe = new B.DefaultRenderingPipeline("pipe", !Q.has("nohdr") && !LITE, scene, Q.has("nopp") ? [] : [fp, tp]);
   pipe.imageProcessingEnabled = true;
   pipe.imageProcessing.toneMappingEnabled = true; pipe.imageProcessing.toneMappingType = B.ImageProcessingConfiguration.TONEMAPPING_ACES;
-  pipe.imageProcessing.exposure = 1.0; pipe.imageProcessing.contrast = 1.28;
+  pipe.imageProcessing.exposure = 1.0; pipe.imageProcessing.contrast = 1.2;   // 1.28 では街の影が黒く潰れた（10-24 改善ループ 軸4）
   pipe.imageProcessing.colorCurvesEnabled = true; pipe.imageProcessing.colorCurves = new B.ColorCurves(); pipe.imageProcessing.colorCurves.globalSaturation = -14;
   scene.environmentIntensity = 0.85;
   pipe.imageProcessing.vignetteEnabled = true; pipe.imageProcessing.vignetteWeight = 1.2;
@@ -2243,15 +2249,15 @@ const G = window.G = {};   // 確かめ用の口
   //   exp: 明るさ／fog: 遠くの霞の色／fogEnd: 霞で見えなくなる距離／ground: 地面に掛ける色／shade: 影の薄さ（0=真っ黒）
   const LOOKS = [
     { name: "はれ", bg: "construction_yard", el: 33.8, sun: [1, 0.96, 0.9], si: 2.1, hue: 0, dens: 0, sat: -14, exp: 1.0, fog: [0.6, 0.58, 0.55], fogEnd: 380, ground: [1, 1, 1], shade: 0.12 },
-    { name: "ゆうがた", bg: "sunset_jhbcentral", bgRot: Math.PI, el: 16, sun: [1, 0.62, 0.36], si: 1.9, hue: 28, dens: 45, sat: -2, exp: 0.95, fog: [0.78, 0.55, 0.38], fogEnd: 320, ground: [1.1, 0.95, 0.8], shade: 0.2 },
-    { name: "くもり", bg: "potsdamer_platz", bgRot: 0, el: 55, sun: [0.86, 0.9, 1], si: 0.8, hue: 215, dens: 24, sat: -42, exp: 0.93, fog: [0.56, 0.59, 0.63], fogEnd: 200, ground: [0.84, 0.88, 0.94], shade: 0.55 },
+    { name: "ゆうがた", bg: "sunset_jhbcentral", bgRot: Math.PI, el: 16, sun: [1, 0.62, 0.36], si: 1.9, hue: 28, dens: 45, sat: -2, exp: 1.0, fog: [0.78, 0.55, 0.38], fogEnd: 320, ground: [1.1, 0.95, 0.8], shade: 0.2 },
+    { name: "くもり", bg: "potsdamer_platz", bgRot: 0, el: 55, sun: [0.86, 0.9, 1], si: 0.8, hue: 215, dens: 24, sat: -42, exp: 1.0, fog: [0.56, 0.59, 0.63], fogEnd: 200, ground: [0.84, 0.88, 0.94], shade: 0.55 },
     { name: "あさ", bg: "stuttgart_suburbs", bgRot: 0, el: 24, sun: [1, 0.95, 0.8], si: 2.3, hue: 55, dens: 14, sat: 2, exp: 1.08, fog: [0.72, 0.74, 0.68], fogEnd: 380, ground: [0.78, 1.0, 0.66], shade: 0.15 }];
   const GROUND_MATS = ["groundM", "groundRingM", "gDirtM", "gMudM", "moundM"];
   function applyLook(i) {
     const L = LOOKS[i] || LOOKS[0], el = L.el * Math.PI / 180;
     // 周りぐるっとの背景写真（Poly Haven・CC0。地平線より下は地面の色で塗ってある。tools は scratchpad の make_bg.py と同じ手順 → context に記録）
     if (dome._bg !== L.bg) {   // 上下の向きは PhotoDome が最初に作る時と同じ（invertY = !_useDirectMapping。逆にすると空と地面が逆さになった）
-      dome._bg = L.bg; const old = dome.photoTexture; dome.photoTexture = new B.Texture(AS + "hdri/" + L.bg + "_bg3.jpg", scene, true, !dome._useDirectMapping); if (old && old !== dome.photoTexture) old.dispose(); }
+      dome._bg = L.bg; const old = dome.photoTexture; dome.photoTexture = new B.Texture(AS + "hdri/" + L.bg + "_bg3.jpg?v=2", scene, true, !dome._useDirectMapping); if (old && old !== dome.photoTexture) old.dispose(); }
     dome.mesh.rotation.y = dome._rot0 + (L.bgRot || 0);   // 開けた方（夕焼け空・ビル街・遠くの町）が正面に来る向き（6 通り回して撮って選んだ）
     sun.direction.set(-Math.sin(SUN_AZ) * Math.cos(el), -Math.sin(el), -Math.cos(SUN_AZ) * Math.cos(el));
     sun.position = sunC.subtract(sun.direction.scale(SUN_D));
@@ -2377,9 +2383,10 @@ const G = window.G = {};   // 確かめ用の口
     } catch (e) { console.warn("小物の読み込み失敗", e); }
   })();
 
-  reset();
+  reset(); updateGoal(0, 0);   // 始めから目標を出す（「読み込み中」が数秒残った）
   if (Q.has("build")) enterBuild();   // ?build=N でクレーンの N 面
   else if (!Q.has("stage") && !Q.has("nostage")) showStages("ステージを えらぼう", false);
+  else startHint();
   $("msg").style.display = "none";
   engine.resize();   // WebGPU は作った時点で canvas の大きさを拾わないことがある（300×150 のままになった）
   engine.runRenderLoop(() => scene.render());

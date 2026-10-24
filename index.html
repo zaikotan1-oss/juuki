@@ -42,9 +42,9 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 #done .btn{pointer-events:auto;margin:10px 5px 0;font-size:16px;padding:9px 14px}
 #done .rT{font-size:24px} #rStars{font-size:34px;color:#d9480f;letter-spacing:6px;text-shadow:0 2px 0 #fff8} #rInfo{font-size:14px;white-space:pre-line;margin-top:4px}
 #goal{position:absolute;left:calc(10px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));width:min(28vw,220px);color:#fff;background:#0007;border-radius:8px;padding:4px 7px;pointer-events:none;font-weight:bold}
-#gStage{font-size:9px;opacity:.8} #gText{font-size:11px;line-height:1.25;margin:1px 0 3px} #gScore{position:absolute;right:7px;top:3px;font-size:10px;color:#ffd23f}
+#gStage{font-size:10px;opacity:.8} #gText{font-size:12px;line-height:1.25;margin:1px 0 3px} #gScore{position:absolute;right:7px;top:3px;font-size:10px;color:#ffd23f}
 .gbar{position:relative;height:11px;background:#fff3;border-radius:6px;overflow:hidden;margin-top:2px} .gbar i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(#ffcf3f,#f08c00);transition:width .3s}
-.gbar.tr i{background:linear-gradient(#8fe08f,#2f9e44)} .gbar span{position:relative;font-size:9px;padding-left:5px;line-height:11px;text-shadow:0 1px 2px #000}
+.gbar.tr i{background:linear-gradient(#8fe08f,#2f9e44)} .gbar span{position:relative;font-size:10px;padding-left:5px;line-height:11px;text-shadow:0 1px 2px #000}
 #pops{position:absolute;left:50%;top:30%;width:0;height:0;pointer-events:none}
 .pop{position:absolute;left:0;top:0;transform:translate(-50%,0);white-space:nowrap;color:#fff;font-weight:900;font-size:21px;text-shadow:0 3px 0 #000a,0 0 8px #000;animation:popup 1.3s ease-out forwards}
 .pop.mid{font-size:27px;color:#ffd23f} .pop.big{font-size:34px;color:#ff922b} .pop.mile{font-size:25px;color:#8ce99a;top:45px} .pop.load{font-size:20px;color:#8ce99a;top:82px}
@@ -55,7 +55,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 .stCol.d .stBtn{background:#fff3df} .stCol.b .stBtn{background:#e6f4ff}
 .stHead{font-size:15px;font-weight:900;color:#fff;text-align:center;text-shadow:0 1px 2px #0008;padding:2px}
 .stBtn.now{outline:3px solid #223} .stClose{font-size:13px;align-self:center}
-.stTitle{font-size:17px;font-weight:900;color:#fff;text-align:center} .stBtn{font-size:13px;text-align:left;padding:6px 10px;box-shadow:0 2px 0 #0004} .stBtn.locked{opacity:.55}
+.stTitle{font-size:17px;font-weight:900;color:#fff;text-align:center} .stBtn{font-size:13px;text-align:left;padding:6px 10px;box-shadow:0 2px 0 #0004} .stBtn small{display:block;font-size:10px;font-weight:bold;opacity:.65;margin-top:1px} .stBtn.locked{opacity:.55}
 .stUp{font-size:17px;color:#223;white-space:pre-line;font-weight:bold}
 #toast{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%);color:#fff;font-size:19px;font-weight:bold;background:#0009;padding:7px 16px;border-radius:14px;pointer-events:none;white-space:nowrap}
 #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom));max-width:40vw;text-align:center;color:#fff;font-size:15px;font-weight:bold;background:#0009;padding:7px 12px;border-radius:14px;pointer-events:none}
@@ -113,7 +113,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "準備中…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=85"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=88"]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();
