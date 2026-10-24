@@ -242,7 +242,7 @@ const G = window.G = {};   // 確かめ用の口
     mesh.thinInstanceSetBuffer("matrix", buf, 16, true); mesh.setEnabled(true);
   }
   const paneMesh = new B.Mesh("panes", scene);
-  const paneM = new B.PBRMaterial("paneM", scene); paneM.albedoColor = new B.Color3(0.015, 0.02, 0.025); paneM.metallic = 0; paneM.roughness = 0.03; paneM.alpha = 0.88; paneM.backFaceCulling = false;   // 空が映り込む古いガラス
+  const paneM = new B.PBRMaterial("paneM", scene); paneM.albedoColor = new B.Color3(0.06, 0.08, 0.1); paneM.emissiveColor = new B.Color3(0.025, 0.032, 0.04); paneM.metallic = 0; paneM.roughness = 0.03; paneM.alpha = 0.88; paneM.backFaceCulling = false;   // 空が映り込む古いガラス。色は真っ黒な四角に見えたので少し明るく（10-25 改善ループ）
   paneMesh.material = paneM;
   const winSet = new Set();      // 窓の穴（格子の座標）。上下の壁が残っている間だけガラスを出す
   // 建物ごとの記録: 1 階の壁がどれだけ残っているか（sink の建物は少なくなると丸ごと沈むように崩れる）
@@ -631,7 +631,7 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ================= 部品づくり（見た目の箱＋必要なら ANIMATED の当たり） =================
-  const yel = paintM("yel", "paint_yellow_diff.jpg", 0.45), dark = mat("dark", 0.09, 0.09, 0.1, 0.8), steel = pbrTex("steel", "metal_plate", 1, [0.55, 0.55, 0.57]);
+  const yel = paintM("yel", "paint_yellow_diff.jpg", 0.45), dark = mat("dark", 0.13, 0.13, 0.14, 0.8), steel = pbrTex("steel", "metal_plate", 1, [0.55, 0.55, 0.57]);
   const glass = mat("glass", 0.05, 0.06, 0.07, 0.03); glass.alpha = 0.55; glass.environmentIntensity = 1.5; glass.backFaceCulling = true;   // 外からは空が映る色付きガラス。中（裏面）からは見えない                              // 映り込みのあるガラス
   const rubber = mat("rubber", 0.05, 0.05, 0.05, 0.92), chrome = mat("chrome", 0.8, 0.8, 0.82, 0.25, 1);
   const orange = paintM("orange", "paint_orange_diff.jpg", 0.42, 0.5), bedM = pbrTex("bed", "metal_plate", 1.5, [0.75, 0.75, 0.78]);
@@ -727,7 +727,7 @@ const G = window.G = {};   // 確かめ用の口
   { const c = trackTex.getContext(); c.fillStyle = "#1c1c1c"; c.fillRect(0, 0, 64, 256); for (let y = 0; y < 256; y += 32) { c.fillStyle = "#3a3936"; c.fillRect(0, y, 64, 9); c.fillStyle = "#0a0a0a"; c.fillRect(0, y + 9, 64, 3); } trackTex.update(); }
   const trackM = new B.PBRMaterial("trackM", scene); trackM.albedoTexture = trackTex; trackM.metallic = 0.6; trackM.roughness = 0.75;
   const wheelM = mat("wheelM", 0.55, 0.55, 0.53, 0.45, 0.8), lampM = mat("lampM", 1, 0.95, 0.8, 0.2); lampM.emissiveColor = new B.Color3(0.6, 0.55, 0.4);
-  const grilleM = mat("grilleM", 0.06, 0.06, 0.06, 0.6, 0.5);
+  const grilleM = mat("grilleM", 0.1, 0.1, 0.1, 0.6, 0.5);
   const cabFrameM = mat("cabFrameM", 0.17, 0.17, 0.18, 0.45, 0.3);     // 運転席の枠（つやのある濃い灰色）
   const bkM = paintM("bkM", "paint_yellow_diff.jpg", 0.55, 0.15);          // バケットも車体と同じ黄色（爪と刃は鉄）
 
@@ -877,7 +877,7 @@ const G = window.G = {};   // 確かめ用の口
 
   // ================= カメラ =================
   const fp = new B.UniversalCamera("fp", B.Vector3.Zero(), scene);
-  fp.parent = seat; fp.minZ = 0.05; fp.fov = 1.15; fp.inputs.clear();
+  fp.parent = seat; fp.minZ = 0.05; fp.fov = 1.2; fp.inputs.clear();
   const tp = new B.ArcRotateCamera("tp", -Math.PI / 2, 1.1, 18, B.Vector3.Zero(), scene);
   tp.minZ = 0.1; tp.inputs.clear();
   const look = { yaw: 0, pitch: 0.12 };
@@ -1432,7 +1432,7 @@ const G = window.G = {};   // 確かめ用の口
     applyPose(); syncColliders(exParts, true); placeTruck(); syncColliders(truck.parts, true);
     // 乗り降り: 始めはショベルに乗っている。来ていたクレーン車は帰す
     ride = "ex"; craneHere = false; exSlide = null; wkRoot.setEnabled(false); for (const n of crAll) n.setEnabled(false); drawSlings(null);
-    fp.parent = seat; fp.fov = 1.15; $("pedals").style.display = ""; setLabels();
+    fp.parent = seat; fp.fov = 1.2; $("pedals").style.display = ""; setLabels();
   }
 
   // 重機が格子・ダンプに入り込まないか
@@ -1871,7 +1871,7 @@ const G = window.G = {};   // 確かめ用の口
         B.Vector3.LerpToRef(s2.from, s2.to, e, s2.m.position); B.Quaternion.SlerpToRef(s2.q, s2.h.p.q || B.Quaternion.Identity(), e, s2.m.rotationQuaternion);   // 屋根は傾けて はめる
         if (far) drawSlings(null); else drawSlings(s2.h, hb);
         cr.tgt.x += (s2.to.x - cr.tgt.x) * Math.min(1, dt * 6); cr.tgt.z += (s2.to.z - cr.tgt.z) * Math.min(1, dt * 6);   // はまる間はフックも枠の真上へ（荷だけ横へ動くとワイヤーが横に伸びた 評価 k5）
-        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.16 : 0.22); dust(s2.to, s2.good ? 26 : 14); snapRing.position.copyFrom(s2.to); snapT = 0.45; snapRing.setEnabled(true); }
+        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.16 : 0.22); dust(s2.to, s2.good ? 26 : 14); snapRing.position.copyFrom(s2.to); snapM.emissiveColor.set(...(s2.good ? [1, 0.85, 0.2] : [0.9, 0.92, 0.95])); snapT = 0.45; snapRing.setEnabled(true); }
       } else {
         s2.slack += dt; s2.drop = Math.min(0.4, s2.slack * 1.2); s2.hx = s2.hx || hb.clone();
         if (Math.hypot(hb.x - s2.hx.x, hb.z - s2.hx.z) > 0.5 || Math.hypot(hb.x - s2.to.x, hb.z - s2.to.z) > 0.8) s2.slack = 0.55;   // フックが横へ動き出したら、すぐ外す（ワイヤーが横へ引き伸ばされて見えた 評価 k4）
@@ -2086,7 +2086,7 @@ const G = window.G = {};   // 確かめ用の口
       if (mode !== "build") { enterBuild(); return; }   // さら地の後に初めて乗ったら建築が始まる
       fp.parent = crSeat; fp.fov = 1.32; tp.radius = 30; tp.beta = 1.05; tp.alpha = -Math.PI / 2 - 0.35; craneLabels();
     } else {
-      fp.parent = seat; fp.fov = 1.15; tp.radius = 18; tp.beta = 1.1; tp.alpha = -ex.heading - Math.PI / 2;
+      fp.parent = seat; fp.fov = 1.2; tp.radius = 18; tp.beta = 1.1; tp.alpha = -ex.heading - Math.PI / 2;
       $("pedals").style.display = ""; setLabels();
     }
     look.yaw = 0; look.pitch = 0.12;
@@ -2122,7 +2122,7 @@ const G = window.G = {};   // 確かめ用の口
     if (!ride) updateWalk(dt);
     if (snapT > 0) { snapT -= dt; snapRing.scaling.setAll(1 + (0.45 - snapT) * 3); snapM.alpha = Math.max(0, snapT * 2); if (snapT <= 0) snapRing.setEnabled(false); }
     if (hitMk.isEnabled()) hitMkM.alpha = 0.3 + 0.25 * Math.sin(playT * 5);
-    if (mode !== "build" && fp.parent === seat) { const near = cellsNear(ex.pos, 4.2, 4.2, 3); fp.fov += ((near ? 1.3 : 1.15) - fp.fov) * Math.min(1, dt * 3); }   // 壁に近いと運転席の視野を少し広げる（壁で画面が埋まった・10-24 改善ループ 軸6） { updateBuild(dt); frameCommon(dt); return; }
+    if (mode !== "build" && fp.parent === seat) { const near = cellsNear(ex.pos, 4.2, 4.2, 3); fp.fov += ((near ? 1.32 : 1.2) - fp.fov) * Math.min(1, dt * 3); }   // 壁に近いと運転席の視野を少し広げる（壁で画面が埋まった・10-24 改善ループ 軸6） { updateBuild(dt); frameCommon(dt); return; }
     if (craneHere) updateBuild(dt);   // さら地の後: 来たクレーン車は止まったまま（乗るまでレバーは効かない）
     if (exSlide) { exSlide.t = Math.min(1, exSlide.t + dt / 1.5); B.Vector3.LerpToRef(exSlide.from, exSlide.to, 1 - Math.pow(1 - exSlide.t, 3), ex.pos); if (exSlide.t >= 1) exSlide = null; }
     const onEx = ride === "ex", K = onEx ? kv : () => 0, L = onEx ? sticks.L : NO_STICK, R = onEx ? sticks.R : NO_STICK;   // 乗っていない時はレバーが効かない
