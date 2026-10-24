@@ -55,10 +55,10 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 .stCol.d .stBtn{background:#fff3df} .stCol.b .stBtn{background:#e6f4ff}
 .stHead{font-size:15px;font-weight:900;color:#fff;text-align:center;text-shadow:0 1px 2px #0008;padding:2px}
 .stBtn.now{outline:3px solid #223} .stClose{font-size:13px;align-self:center}
-.stTitle{font-size:17px;font-weight:900;color:#fff;text-align:center} .stBtn{font-size:13px;text-align:left;padding:6px 10px;box-shadow:0 2px 0 #0004} .stBtn small{display:block;font-size:10px;font-weight:bold;opacity:.65;margin-top:1px} .stBtn.locked{opacity:.55}
+.stTitle{font-size:17px;font-weight:900;color:#fff;text-align:center} .stBtn{font-size:13px;text-align:left;padding:6px 10px;box-shadow:0 2px 0 #0004} .stBtn small{display:block;font-size:10px;font-weight:bold;opacity:.82;margin-top:1px} .stBtn.locked{opacity:.55}
 .stUp{font-size:17px;color:#223;white-space:pre-line;font-weight:bold}
 #toast{position:absolute;left:50%;top:22%;transform:translate(-50%,-50%);color:#fff;font-size:19px;font-weight:bold;background:#0009;padding:7px 16px;border-radius:14px;pointer-events:none;white-space:nowrap}
-#hint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(24px + env(safe-area-inset-bottom));max-width:40vw;text-align:center;color:#fff;font-size:15px;font-weight:bold;background:#0009;padding:7px 12px;border-radius:14px;pointer-events:none}
+#hint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom));max-width:40vw;text-align:center;color:#fff;font-size:15px;font-weight:bold;background:#0009;padding:7px 12px;border-radius:14px;pointer-events:none}
 #msg .lbar{width:260px;height:10px;background:#fff3;border-radius:5px;margin:10px auto 6px;overflow:hidden}#msg .lbar i{display:block;height:100%;background:#7cd67c}#msg small{font-size:14px;opacity:.85}
 #msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);color:#fff;font-size:22px;background:#000a;padding:14px 22px;border-radius:14px;text-align:center;white-space:pre-line}
 </style>
@@ -113,7 +113,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "準備中…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=88"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=91"]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();

@@ -513,6 +513,7 @@ const G = window.G = {};   // 確かめ用の口
     if (pi.length) { const g = new B.Mesh("sinkPane", scene), pv = new B.VertexData(); pv.positions = pp; pv.normals = pn; pv.indices = pi; pv.applyToMesh(g, false); g.material = paneM; g.parent = m; g.isPickable = false; }
     const h = CELL / 2; m.setPivotPoint(new B.Vector3((x0 + x1) / 2, y0 - h, (z0 + z1) / 2));
     const kind = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0][0];
+    if (!G.fixedDt) hitStop = 0.12;   // 沈み始めの一瞬のため（10-24 改善ループ 軸5）
     sinks.push({ m, v: 0, d: 0, y0: y0 - h, H: y1 - y0 + CELL, x0: x0 - h, x1: x1 + h, z0: z0 - h, z1: z1 + h, total: Math.min(150, Math.max(6, Math.round(list.length / 90))), made: 0,
       tx: (Math.random() - 0.5) * 0.14, tz: (Math.random() - 0.5) * 0.14, snd: 0, dT: 0, kind });
     crash(1); shake(1); popup(list.length > 4000 ? "ドドドドド…!! たおれる！" : "ガラガラガラ…！", "big");
@@ -1098,7 +1099,7 @@ const G = window.G = {};   // 確かめ用の口
     ps.manualEmitCount = Math.min(LITE ? 50 : 100, Math.round(n)); ch.manualEmitCount = Math.min(LITE ? 20 : 40, Math.round(n * 0.5));
   }
   // 浮かぶ数字（崩れた量を 0.5 秒ためて 1 回出す）と得点
-  let score = 0, combo = 0, comboT = 0, comboP = null, lastPctStep = 0, lastDustT = -1;
+  let hitStop = 0, score = 0, combo = 0, comboT = 0, comboP = null, lastPctStep = 0, lastDustT = -1;
   function popup(text, cls) {
     const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text;
     $("pops").appendChild(el); setTimeout(() => el.remove(), 1300);
@@ -1108,6 +1109,8 @@ const G = window.G = {};   // 確かめ用の口
     if (big || playT - lastDustT > 0.15) { lastDustT = playT; dust(p, (big ? 34 : 10) + n * (big ? 8 : 4)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
     crash(Math.min(1, (big ? 0.35 : 0.05) + n * (big ? 0.06 : 0.03)));
     shake(Math.min(0.6, (big ? 0.28 : 0.08) + n * (big ? 0.03 : 0.012)));
+    if (big && n >= 6 && !G.fixedDt) hitStop = 0.07;   // 大きく崩れた瞬間だけ一瞬ため（ヒットストップ・10-24 改善ループ 軸5）
+    hitMk.setEnabled(false);
   }
   function updateCombo(dt) {
     if (comboT <= 0) return;
@@ -1289,11 +1292,11 @@ const G = window.G = {};   // 確かめ用の口
           popup(truck.sent + "だいめ しゅっぱつ！ +100" + (left > 0 ? "（あと " + left + "だい）" : ""), "big"); if (left <= 0 && !siteDone && finishAt < 0) finishAt = playT + 2.5; }   // 最後の 1 台が走り去るのを見せてから完成
       }
     } else if (truck.state === "leave") {
-      truck.v = Math.min(16 * FASTT(), truck.v + 5 * FASTT() * dt); truck.z -= truck.v * dt;
+      truck.v = Math.min(20 * FASTT(), truck.v + 8 * FASTT() * dt); truck.z -= truck.v * dt;   // 待ちを短く（10-24 改善ループ）
       if (truck.z < -55) { for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips++; truck.state = "back"; }
     } else if (truck.state === "back") {
       const rest = TRUCK_HOME.z - truck.z;
-      truck.v = Math.max(1.5, Math.min(16 * FASTT(), rest * 0.9 * FASTT())); truck.z += truck.v * dt;
+      truck.v = Math.max(1.5, Math.min(20 * FASTT(), rest * 1.1 * FASTT())); truck.z += truck.v * dt;
       if (rest < 0.02) { truck.z = TRUCK_HOME.z; truck.state = "wait"; }
     }
     placeTruck(); syncColliders(truck.parts, false);
@@ -1358,7 +1361,14 @@ const G = window.G = {};   // 確かめ用の口
     el.style.display = ""; $("goal").style.display = "none";
   }
   $("bStage").onclick = () => { wakeAudio(); if ($("stages").style.display === "none") showStages("ステージを えらぼう", true); else $("stages").style.display = "none"; };
-  function startHint() { const h = $("hint"); h.textContent = "左レバーで うでを のばして、バケットを ビルに ぶつけよう"; h.style.display = ""; clearTimeout(startHint.t); startHint.t = setTimeout(() => { if (mode !== "build") h.style.display = "none"; }, 7000); }
+  // 始めの「ここに当てる」目印: ショベルの正面で最初に当たる壁に、うすい光の輪と柱（ヒントの間だけ・何か壊したら消す）
+  const hitMkM = new B.StandardMaterial("hitMkM", scene); hitMkM.disableLighting = true; hitMkM.emissiveColor = new B.Color3(1, 0.55, 0.1); hitMkM.alpha = 0.5; hitMkM.backFaceCulling = false;
+  const hitMk = B.MeshBuilder.CreateCylinder("hitMk", { diameter: 1.6, height: 7, tessellation: 20, cap: B.Mesh.NO_CAP }, scene); hitMk.material = hitMkM; hitMk.isPickable = false; hitMk.setEnabled(false);
+  function placeHitMk() {
+    const f = new B.Vector3(Math.sin(ex.heading), 0, Math.cos(ex.heading));
+    for (let d = 2; d < 16; d += 0.25) { const p = ex.pos.add(f.scale(d)); if (cellsNear(p, 0.3, 0.3, 2)) { hitMk.position.set(p.x - f.x * 0.6, 3.5, p.z - f.z * 0.6); hitMk.setEnabled(true); return; } }
+  }
+  function startHint() { placeHitMk(); clearTimeout(placeHitMk.t); placeHitMk.t = setTimeout(() => hitMk.setEnabled(false), 9000); const h = $("hint"); h.textContent = "左レバーで うでを のばして、バケットを ビルに ぶつけよう"; h.style.display = ""; clearTimeout(startHint.t); startHint.t = setTimeout(() => { if (mode !== "build") h.style.display = "none"; }, 7000); }
   function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(STAGES[i].look ?? i); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); startHint(); }
   // さら地の結果
   function showResult() {
@@ -1643,12 +1653,16 @@ const G = window.G = {};   // 確かめ用の口
   }
   const slingM = mat("slingM", 0.36, 0.36, 0.37, 0.6, 0.6);   // 玉掛けワイヤー（評価 k1: 細く明るいと見えにくい → 太く暗めの灰）
   const ringM = mat("ringM", 1, 0.8, 0.1, 0.4); ringM.emissiveColor = new B.Color3(0.6, 0.45, 0);
+  // はまった所に広がる光の輪（0.45 秒・10-24 改善ループ 軸7）
+  const snapM = new B.StandardMaterial("snapM", scene); snapM.disableLighting = true; snapM.emissiveColor = new B.Color3(1, 0.9, 0.4); snapM.backFaceCulling = false;
+  const snapRing = B.MeshBuilder.CreateTorus("snapRing", { diameter: 2.4, thickness: 0.1, tessellation: 40 }, scene); snapRing.material = snapM; snapRing.isPickable = false; snapRing.setEnabled(false);
+  let snapT = 0;
   const GRAB_R = y => (y.col ? 2.4 : 2.0);
   // 取る場所の目印（10-18 本人「取る場所を分かりやすく」）: 置き場の地面に掛かる範囲の光る輪＋空へ伸びる光の柱
   const yardMk = new B.TransformNode("yardMk", scene);
   const ymM = new B.StandardMaterial("ymM", scene); ymM.disableLighting = true; ymM.emissiveColor = new B.Color3(1, 0.8, 0.1); ymM.alpha = 0.85; ymM.backFaceCulling = false;
   const ymRing = B.MeshBuilder.CreateTorus("ymRing", { diameter: 2, thickness: 0.12, tessellation: 48 }, scene); ymRing.parent = yardMk; ymRing.position.y = 0.06; ymRing.material = ymM; ymRing.isPickable = false;
-  const ymBeamM = ymM.clone("ymBeamM"); ymBeamM.alpha = 0.18;
+  const ymBeamM = ymM.clone("ymBeamM"); ymBeamM.alpha = 0.26;
   const ymBeam = B.MeshBuilder.CreateCylinder("ymBeam", { diameter: 0.9, height: 30, tessellation: 16 }, scene); ymBeam.parent = yardMk; ymBeam.position.y = 15; ymBeam.material = ymBeamM; ymBeam.isPickable = false;
   yardMk.setEnabled(false);
   const slings = [0, 1, 2, 3].map(i => { const w = B.MeshBuilder.CreateCylinder("sling" + i, { diameter: 0.095, height: 1, tessellation: 6 }, scene); w.material = slingM; w.isPickable = false; w.setEnabled(false); return w; });
@@ -1857,7 +1871,7 @@ const G = window.G = {};   // 確かめ用の口
         B.Vector3.LerpToRef(s2.from, s2.to, e, s2.m.position); B.Quaternion.SlerpToRef(s2.q, s2.h.p.q || B.Quaternion.Identity(), e, s2.m.rotationQuaternion);   // 屋根は傾けて はめる
         if (far) drawSlings(null); else drawSlings(s2.h, hb);
         cr.tgt.x += (s2.to.x - cr.tgt.x) * Math.min(1, dt * 6); cr.tgt.z += (s2.to.z - cr.tgt.z) * Math.min(1, dt * 6);   // はまる間はフックも枠の真上へ（荷だけ横へ動くとワイヤーが横に伸びた 評価 k5）
-        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.16 : 0.22); dust(s2.to, s2.good ? 26 : 14); }
+        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.16 : 0.22); dust(s2.to, s2.good ? 26 : 14); snapRing.position.copyFrom(s2.to); snapT = 0.45; snapRing.setEnabled(true); }
       } else {
         s2.slack += dt; s2.drop = Math.min(0.4, s2.slack * 1.2); s2.hx = s2.hx || hb.clone();
         if (Math.hypot(hb.x - s2.hx.x, hb.z - s2.hx.z) > 0.5 || Math.hypot(hb.x - s2.to.x, hb.z - s2.to.z) > 0.8) s2.slack = 0.55;   // フックが横へ動き出したら、すぐ外す（ワイヤーが横へ引き伸ばされて見えた 評価 k4）
@@ -1920,7 +1934,7 @@ const G = window.G = {};   // 確かめ用の口
   function updateBuildGoal() {
     const n = bd.plan.length, k = bd.floor * n + bd.step, all = bd.goal * n, pct = Math.round(k / all * 100);
     const nx = bd.plan[bd.step];
-    $("gStage").textContent = `けんちく　${bd.goal}かいだてを たてよう`;
+    $("gStage").textContent = `たてる ${bstage + 1}　${BSTAGES[bstage].name}`;
     $("gText").textContent = bd.done ? "🎉 " + BLD[bldType()] + " かんせい！" : !ride ? "🏗 クレーン車に もどって「のる」" : bd.hanging ? `🏗 ${nx.kind}を 光る わくの 上へ はこぼう` : `🪝 おきばの ${nx.kind}を つろう（右レバーを ↓）`;
     $("gBld").style.width = pct + "%"; $("gBldT").textContent = `たてた ${pct}%　（${bd.floor + (bd.done ? 0 : 1)}かいめ ${bd.step}/${n}）`;
     $("gTr").style.width = Math.min(100, bd.streak * 20) + "%"; $("gTrT").textContent = bd.streak ? `ぴったり ${bd.streak}れんぞく` : "ぴったりで おくと ボーナス";
@@ -2102,10 +2116,13 @@ const G = window.G = {};   // 確かめ用の口
   // ================= 毎フレーム =================
   let fpsAvg = 60, msAvg = 16, hudT = 0;
   scene.onBeforeRenderObservable.add(() => {
-    const dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);   // 確かめる時は G.fixedDt で固定
-    if (!(dt > 0.0001)) return;   // 経過 0 のコマは飛ばす（フックの揺れを dt で割っていて、0 だとフックが NaN になり二度と戻らなかった 10-18）
+    let dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);   // 確かめる時は G.fixedDt で固定
+    if (!(dt > 0.0001)) return;
+    if (hitStop > 0) { hitStop -= dt; dt *= 0.12; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(dt); if (hitStop <= 0) plugin._useDeltaForWorldStep = true; }   // ヒットストップ中は物理もゆっくり   // 経過 0 のコマは飛ばす（フックの揺れを dt で割っていて、0 だとフックが NaN になり二度と戻らなかった 10-18）
     if (!ride) updateWalk(dt);
-    if (mode === "build") { updateBuild(dt); frameCommon(dt); return; }
+    if (snapT > 0) { snapT -= dt; snapRing.scaling.setAll(1 + (0.45 - snapT) * 3); snapM.alpha = Math.max(0, snapT * 2); if (snapT <= 0) snapRing.setEnabled(false); }
+    if (hitMk.isEnabled()) hitMkM.alpha = 0.3 + 0.25 * Math.sin(playT * 5);
+    if (mode !== "build" && fp.parent === seat) { const near = cellsNear(ex.pos, 4.2, 4.2, 3); fp.fov += ((near ? 1.3 : 1.15) - fp.fov) * Math.min(1, dt * 3); }   // 壁に近いと運転席の視野を少し広げる（壁で画面が埋まった・10-24 改善ループ 軸6） { updateBuild(dt); frameCommon(dt); return; }
     if (craneHere) updateBuild(dt);   // さら地の後: 来たクレーン車は止まったまま（乗るまでレバーは効かない）
     if (exSlide) { exSlide.t = Math.min(1, exSlide.t + dt / 1.5); B.Vector3.LerpToRef(exSlide.from, exSlide.to, 1 - Math.pow(1 - exSlide.t, 3), ex.pos); if (exSlide.t >= 1) exSlide = null; }
     const onEx = ride === "ex", K = onEx ? kv : () => 0, L = onEx ? sticks.L : NO_STICK, R = onEx ? sticks.R : NO_STICK;   // 乗っていない時はレバーが効かない
@@ -2236,7 +2253,7 @@ const G = window.G = {};   // 確かめ用の口
   const pipe = new B.DefaultRenderingPipeline("pipe", !Q.has("nohdr") && !LITE, scene, Q.has("nopp") ? [] : [fp, tp]);
   pipe.imageProcessingEnabled = true;
   pipe.imageProcessing.toneMappingEnabled = true; pipe.imageProcessing.toneMappingType = B.ImageProcessingConfiguration.TONEMAPPING_ACES;
-  pipe.imageProcessing.exposure = 1.0; pipe.imageProcessing.contrast = 1.2;   // 1.28 では街の影が黒く潰れた（10-24 改善ループ 軸4）
+  pipe.imageProcessing.exposure = 1.0; pipe.imageProcessing.contrast = 1.14;   // 1.28 では街の影が黒く潰れた（10-24 改善ループ 軸4）
   pipe.imageProcessing.colorCurvesEnabled = true; pipe.imageProcessing.colorCurves = new B.ColorCurves(); pipe.imageProcessing.colorCurves.globalSaturation = -14;
   scene.environmentIntensity = 0.85;
   pipe.imageProcessing.vignetteEnabled = true; pipe.imageProcessing.vignetteWeight = 1.2;
@@ -2248,7 +2265,7 @@ const G = window.G = {};   // 確かめ用の口
   //   el: 太陽の高さ（度）／sun: 太陽の色／si: 強さ／hue・dens: 画面全体に掛ける色（色相と濃さ 0〜100）／sat: あざやかさ
   //   exp: 明るさ／fog: 遠くの霞の色／fogEnd: 霞で見えなくなる距離／ground: 地面に掛ける色／shade: 影の薄さ（0=真っ黒）
   const LOOKS = [
-    { name: "はれ", bg: "construction_yard", el: 33.8, sun: [1, 0.96, 0.9], si: 2.1, hue: 0, dens: 0, sat: -14, exp: 1.0, fog: [0.6, 0.58, 0.55], fogEnd: 380, ground: [1, 1, 1], shade: 0.12 },
+    { name: "はれ", bg: "construction_yard", el: 33.8, sun: [1, 0.96, 0.9], si: 2.1, hue: 0, dens: 0, sat: -14, exp: 1.0, fog: [0.6, 0.58, 0.55], fogEnd: 380, ground: [1, 1, 1], shade: 0.18 },
     { name: "ゆうがた", bg: "sunset_jhbcentral", bgRot: Math.PI, el: 16, sun: [1, 0.62, 0.36], si: 1.9, hue: 28, dens: 45, sat: -2, exp: 1.0, fog: [0.78, 0.55, 0.38], fogEnd: 320, ground: [1.1, 0.95, 0.8], shade: 0.2 },
     { name: "くもり", bg: "potsdamer_platz", bgRot: 0, el: 55, sun: [0.86, 0.9, 1], si: 0.8, hue: 215, dens: 24, sat: -42, exp: 1.0, fog: [0.56, 0.59, 0.63], fogEnd: 200, ground: [0.84, 0.88, 0.94], shade: 0.55 },
     { name: "あさ", bg: "stuttgart_suburbs", bgRot: 0, el: 24, sun: [1, 0.95, 0.8], si: 2.3, hue: 55, dens: 14, sat: 2, exp: 1.08, fog: [0.72, 0.74, 0.68], fogEnd: 380, ground: [0.78, 1.0, 0.66], shade: 0.15 }];
@@ -2384,7 +2401,7 @@ const G = window.G = {};   // 確かめ用の口
   })();
 
   reset(); updateGoal(0, 0);   // 始めから目標を出す（「読み込み中」が数秒残った）
-  if (Q.has("build")) enterBuild();   // ?build=N でクレーンの N 面
+  if (Q.has("build")) { enterBuild(); updateBuildGoal(); }   // ?build=N でクレーンの N 面（目標の札もすぐ建てる側に）
   else if (!Q.has("stage") && !Q.has("nostage")) showStages("ステージを えらぼう", false);
   else startHint();
   $("msg").style.display = "none";
