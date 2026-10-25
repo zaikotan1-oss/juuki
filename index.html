@@ -218,6 +218,21 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 #done.jolt{animation:jolt .18s ease-out}
 @keyframes jolt{0%{transform:translate(-50%,calc(-50% + 3px)) scale(1.02)}100%{transform:translate(-50%,-50%) scale(1)}}
 #done.glow{box-shadow:0 6px 0 #b56a00,0 14px 30px #0008,0 0 0 4px #ffe58a,0 0 24px 6px #ffd54a99;transition:box-shadow .4s}
+
+/* ---- ステージ選びを絵のカードに（10-25 本人「壊せる物・作る物の絵をクリック。文字はいらん」） ---- */
+#stages{width:min(96vw,960px);padding:10px}
+#stages .stBtn{background-image:var(--img)!important;background-size:cover!important;background-position:center!important}   /* 「いま」の札の背景色が絵を消していた */
+.stCols{flex-wrap:nowrap;gap:10px} .stCol{padding:6px 8px 8px;gap:4px} .stCol.d{flex:5 1 0} .stCol.b{flex:3 1 0}
+.stHead{font-size:20px;line-height:1;padding:0 0 2px}
+.stGrid{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:7px} .stCol.d .stGrid{--n:5} .stCol.b .stGrid{--n:3}
+.stBtn{aspect-ratio:4/3;padding:0!important;background-size:cover!important;background-position:center!important;border:2.5px solid #fff;border-radius:11px;overflow:visible;min-width:0}
+.stCol.d .stBtn,.stCol.b .stBtn{background-color:#334}
+.stBtn.clear{border-left-width:2.5px;border-color:#ffd23f}
+.stBtn.now{box-shadow:0 0 0 3px #ffd23f,0 3px 0 #0003!important}
+.stBtn .stStars{position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);margin:0;background:#1b2838e6;border:1.5px solid #fff;border-radius:999px;padding:0 6px;font-size:11px;line-height:15px;white-space:nowrap;color:#fff4;-webkit-text-stroke:0}
+.stBtn:hover{filter:brightness(1.08)} .stBtn:active{transform:translateY(2px) scale(.97)}
+.stClose{font-size:15px;padding:4px 18px}
+@media (max-width:640px){.stCols{flex-wrap:wrap}.stCol.d,.stCol.b{flex:1 1 100%}.stCol.d .stGrid{--n:4}.stCol.b .stGrid{--n:3}}
 </style>
 </head>
 <body>
@@ -275,7 +290,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "準備中…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=109"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=114"]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();

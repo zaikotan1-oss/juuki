@@ -183,7 +183,12 @@ const G = window.G = {};   // 確かめ用の口
     { floors: 2, name: "まちの いえ（5けん）", trucks: 10, star3: 470, star2: 770, town: true, open: true, bld: "house" },
     // 10-16 本人「何十階建てのビルも」「街丸ごと好きなように」。大きい建物は 1 階を削ると沈むように崩れる
     { floors: 30, name: "30かいだての ビル", trucks: 12, star3: 720, star2: 1100, sky: true, look: 1 },
-    { floors: 2, name: "まち まるごと", trucks: 999, star3: 1200, star2: 2000, wide: true, free: true, look: 0 }];
+    { floors: 2, name: "まち まるごと", trucks: 999, star3: 1200, star2: 2000, wide: true, free: true, look: 0 },
+    // 10-25 本人「同じような物ばっかり壊してるから、鉄塔とか消防署とか球場とか」。鉄塔・煙突・火の見の塔・照明塔は、根元を削ると倒れる（sink の topple）。★の時間は推測
+    { floors: 2, name: "てっとう", trucks: 4, star3: 240, star2: 400, kind: "pylon", look: 0, goal: "🗼 あしを けずると たおれる！" },
+    { floors: 2, name: "しょうぼうしょ", trucks: 8, star3: 420, star2: 700, kind: "fire", look: 3, goal: "🚒 しょうぼうしょを こわそう！ うしろの とうは 根元を けずると たおれる" },
+    { floors: 2, name: "やきゅうじょう", trucks: 10, star3: 600, star2: 1000, kind: "stadium", look: 2, big: true, goal: "⚾ スタンドと しょうめいとうを こわそう！" },
+    { floors: 2, name: "こうじょうの えんとつ", trucks: 6, star3: 360, star2: 600, kind: "chimney", look: 1, goal: "🏭 えんとつの 根元を けずると たおれる！" }];
   const BLD = { biru: "じゅうきビル", mansion: "じゅうきマンション", tower: "じゅうきタワー", house: "あたらしい おうち" };
   // クレーンで建てるステージ（10-16 本人「ショベルとクレーンを完全に分ける」）。look は空気（LOOKS の番号）
   const BSTAGES = [
@@ -259,7 +264,7 @@ const G = window.G = {};   // 確かめ用の口
   // 格子で家を 1 軒組む。ox, oz は格子の座標（ビルの左手前の角が 0,0）、W・D は格子の数、H は 1 階の段数
   function addHouse(ox, oz, W, D, floors, H, o = {}) {
     const K = Object.assign({ wall: "wall", pillar: "pillar", slab: "slab", roof: "parapet", winRows: [2, 3], door: [W / 2 - 3, W / 2 + 2, 4] }, o);
-    newB(H, !!K.sink);
+    newB(H, !!K.sink); curB.topple = !!K.topple;
     for (let f = 0; f < floors; f++) {
       for (let r = 0; r < H; r++) {
         const y = f * H + r;
@@ -277,6 +282,7 @@ const G = window.G = {};   // 確かめ用の口
           }
           // 1 階の正面（z=0）の入口
           if (K.door && f === 0 && z === 0 && x >= K.door[0] && x <= K.door[1] && r < K.door[2] && !pillar) continue;
+          if (K.doors && f === 0 && z === 0 && !pillar && K.doors.some(d => x >= d[0] && x <= d[1] && r < d[2])) continue;   // 消防署の車庫の口（3 つ）
           addCell(ox + x, y, oz + z, pillar ? K.pillar : K.wall);
         }
       }
@@ -320,6 +326,68 @@ const G = window.G = {};   // 確かめ用の口
     houseW(10, 50, 8, 8, 5, BIG);
     addFence(gx(-14), gz(26), 20, 3, "block"); addFence(gx(28), gz(12), 16, 3, "block");
   }
+  // 3D の線を格子で引く（a・b は格子の座標・小数でよい。kf は高さ y から種類を返す）
+  function lineCells(a, b, kf, th = 1) {
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * 2));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, x = Math.round(a[0] + (b[0] - a[0]) * t), y = Math.round(a[1] + (b[1] - a[1]) * t), z = Math.round(a[2] + (b[2] - a[2]) * t);
+      for (let dx = 0; dx < th; dx++) for (let dz = 0; dz < th; dz++) if (y >= 0) addCell(x + dx, y, z + dz, kf(y));
+    }
+  }
+  // 送電の鉄塔: 4 本の脚がすぼまって高さ 40m。4m ごとに輪とバツの筋交い、上に 3 段の腕。赤白のしま
+  function buildPylon(wx, wz) {
+    const cx = gx(wx), cz = gz(wz), Hc = 80, w = y => 12 - 10 * y / Hc, kf = y => Math.floor(y / 16) % 2 ? "twr_w" : "twr_r";
+    newB(6, true); curB.topple = true;
+    const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    for (let y = 0; y <= Hc; y++) for (const [sx, sz] of C) { const x = Math.round(cx + sx * w(y)), z = Math.round(cz + sz * w(y)); for (let a = -1; a < 1; a++) for (let b2 = -1; b2 < 1; b2++) addCell(x + a, y, z + b2, kf(y)); }
+    const P = (i, y) => [cx + C[i][0] * w(y), y, cz + C[i][1] * w(y)];
+    for (let y = 0; y < Hc; y += 10) {
+      const y2 = Math.min(Hc, y + 10);
+      for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; lineCells(P(i, y2), P(j, y2), kf); lineCells(P(i, y), P(j, y2), kf); lineCells(P(j, y), P(i, y2), kf); }
+    }
+    for (const [ay, half] of [[58, 16], [68, 13], [78, 10]]) {
+      for (const dz of [-1, 1]) lineCells([cx - half, ay, cz + dz], [cx + half, ay, cz + dz], kf);
+      for (const sx of [-1, 1]) { lineCells([cx + sx * half, ay, cz], [cx + sx * w(ay - 6), ay - 6, cz], kf); for (let k = 1; k <= 3; k++) addCell(cx + sx * half, ay - k, cz, "twr_w"); }   // 腕の下の支えと、がいし
+    }
+  }
+  // 消防署: 赤い 2 階の車庫（口が 3 つ）＋うしろに白い火の見の塔（6 階・倒れる）
+  function buildFire() {
+    addHouse(gx(-8), gz(13), 32, 22, 2, 7, { wall: "fire", pillar: "firew", slab: "firew", roof: "parapet", winRows: [3, 4], door: null, doors: [[2, 9, 6], [12, 19, 6], [22, 29, 6]] });
+    addHouse(gx(9.5), gz(19), 8, 8, 6, 6, { wall: "firew", pillar: "fire", slab: "fire", roof: "parapet", winRows: [3], door: [3, 4, 4], sink: true, topple: true });
+    addFence(gx(-14), gz(10), 10, 2, "firew");
+  }
+  // 球場: ホームの後ろを囲む階段のスタンド（8 つに分かれる）＋照明塔 4 本（倒れる）
+  function buildStadium() {
+    const Hx = 0, Hz = 28, R0 = 9, D = 9, A = 110 * Math.PI / 180, NSEG = 8;
+    const segs = [];
+    for (let i = 0; i < NSEG; i++) { newB(1, false); segs.push(curB); }
+    for (let x = gx(Hx - R0 - D - 1); x <= gx(Hx + R0 + D + 1); x++) for (let z = gz(Hz - 6); z <= gz(Hz + R0 + D + 1); z++) {
+      const p = cellWorld(x, 0, z), dx = p.x - Hx, dz = p.z - Hz, r = Math.hypot(dx, dz), th = Math.atan2(dx, dz);
+      if (Math.abs(th) > A || r < R0 - 0.5 || r > R0 + D + 0.5) continue;
+      const seg = Math.min(NSEG - 1, Math.floor((th + A) / (2 * A) * NSEG)); curB = segs[seg];
+      if (r < R0) { addCell(x, 0, z, "conc"); addCell(x, 1, z, "conc"); continue; }             // 前の低い壁
+      if (r > R0 + D) { for (let y = 0; y < 13; y++) addCell(x, y, z, "conc"); continue; }     // うしろの高い壁
+      const st = Math.floor(r - R0), y = st + 1, kind = seg % 2 ? "seat2" : "seat";
+      addCell(x, y, z, kind); addCell(x, y - 1, z, "conc");
+      if (st % 3 === 2 && Math.round(th * 12) % 3 === 0) for (let yy = 0; yy < y - 1; yy++) addCell(x, yy, z, "conc");   // 下の柱
+    }
+    for (const [wx, wz] of [[-20, 16], [20, 16], [-13, 44], [13, 44]]) {   // 照明塔: 1m 角の柱 26m＋上にライトの箱
+      newB(6, true); curB.topple = true;
+      const x = gx(wx), z = gz(wz);
+      for (let y = 0; y < 52; y++) for (let a = 0; a < 2; a++) for (let b2 = 0; b2 < 2; b2++) addCell(x + a, y, z + b2, y > 46 ? "twr_w" : "conc");
+      for (let y = 52; y < 58; y++) for (let a = -4; a < 6; a++) for (let b2 = 0; b2 < 2; b2++) addCell(x + a, y, z + b2, "twr_w");
+    }
+  }
+  // 工場の煙突: れんがの筒（下 3m・上 2.2m の半径、高さ 44m、上 10m は赤白）＋横にトタンの工場
+  function buildChimney(wx, wz) {
+    const cx = gx(wx), cz = gz(wz), Hc = 88;
+    newB(6, true); curB.topple = true;
+    for (let y = 0; y < Hc; y++) {
+      const ro = 6 - 1.6 * y / Hc, ri = ro - 2, kind = y < Hc - 20 ? "brick" : Math.floor(y / 5) % 2 ? "twr_w" : "twr_r";
+      for (let x = -7; x <= 7; x++) for (let z = -7; z <= 7; z++) { const r = Math.hypot(x + 0.5, z + 0.5); if (r <= ro && r > ri) addCell(cx + x, y, cz + z, kind); }
+    }
+    addHouse(gx(-17), gz(14), 18, 14, 1, 9, TIN);
+  }
   function buildBuilding() {
     for (const ch of chunks.values()) { if (ch.body) { ch.body.dispose(); ch.shape.dispose(); } ch.mesh.dispose(); }
     chunks.clear(); chunkGen++; bld.cells.clear(); winSet.clear(); blds.length = 0; dirtyB.clear(); curB = null;
@@ -327,6 +395,10 @@ const G = window.G = {};   // 確かめ用の口
     const S = STAGES[stage];
     if (S.sky) addHouse(-4, 0, 24, 16, FLOORS, FH / CELL, BIG);       // 30 階: 12m × 8m・高さ 90m
     else if (S.wide) buildTown();
+    else if (S.kind === "pylon") buildPylon(0, 19);
+    else if (S.kind === "fire") buildFire();
+    else if (S.kind === "stadium") buildStadium();
+    else if (S.kind === "chimney") buildChimney(0, 21);
     else addHouse(0, 0, BW / CELL, BD / CELL, FLOORS, FH / CELL);     // 真ん中のビル 16 × 12、1 階 6 段
     if (S.town) {
       // まち: 右に木造の家（2 階・切妻屋根）とブロック塀、左にトタンの倉庫、右奥にプレハブ小屋（格子 0.5m。ビルの左手前の角 = 世界の x -4, z 14）
@@ -340,10 +412,10 @@ const G = window.G = {};   // 確かめ用の口
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const c of bld.cells.values()) { x0 = Math.min(x0, c.p.x); x1 = Math.max(x1, c.p.x); z0 = Math.min(z0, c.p.z); z1 = Math.max(z1, c.p.z); }
     Object.assign(SITE, { x0: x0 - 3, x1: x1 + 3, z0: z0 - 3, z1: z1 + 3 });
-    Object.assign(AREA, S.wide ? { x0: -66, x1: 66, z0: -58, z1: 74 } : { x0: -23.4, x1: 23.4, z0: -13.4, z1: 41.4 });
-    for (const h of hoards) h.setEnabled(!S.wide);
+    Object.assign(AREA, S.wide ? { x0: -66, x1: 66, z0: -58, z1: 74 } : S.big ? { x0: -34, x1: 34, z0: -16, z1: 52 } : { x0: -23.4, x1: 23.4, z0: -13.4, z1: 41.4 });
+    for (const h of hoards) h.setEnabled(!S.wide && !S.big);
     // 影: 30 階は太陽を遠くへ（近いと上の階の影が切れる）。まちは影の範囲がショベルについていく
-    SUN_D = S.sky ? 240 : 110; sun.shadowMaxZ = SUN_D + 130; sunC.set(0, 0, 15); sun.position = sunC.subtract(sun.direction.scale(SUN_D));
+    SUN_D = S.sky || S.kind === "pylon" || S.kind === "chimney" ? 240 : 110; sun.shadowMaxZ = SUN_D + 130; sunC.set(0, 0, 15); sun.position = sunC.subtract(sun.direction.scale(SUN_D));
     bld.total = bld.cells.size;
     bld.orig = new Set(bld.cells.keys());
     rebuildCellMesh();
@@ -351,7 +423,9 @@ const G = window.G = {};   // 確かめ用の口
   const KIND_COL = { wall: [1, 0.98, 0.94], slab: [0.78, 0.78, 0.78], pillar: [0.9, 0.88, 0.85],   // 写真素材に掛ける色（壁・床・柱で少し変える）
     wood: [0.78, 0.55, 0.34], beam: [0.5, 0.33, 0.2], wfloor: [0.62, 0.48, 0.36], roof: [0.3, 0.33, 0.42],      // 木造の家（茶色の板壁・こげ茶の柱・紺の瓦）
     block: [0.86, 0.84, 0.76], tin: [0.62, 0.72, 0.8], steelc: [0.5, 0.55, 0.6], tinroof: [0.66, 0.36, 0.3],     // ブロック塀・トタンの倉庫（水色の壁・赤さびの屋根）
-    prefab: [0.95, 0.92, 0.75] };                                                                              // プレハブ小屋（クリーム色）
+    prefab: [0.95, 0.92, 0.75],
+    twr_r: [0.86, 0.22, 0.16], twr_w: [0.95, 0.95, 0.93], fire: [0.8, 0.13, 0.1], firew: [0.96, 0.95, 0.92],      // 鉄塔（赤白）・消防署（赤と白）
+    seat: [0.2, 0.42, 0.85], seat2: [0.95, 0.55, 0.15], conc: [0.8, 0.79, 0.77], brick: [0.66, 0.38, 0.27] };   // 球場の席（青・橙）・コンクリ・煙突のれんが                                                                              // プレハブ小屋（クリーム色）
   const FACE = [
     { n: [1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] }, { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
     { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] }, { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
@@ -514,14 +588,42 @@ const G = window.G = {};   // 確かめ用の口
     const h = CELL / 2; m.setPivotPoint(new B.Vector3((x0 + x1) / 2, y0 - h, (z0 + z1) / 2));
     const kind = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0][0];
     if (!G.fixedDt) hitStop = 0.16;   // 沈み始めの一瞬のため（10-24 改善ループ 軸5）
-    sinks.push({ m, v: 0, d: 0, y0: y0 - h, H: y1 - y0 + CELL, x0: x0 - h, x1: x1 + h, z0: z0 - h, z1: z1 + h, total: Math.min(150, Math.max(6, Math.round(list.length / 90))), made: 0,
-      tx: (Math.random() - 0.5) * 0.14, tz: (Math.random() - 0.5) * 0.14, snd: 0, dT: 0, kind });
+    const top = !!(list[0].b && list[0].b.topple), cxw = (x0 + x1) / 2, czw = (z0 + z1) / 2;
+    let fdx = cxw - ex.pos.x, fdz = czw - ex.pos.z; const fl0 = Math.hypot(fdx, fdz) || 1; fdx /= fl0; fdz /= fl0;   // 倒れる向き: ショベルから見て向こうへ
+    sinks.push({ m, v: 0, d: 0, y0: y0 - h, H: y1 - y0 + CELL, x0: x0 - h, x1: x1 + h, z0: z0 - h, z1: z1 + h, total: Math.min(150, Math.max(6, Math.round(list.length / (top ? 40 : 90)))), made: 0,
+      tx: (Math.random() - 0.5) * 0.14, tz: (Math.random() - 0.5) * 0.14, snd: 0, dT: 0, kind, top, ang: 0, av: 0, fdx, fdz, cr: 0, cx: cxw, cz: czw });
     crash(1); shake(1); flash(0.6, true); if (fp.parent === seat) fp.fov += 0.12; cloudAt({ x0, x1, z0, z1 }, list.length > 4000 ? 70 : 25); playS("boom", 0.6, 0.7, 0.35); playS("glass", 0.55, 0.9, 0.15); playS("glass", 0.45, 1.1, 0.3);   // 沈み始めに足元から雲を一気に吹き出す
     for (const k of [0.3, 0.6, 0.9, 1.2]) setTimeout(() => { shake(0.35); playS(k < 0.7 ? "impact" : "rubble_dump", 0.25, 0.8 + Math.random() * 0.2); }, k * 1000);   // 揺れの余韻
-    popup(list.length > 4000 ? "ドドドドド…!! たおれる！" : "ガラガラガラ…！", "big");
+    popup(top ? "たおれるぞー！" : list.length > 4000 ? "ドドドドド…!! たおれる！" : "ガラガラガラ…！", "big");
+  }
+  // 倒れる物（鉄塔・煙突・照明塔・火の見の塔）: 根元を軸にだんだん速く傾き、地面に着いたら一気に崩れる
+  function updateTopple(q, i, dt) {
+    if (!q.landed) {
+      q.av += dt * (0.35 + q.ang * 2.6); q.ang = Math.min(1.5, q.ang + q.av * dt);
+      q.m.rotation.x = q.ang * q.fdz; q.m.rotation.z = -q.ang * q.fdx;
+      if ((q.cr -= dt) <= 0) { q.cr = 0.4; playS("bolt_impact", 0.2, 0.6 + q.ang * 0.2); shake(0.1 + q.ang * 0.1); }   // ギギギ（傾くほど高く）
+      if (q.ang < 1.5) return;
+      q.landed = true; q.t = 0;
+      const col = KIND_COL[q.kind], L = q.H;
+      if (!G.fixedDt) hitStop = 0.14;
+      crash(1); shake(1); flash(0.55, true); playS("boom", 0.7, 0.75); playS("impact", 0.6, 0.7, 0.05); playS("rubble_dump", 0.6, 0.9, 0.2);
+      popup("ズドーン!!", "big");
+      for (let k = 0; k < q.total; k++) {
+        const t = Math.random(), side = (Math.random() - 0.5) * 3;
+        const p = new B.Vector3(q.cx + q.fdx * t * L - q.fdz * side, 0.6 + Math.random() * 1.2, q.cz + q.fdz * t * L + q.fdx * side);
+        spawnDebris(p, new B.Vector3(0.7 + Math.random() * 0.6, 0.45 + Math.random() * 0.4, 0.7 + Math.random() * 0.6), col, new B.Vector3((Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3));
+      }
+      for (let k = 0; k <= 6; k++) { const t = k / 6, dp = new B.Vector3(q.cx + q.fdx * t * L, 0.6, q.cz + q.fdz * t * L); setTimeout(() => dust(dp, 34), k * 60); }
+      const ex0 = Math.min(q.cx, q.cx + q.fdx * L), ex1 = Math.max(q.cx, q.cx + q.fdx * L), ez0 = Math.min(q.cz, q.cz + q.fdz * L), ez1 = Math.max(q.cz, q.cz + q.fdz * L);
+      cloudAt({ x0: ex0 - 2, x1: ex1 + 2, z0: ez0 - 2, z1: ez1 + 2 }, 50);
+      return;
+    }
+    q.t += dt; q.m.position.y = -q.t * 1.6;   // 倒れた後は地面へ沈めて消す（がれきは上に出してある）
+    if (q.t > 1.2) { q.m.dispose(); sinks.splice(i, 1); }
   }
   function updateSinks(dt) {
     for (let i = sinks.length - 1; i >= 0; i--) {
+      if (sinks[i].top) { updateTopple(sinks[i], i, dt); continue; }
       const q = sinks[i], air = q.y0 - q.d > 0.5;           // 浮いた塊はまず落ちる
       q.v = Math.min(q.v + dt * (air ? 9.8 : 4), air ? 20 : 9); q.d += q.v * dt;
       q.m.position.y = -q.d;
@@ -1365,6 +1467,7 @@ const G = window.G = {};   // 確かめ用の口
     if (bld.cells.size === 0) return "🪣 がれきを すくって ダンプへ（あと " + Math.max(0, STAGES[stage].trucks - truck.sent) + "だい）";
     if (sd >= 12) return "🪣 がれきを すくおう（右レバーを ←）";
     if (STAGES[stage].free) return "🏙 すきな たてものを こわそう！ ダンプにも つめるよ";
+    if (STAGES[stage].goal) return sinks.some(q => q.top) ? "🗼 たおれる！ はなれて みよう" : STAGES[stage].goal;
     if (STAGES[stage].sky) return sinks.length ? "🏢 たおれる！ はなれて みよう" : "🏢 1かいの かべを けずると…？";
     return STAGES[stage].town ? "🏠 バケットを いえに ぶつけて こわそう！" : "🏢 バケットを ビルに ぶつけて こわそう！";
   }
@@ -1414,21 +1517,22 @@ const G = window.G = {};   // 確かめ用の口
   }
   function showStages(title, canClose) {
     const el = $("stages"); el.innerHTML = "";
-    const h = document.createElement("div"); h.className = "stTitle"; h.textContent = title; el.appendChild(h);
     const cols = document.createElement("div"); cols.className = "stCols"; el.appendChild(cols);
     for (const [kind, head, list, got] of [["d", "🚜 ショベルで こわす", STAGES, prog.stars], ["b", "🏗 クレーンで たてる", BSTAGES, prog.build || []]]) {
       const col = document.createElement("div"); col.className = "stCol " + kind; cols.appendChild(col);   // こわす＝オレンジ・たてる＝青
-      const hh = document.createElement("div"); hh.className = "stHead"; hh.textContent = head; col.appendChild(hh);
+      const hh = document.createElement("div"); hh.className = "stHead"; hh.textContent = head.split(" ")[0]; col.appendChild(hh);   // 字は使わず 🚜 / 🏗 だけ（10-25 本人「文字はいらん」）
+      const grid = document.createElement("div"); grid.className = "stGrid"; col.appendChild(grid);
       list.forEach((st, i) => {
         const now = (kind === "b") === (mode === "build") && i === (kind === "b" ? bstage : stage) && canClose;
         const b = document.createElement("button"); b.className = "btn stBtn" + (now ? " now" : "");
-        const g = got[i] || 0; b.innerHTML = `<i class="stNo">${i + 1}</i>${st.name}<span class="stStars">${st.free ? "♾" : "<em>" + "★".repeat(g) + "</em>" + "★".repeat(3 - g)}</span>`; if (g) b.classList.add("clear"); else if (!st.free && !col.querySelector(".next")) b.classList.add("next");   // 番号の丸・金の★（取れていない★は薄く）
-        const sub = document.createElement("small"); sub.textContent = kind === "d" ? (st.free ? "じゆうに こわす" : `ダンプ ${st.trucks}だい`) : (st.sites ? "3か所に たてる" : st.unit ? "わくを つむ・かぜ つよい" : `${st.floors}かいだて`); b.appendChild(sub);
+        // 絵のカード: 壊す物・建てる物の絵（tools/thumbs.js で撮った物）＋金の★だけ。名前は読み上げ用に aria-label へ
+        const g = got[i] || 0; b.style.setProperty("--img", `url(assets/thumbs/${kind}${i}.jpg)`); b.setAttribute("aria-label", st.name);
+        b.innerHTML = `<span class="stStars">${st.free ? "♾" : "<em>" + "★".repeat(g) + "</em>" + "★".repeat(3 - g)}</span>`; if (g) b.classList.add("clear"); else if (!st.free && !grid.querySelector(".next")) b.classList.add("next");
         b.onclick = () => { wakeAudio(); goStage(kind, i); };
-        col.appendChild(b);
+        grid.appendChild(b);
       });
     }
-    if (canClose) { const c = document.createElement("button"); c.className = "btn stClose"; c.textContent = "◀ もどる"; c.onclick = () => { el.style.display = "none"; $("goal").style.display = ""; }; el.appendChild(c); }
+    if (canClose) { const c = document.createElement("button"); c.className = "btn stClose"; c.textContent = "◀"; c.onclick = () => { el.style.display = "none"; $("goal").style.display = ""; }; el.appendChild(c); }
     el.style.display = ""; $("goal").style.display = "none";
   }
   $("bStage").onclick = () => { wakeAudio(); if ($("stages").style.display === "none") showStages("ステージを えらぼう", true); else $("stages").style.display = "none"; };
@@ -2298,7 +2402,7 @@ const G = window.G = {};   // 確かめ用の口
         if (_v.lengthSquared() > 0.04) { awake++; d.rest = 0; }
         else if (free && !d.held && (d.rest = (d.rest || 0) + 0.25) > 18 && B.Vector3.DistanceSquared(d.m.position, tpos) > 49) { debris.splice(i, 1); fadeOut(d); }
       }
-      if (STAGES[stage].wide && mode !== "build") {   // 影の範囲をショベル（歩いている時は人）の辺りへ（16m ごとに動かす）
+      if ((STAGES[stage].wide || STAGES[stage].big) && mode !== "build") {   // 影の範囲をショベル（歩いている時は人）の辺りへ（16m ごとに動かす）
         const at = ride ? ex.pos : wk.pos, cx = Math.round(at.x / 16) * 16, cz = Math.round(at.z / 16) * 16 + 8;
         if (cx !== sunC.x || cz !== sunC.z) { sunC.set(cx, 0, cz); sun.position = sunC.subtract(sun.direction.scale(SUN_D)); }
       }
@@ -2524,7 +2628,13 @@ const G = window.G = {};   // 確かめ用の口
   });
 
   // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
-  Object.assign(G, { flash, carveAt, blds, sinks, chunks, planFloor, nextPiece, SC, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  // 絵を撮る用: 全部の階の部材をその場に置いた「完成の姿」を出す（ステージ選びの絵を作る tools/thumbs.js から使う）
+  function previewBuilt() {
+    const BS = BSTAGES[bstage], sites = BS.sites || [[SC.x, SC.z]], out = [];
+    for (const [sx, sz] of sites) { SC.x = sx; SC.z = sz; for (let f = 0; f < BS.floors; f++) for (const p of planFloor(f)) { const m = pieceMesh(p, "pv"); m.position.copyFrom(p.pos); if (p.q) m.rotationQuaternion = p.q.clone(); out.push(m); } }
+    SC.x = sites[0][0]; SC.z = sites[0][1]; return out;
+  }
+  Object.assign(G, { flash, carveAt, previewBuilt, blds, sinks, chunks, planFloor, nextPiece, SC, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; scene.useConstantAnimationDeltaTime = true;   /* 粒（土けむり）も 1/60 秒ずつ進める */ plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
