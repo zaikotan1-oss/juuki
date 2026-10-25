@@ -2195,7 +2195,8 @@ const G = window.G = {};   // 確かめ用の口
   function frameCommon(dt) {
     // カメラ
     trauma = Math.max(0, trauma - dt * 1.6); const tr = trauma * trauma;
-    fp.position.set((Math.random() - 0.5) * tr * 0.22, (Math.random() - 0.5) * tr * 0.22, 0);
+    const sx = fp.parent === seat ? -0.15 : 0, sy = 0;   // ショベルの運転席は少し左から見る（上げると屋根の梁が大きく入った）（右のブームが画面の 3 分の 1 を覆った・10-25 改善ループ）
+    fp.position.set(sx + (Math.random() - 0.5) * tr * 0.22, sy + (Math.random() - 0.5) * tr * 0.22, 0);
     fp.rotation.set(look.pitch + (Math.random() - 0.5) * tr * 0.03, look.yaw + (Math.random() - 0.5) * tr * 0.03, (Math.random() - 0.5) * tr * 0.05);
     if (mode !== "build") { updateCombo(dt); playT += dt; }
     if (sinks.length) updateSinks(dt);
