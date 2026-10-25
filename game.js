@@ -358,8 +358,16 @@ const G = window.G = {};   // 確かめ用の口
   function pushWedge(r, pos, nor, uv, col, idx) {
     const k = KIND_COL[r.kind], C = (y) => new B.Vector3(r.c.x, y, r.c.z), A = (t, y) => new B.Vector3(r.c.x + Math.cos(t) * r.rad, y, r.c.z + Math.sin(t) * r.rad);
     const tri = (ps, n) => { const b0 = pos.length / 3; for (const q of ps) { pos.push(q.x, q.y, q.z); nor.push(n.x, n.y, n.z); uv.push(q.x / TEXM, q.z / TEXM); col.push(k[0], k[1], k[2], 1); } if (ps.length === 3) idx.push(b0, b0 + 1, b0 + 2); else idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3); };
-    tri([C(r.y1), A(r.t0, r.y1), A(r.t1, r.y1)], B.Axis.Y); tri([C(r.y0), A(r.t0, r.y0), A(r.t1, r.y0)], B.Axis.Y.negate());
-    const tm = (r.t0 + r.t1) / 2; tri([A(r.t0, r.y0), A(r.t1, r.y0), A(r.t1, r.y1), A(r.t0, r.y1)], new B.Vector3(Math.cos(tm), 0, Math.sin(tm)));
+    const tm = (r.t0 + r.t1) / 2, out = new B.Vector3(Math.cos(tm), 0, Math.sin(tm));
+    if (!r.r0) {
+      tri([C(r.y1), A(r.t0, r.y1), A(r.t1, r.y1)], B.Axis.Y); tri([C(r.y0), A(r.t0, r.y0), A(r.t1, r.y0)], B.Axis.Y.negate());
+      tri([A(r.t0, r.y0), A(r.t1, r.y0), A(r.t1, r.y1), A(r.t0, r.y1)], out); return;
+    }
+    // 内側の半径 r0 がある時は、扇の帯（スタンドの段・壁）: 上・下・外・内・両端
+    const I = (t, y) => new B.Vector3(r.c.x + Math.cos(t) * r.r0, y, r.c.z + Math.sin(t) * r.r0);
+    tri([I(r.t0, r.y1), A(r.t0, r.y1), A(r.t1, r.y1), I(r.t1, r.y1)], B.Axis.Y); tri([I(r.t0, r.y0), A(r.t0, r.y0), A(r.t1, r.y0), I(r.t1, r.y0)], B.Axis.Y.negate());
+    tri([A(r.t0, r.y0), A(r.t1, r.y0), A(r.t1, r.y1), A(r.t0, r.y1)], out); tri([I(r.t0, r.y0), I(r.t1, r.y0), I(r.t1, r.y1), I(r.t0, r.y1)], out.negate());
+    for (const t of [r.t0, r.t1]) tri([I(t, r.y0), A(t, r.y0), A(t, r.y1), I(t, r.y1)], new B.Vector3(-Math.sin(t), 0, Math.cos(t)));
   }
   function rebuildRods() {
     rodDirty = false;
@@ -433,17 +441,24 @@ const G = window.G = {};   // 確かめ用の口
   }
   // 球場: ホームの後ろを囲む階段のスタンド（8 つに分かれる）＋照明塔 4 本（倒れる）
   function buildStadium() {
-    const Hx = 0, Hz = 28, R0 = 9, D = 9, A = 110 * Math.PI / 180, NSEG = 8;
-    const segs = [];
+    const Hx = 0, Hz = 28, R0 = 9, D = 9, A = 110 * Math.PI / 180, NSEG = 8, NSL = 48;
+    const segs = [], pcs = new Map(), cw = new B.Vector3(Hx, 0, Hz), Y = v => bld.origin.y + v * CELL;
     for (let i = 0; i < NSEG; i++) { newB(1, false); segs.push(curB); }
+    // 見た目は扇の帯（段 1 つ×角度 5 度ずつ）。th はホームから見て +z が 0・+x が正。扇の角度 t = 90 度 − th
+    const piece = (zone, sl, r0, r1, y0, y1, kind) => {
+      const id = zone + "," + sl; if (pcs.has(id)) return pcs.get(id);
+      const th0 = -A + sl * 2 * A / NSL, th1 = th0 + 2 * A / NSL;
+      const r = newRod({ wedge: true, c: cw, r0, rad: r1, t0: Math.PI / 2 - th1, t1: Math.PI / 2 - th0, y0: Y(y0), y1: Y(y1), kind }); pcs.set(id, r); return r;
+    };
     for (let x = gx(Hx - R0 - D - 1); x <= gx(Hx + R0 + D + 1); x++) for (let z = gz(Hz - 6); z <= gz(Hz + R0 + D + 1); z++) {
       const p = cellWorld(x, 0, z), dx = p.x - Hx, dz = p.z - Hz, r = Math.hypot(dx, dz), th = Math.atan2(dx, dz);
       if (Math.abs(th) > A || r < R0 - 0.5 || r > R0 + D + 0.5) continue;
       const seg = Math.min(NSEG - 1, Math.floor((th + A) / (2 * A) * NSEG)); curB = segs[seg];
-      if (r < R0) { addCell(x, 0, z, "conc"); addCell(x, 1, z, "conc"); continue; }             // 前の低い壁
-      if (r > R0 + D) { for (let y = 0; y < 13; y++) addCell(x, y, z, "conc"); continue; }     // うしろの高い壁
-      const st = Math.floor(r - R0), y = st + 1, kind = seg % 2 ? "seat2" : "seat";
-      addCell(x, y, z, kind); addCell(x, y - 1, z, "conc");
+      const sl = Math.min(NSL - 1, Math.floor((th + A) / (2 * A) * NSL));
+      if (r < R0) { const pc = piece("f", sl, R0 - 0.7, R0, 0, 2, "conc"); rodCell(pc, x, 0, z, "conc"); rodCell(pc, x, 1, z, "conc"); continue; }             // 前の低い壁
+      if (r > R0 + D) { const pc = piece("b", sl, R0 + D, R0 + D + 0.7, 0, 13, "conc"); for (let y = 0; y < 13; y++) rodCell(pc, x, y, z, "conc"); continue; }     // うしろの高い壁
+      const st = Math.floor(r - R0), y = st + 1, kind = seg % 2 ? "seat2" : "seat", pc = piece("s" + st, sl, R0 + st, R0 + st + 1, st, st + 2, kind);
+      rodCell(pc, x, y, z, kind); rodCell(pc, x, y - 1, z, "conc");
       if (st % 3 === 2 && Math.round(th * 12) % 3 === 0) for (let yy = 0; yy < y - 1; yy++) addCell(x, yy, z, "conc");   // 下の柱
     }
     for (const [wx, wz] of [[-20, 16], [20, 16], [-13, 44], [13, 44]]) {   // 照明塔: 1m 角の柱 26m＋上にライトの箱
