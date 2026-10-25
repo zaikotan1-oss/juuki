@@ -188,7 +188,12 @@ const G = window.G = {};   // 確かめ用の口
     { floors: 2, name: "てっとう", trucks: 4, star3: 240, star2: 400, kind: "pylon", look: 0, goal: "🗼 あしを けずると たおれる！" },
     { floors: 2, name: "しょうぼうしょ", trucks: 8, star3: 420, star2: 700, kind: "fire", look: 3, goal: "🚒 しょうぼうしょを こわそう！ うしろの とうは 根元を けずると たおれる" },
     { floors: 2, name: "やきゅうじょう", trucks: 10, star3: 600, star2: 1000, kind: "stadium", look: 2, big: true, goal: "⚾ スタンドと しょうめいとうを こわそう！" },
-    { floors: 2, name: "こうじょうの えんとつ", trucks: 6, star3: 360, star2: 600, kind: "chimney", look: 1, goal: "🏭 えんとつの 根元を けずると たおれる！" }];
+    { floors: 2, name: "こうじょうの えんとつ", trucks: 6, star3: 360, star2: 600, kind: "chimney", look: 1, goal: "🏭 えんとつの 根元を けずると たおれる！" },
+    // 10-25 本人「壊すステージをさらに足す」。★の時間は推測
+    { floors: 2, name: "かんらんしゃ", trucks: 5, star3: 300, star2: 500, kind: "wheel", look: 3, goal: "🎡 あしを けずると たおれる！" },
+    { floors: 2, name: "きゅうすいとう", trucks: 5, star3: 240, star2: 420, kind: "wtower", look: 0, goal: "💧 あしを けずると たおれる！" },
+    { floors: 2, name: "ガソリンスタンド", trucks: 6, star3: 300, star2: 540, kind: "gas", look: 2, goal: "⛽ はしらを けずると やねが おちる！" },
+    { floors: 2, name: "はし", trucks: 6, star3: 300, star2: 540, kind: "bridge", look: 1, goal: "🌉 はしの あしを けずると おちる！" }];
   const BLD = { biru: "じゅうきビル", mansion: "じゅうきマンション", tower: "じゅうきタワー", house: "あたらしい おうち" };
   // クレーンで建てるステージ（10-16 本人「ショベルとクレーンを完全に分ける」）。look は空気（LOOKS の番号）
   const BSTAGES = [
@@ -388,6 +393,68 @@ const G = window.G = {};   // 確かめ用の口
     }
     addHouse(gx(-17), gz(14), 18, 14, 1, 9, TIN);
   }
+  // 観覧車: 半径 13m の輪 2 枚＋スポーク 12 本＋ゴンドラ 12 個、A 字の脚 4 本。脚を削ると倒れる
+  function buildWheel(wx, wz) {
+    const cx = gx(wx), cz = gz(wz), hy = 36, R0 = 26, T = Math.PI * 2, fr = () => "twr_w";
+    newB(6, true); curB.topple = true; curB.sinkR = 0.55;
+    for (const dz of [0, 4]) {
+      for (let a = 0; a < 96; a++) { const t1 = a / 96 * T, t2 = (a + 1) / 96 * T; lineCells([cx + R0 * Math.cos(t1), hy + R0 * Math.sin(t1), cz + dz], [cx + R0 * Math.cos(t2), hy + R0 * Math.sin(t2), cz + dz], fr); }
+      for (let k = 0; k < 12; k++) { const t = k / 12 * T; lineCells([cx, hy, cz + dz], [cx + R0 * Math.cos(t), hy + R0 * Math.sin(t), cz + dz], fr); }
+    }
+    for (let z = -3; z <= 7; z++) for (let a = 0; a < 2; a++) for (let b2 = 0; b2 < 2; b2++) addCell(cx + a, hy + b2, cz + z, "steelc");   // 軸
+    for (const zz of [cz - 3, cz + 6]) for (const sx of [-1, 1]) lineCells([cx + sx * 14, 0, zz], [cx, hy, zz], () => "fire", 2);
+    for (let k = 0; k < 12; k++) {   // ゴンドラ: 輪と輪の間の棒から 1 マス吊るす
+      const t = (k + 0.5) / 12 * T, px = Math.round(cx + R0 * Math.cos(t)), py = Math.round(hy + R0 * Math.sin(t));
+      lineCells([px, py, cz], [px, py, cz + 4], fr); addCell(px, py - 1, cz + 2, "steelc");
+      const col = ["g1", "g2", "g3", "g4"][k % 4];
+      for (let x = -1; x <= 1; x++) for (let y = py - 4; y <= py - 2; y++) for (let z = cz + 1; z <= cz + 3; z++) addCell(px + x, y, z, col);
+    }
+  }
+  // 給水塔: 開いた脚 4 本（筋交い付き）の上に 24m の高さで丸いタンク。脚を削ると倒れる
+  function buildWaterTower(wx, wz) {
+    const cx = gx(wx), cz = gz(wz), Hl = 48, w = y => 10 - 3 * y / Hl, kf = () => "steelc";
+    newB(6, true); curB.topple = true; curB.sinkR = 0.55;
+    const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]], P = (i, y) => [cx + C[i][0] * w(y), y, cz + C[i][1] * w(y)];
+    for (let i = 0; i < 4; i++) lineCells(P(i, 0), P(i, Hl), kf, 2);
+    for (let y = 0; y < Hl; y += 12) for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; lineCells(P(i, y + 12), P(j, y + 12), kf); lineCells(P(i, y), P(j, y + 12), kf); lineCells(P(j, y), P(i, y + 12), kf); }
+    const RT = 11;
+    for (let y = Hl; y < Hl + 22; y++) {
+      const rr = y < Hl + 14 ? RT : RT * (1 - (y - Hl - 14) / 8), kind = y >= Hl + 6 && y < Hl + 8 ? "twr_r" : "tank";
+      for (let x = -RT - 1; x <= RT + 1; x++) for (let z = -RT - 1; z <= RT + 1; z++) {
+        const r = Math.hypot(x + 0.5, z + 0.5);
+        if (r <= rr && (y === Hl || y >= Hl + 13 || r > rr - 1.2)) addCell(cx + x, y, cz + z, kind);   // 底と屋根は中まで、胴は殻だけ
+      }
+    }
+  }
+  // ガソリンスタンド: 柱 4 本の大きな屋根（柱を削ると屋根が落ちて崩れる）＋給油機＋奥の売店＋値段の看板（倒れる）
+  function buildGas() {
+    const X0 = gx(-8), X1 = gx(8), Z0 = gz(13), Z1 = gz(21);
+    newB(1, false);
+    for (let x = X0; x < X1; x++) for (let z = Z0; z < Z1; z++) {
+      const edge = x === X0 || x === X1 - 1 || z === Z0 || z === Z1 - 1;
+      addCell(x, 12, z, edge ? "fire" : "twr_w");
+      if (edge) { addCell(x, 11, z, "fire"); addCell(x, 10, z, "twr_w"); }
+    }
+    for (const [px, pz] of [[-5, 15], [5, 15], [-5, 19], [5, 19]]) for (let y = 0; y < 12; y++) for (let a = 0; a < 2; a++) for (let b2 = 0; b2 < 2; b2++) addCell(gx(px) + a, y, gz(pz) + b2, "conc");
+    for (const [px, pz] of [[-2.5, 15], [2.5, 15], [-2.5, 19], [2.5, 19]]) { newB(1, false); for (let y = 0; y < 4; y++) for (let a = 0; a < 2; a++) addCell(gx(px) + a, y, gz(pz), y === 3 ? "twr_w" : "fire"); }
+    addHouse(gx(-7), gz(25), 28, 10, 1, 8, { wall: "twr_w", pillar: "fire", slab: "twr_w", roof: "parapet", winRows: [2, 3, 4, 5], door: [12, 15, 6] });
+    newB(6, true); curB.topple = true;
+    const sx = gx(11), sz = gz(13);
+    for (let y = 0; y < 24; y++) for (let a = 0; a < 2; a++) for (let b2 = 0; b2 < 2; b2++) addCell(sx + a, y, sz + b2, "steelc");
+    for (let y = 24; y < 34; y++) for (let x = -3; x < 5; x++) for (let z = 0; z < 2; z++) addCell(sx + x, y, sz + z, y === 24 || y === 33 || x === -3 || x === 4 ? "twr_w" : "fire");
+  }
+  // 橋: 青い桁の 3 径間。真ん中の径間は 2 本の橋脚に載っていて、片方を削ると落ちる（sinkR 0.6）。両端は岸の壁につながる
+  function buildBridge() {
+    const Z0 = gz(19), Z1 = gz(25), XA = gx(-22), XB = gx(22), P1 = gx(-8), P2 = gx(8);
+    const deck = (x0, x1) => { for (let x = x0; x < x1; x++) for (let z = Z0; z < Z1; z++) {
+      addCell(x, 12, z, "conc"); addCell(x, 13, z, "conc");
+      if (z === Z0 || z === Z1 - 1) { addCell(x, 10, z, "brg"); addCell(x, 11, z, "brg"); addCell(x, 14, z, "twr_w"); if (x % 3 === 0) addCell(x, 15, z, "twr_w"); }
+    } };
+    newB(1, false); deck(XA, P1 - 2); for (let x = XA; x < XA + 2; x++) for (let y = 0; y < 12; y++) for (let z = Z0; z < Z1; z++) addCell(x, y, z, "conc");
+    newB(1, false); deck(P2 + 2, XB); for (let x = XB - 2; x < XB; x++) for (let y = 0; y < 12; y++) for (let z = Z0; z < Z1; z++) addCell(x, y, z, "conc");
+    newB(6, true); curB.sinkR = 0.6; deck(P1 - 2, P2 + 2);
+    for (const px of [P1, P2]) for (let x = px - 2; x < px + 2; x++) for (let y = 0; y < 10; y++) for (let z = Z0 + 1; z < Z1 - 1; z++) addCell(x, y, z, "conc");
+  }
   function buildBuilding() {
     for (const ch of chunks.values()) { if (ch.body) { ch.body.dispose(); ch.shape.dispose(); } ch.mesh.dispose(); }
     chunks.clear(); chunkGen++; bld.cells.clear(); winSet.clear(); blds.length = 0; dirtyB.clear(); curB = null;
@@ -399,6 +466,10 @@ const G = window.G = {};   // 確かめ用の口
     else if (S.kind === "fire") buildFire();
     else if (S.kind === "stadium") buildStadium();
     else if (S.kind === "chimney") buildChimney(0, 21);
+    else if (S.kind === "wheel") buildWheel(0, 20);
+    else if (S.kind === "wtower") buildWaterTower(0, 19);
+    else if (S.kind === "gas") buildGas();
+    else if (S.kind === "bridge") buildBridge();
     else addHouse(0, 0, BW / CELL, BD / CELL, FLOORS, FH / CELL);     // 真ん中のビル 16 × 12、1 階 6 段
     if (S.town) {
       // まち: 右に木造の家（2 階・切妻屋根）とブロック塀、左にトタンの倉庫、右奥にプレハブ小屋（格子 0.5m。ビルの左手前の角 = 世界の x -4, z 14）
@@ -415,7 +486,7 @@ const G = window.G = {};   // 確かめ用の口
     Object.assign(AREA, S.wide ? { x0: -66, x1: 66, z0: -58, z1: 74 } : S.big ? { x0: -34, x1: 34, z0: -16, z1: 52 } : { x0: -23.4, x1: 23.4, z0: -13.4, z1: 41.4 });
     for (const h of hoards) h.setEnabled(!S.wide && !S.big);
     // 影: 30 階は太陽を遠くへ（近いと上の階の影が切れる）。まちは影の範囲がショベルについていく
-    SUN_D = S.sky || S.kind === "pylon" || S.kind === "chimney" ? 240 : 110; sun.shadowMaxZ = SUN_D + 130; sunC.set(0, 0, 15); sun.position = sunC.subtract(sun.direction.scale(SUN_D));
+    SUN_D = S.sky || ["pylon", "chimney", "wheel", "wtower"].includes(S.kind) ? 240 : 110; sun.shadowMaxZ = SUN_D + 130; sunC.set(0, 0, 15); sun.position = sunC.subtract(sun.direction.scale(SUN_D));
     bld.total = bld.cells.size;
     bld.orig = new Set(bld.cells.keys());
     rebuildCellMesh();
@@ -425,7 +496,8 @@ const G = window.G = {};   // 確かめ用の口
     block: [0.86, 0.84, 0.76], tin: [0.62, 0.72, 0.8], steelc: [0.5, 0.55, 0.6], tinroof: [0.66, 0.36, 0.3],     // ブロック塀・トタンの倉庫（水色の壁・赤さびの屋根）
     prefab: [0.95, 0.92, 0.75],
     twr_r: [0.86, 0.22, 0.16], twr_w: [0.95, 0.95, 0.93], fire: [0.8, 0.13, 0.1], firew: [0.96, 0.95, 0.92],      // 鉄塔（赤白）・消防署（赤と白）
-    seat: [0.2, 0.42, 0.85], seat2: [0.95, 0.55, 0.15], conc: [0.8, 0.79, 0.77], brick: [0.66, 0.38, 0.27] };   // 球場の席（青・橙）・コンクリ・煙突のれんが                                                                              // プレハブ小屋（クリーム色）
+    seat: [0.2, 0.42, 0.85], seat2: [0.95, 0.55, 0.15], conc: [0.8, 0.79, 0.77], brick: [0.66, 0.38, 0.27],
+    g1: [0.95, 0.42, 0.6], g2: [0.98, 0.82, 0.22], g3: [0.36, 0.8, 0.42], g4: [0.3, 0.74, 0.95], tank: [0.64, 0.79, 0.87], brg: [0.22, 0.45, 0.76] };   // 観覧車のゴンドラ 4 色・給水塔のタンク・橋の桁   // 球場の席（青・橙）・コンクリ・煙突のれんが                                                                              // プレハブ小屋（クリーム色）
   const FACE = [
     { n: [1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] }, { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
     { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] }, { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
@@ -2363,7 +2435,7 @@ const G = window.G = {};   // 確かめ用の口
       // 大きな建物: 1 階の壁が 45% より減ったら丸ごと沈む。75% で「ぐらぐら」の合図
       for (const b of [...dirtyB]) if (b.sink && b.cells.size) {
         const r = b.baseN / Math.max(1, b.base0);
-        if (r < 0.45) sinkSet([...b.cells]);
+        if (r < (b.sinkR || 0.45)) sinkSet([...b.cells]);
         else if (r < 0.75 && !b.warned) { b.warned = true; popup("ぐらぐら…！ あと すこし！", "mid"); shake(0.5); }
       }
       const fl = floatingCells();
