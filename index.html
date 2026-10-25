@@ -61,6 +61,98 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 #hint{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(150px + env(safe-area-inset-bottom));max-width:40vw;text-align:center;color:#fff;font-size:15px;font-weight:bold;background:#0009;padding:7px 12px;border-radius:14px;pointer-events:none}
 #msg .lbar{width:260px;height:10px;background:#fff3;border-radius:5px;margin:10px auto 6px;overflow:hidden}#msg .lbar i{display:block;height:100%;background:#7cd67c}#msg small{font-size:14px;opacity:.85}
 #msg{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);color:#fff;font-size:22px;background:#000a;padding:14px 22px;border-radius:14px;text-align:center;white-space:pre-line}
+
+/* ===== 売り物のスマホゲーム風の見た目（10-25 改善ループ 2）。大きさは今のまま、形・色・縁・動きだけ ===== */
+:root{--ink:#16263a;--panel:linear-gradient(#2c4566f0,#162a42f0);--edge:#ffffff66}
+.btn{background:linear-gradient(#ffffff,#dfe8f3);color:#1d3557;border:2px solid #fff;box-shadow:0 3px 0 #8aa0b8,0 5px 8px #0005,inset 0 -2px 0 #0001;text-shadow:0 1px 0 #fff}
+.btn:active{transform:translateY(2px);box-shadow:0 1px 0 #8aa0b8,0 2px 4px #0004}
+.btn.on{background:linear-gradient(#ffe680,#f5b300);color:#5a3a00;box-shadow:0 3px 0 #a87400,0 5px 8px #0005}
+#btns{gap:5px}
+#btns .btn{font-size:10px;padding:4px 8px 4px 6px;border-radius:999px;background:var(--panel);color:#fff;border:1.5px solid var(--edge);box-shadow:0 2px 0 #0007,0 4px 8px #0004;text-shadow:0 1px 1px #000}
+#btns .btn:active{transform:translateY(2px) scale(.96);box-shadow:0 0 0 #0007}
+#bStage::before{content:"🗺 "} #bView::before{content:"🎥 "} #bShadow::before{content:"🌓 "} #bQuality::before{content:"✨ "} #bReset::before{content:"🔄 "}
+#bStage{background:linear-gradient(#ffb547,#e8790c)!important;border-color:#ffe0a8!important}
+.stick{background:radial-gradient(circle,#ffffff18 0 55%,#ffffff30 56% 60%,#0003 61%);border:2.5px solid #ffffffaa;box-shadow:0 4px 12px #0005,inset 0 0 12px #0004}
+.stick .knob{background:radial-gradient(circle at 35% 30%,#fff,#d6e2ef 60%,#a9bdd3);border:2px solid #fff;box-shadow:0 4px 10px #0007}
+.stick .lab,#hint,#toast,#msg{background:var(--panel);border:1.5px solid var(--edge);box-shadow:0 3px 0 #0006;text-shadow:0 1px 2px #000}
+.stick .lab{font-size:11px;border-radius:9px}
+#hint::before{content:"💡 "}
+.pd{border:2px solid #fff;color:#fff;text-shadow:0 1px 0 #0006,0 0 3px #0005}
+#pFwd{background:linear-gradient(#86e486,#2f9e44);box-shadow:0 5px 0 #1e6b2e,0 7px 10px #0005}
+#pBack{background:linear-gradient(#ff9e80,#e0543a);box-shadow:0 5px 0 #9c3020,0 7px 10px #0005}
+#pLeft,#pRight{background:linear-gradient(#ffffff,#d5e0ec);color:#1d3557;text-shadow:none;box-shadow:0 5px 0 #8aa0b8,0 7px 10px #0005}
+.pd.on{filter:brightness(1.15);transform:translateY(4px)}
+#pFwd.on{box-shadow:0 1px 0 #1e6b2e,0 0 14px #8ce99a} #pBack.on{box-shadow:0 1px 0 #9c3020,0 0 14px #ffb4a0}
+#bRide{font-size:13px;padding:6px 16px;background:var(--panel);color:#fff;border:1.5px solid var(--edge);box-shadow:0 3px 0 #0007;text-shadow:0 1px 1px #000;bottom:calc(112px + env(safe-area-inset-bottom))}
+#bRide::before{content:"🚪 "}
+#bRide.on{background:linear-gradient(#5fc0ff,#1f7fd0)}
+#goal{display:flex;flex-direction:column;gap:2px;background:var(--panel);border:1.5px solid var(--edge);border-radius:12px;padding:5px 8px 6px;box-shadow:0 3px 0 #0006,0 6px 12px #0004}
+#gStage{font-size:10px;color:#9fd0ff;letter-spacing:.5px;padding-right:44px}
+#gText{font-size:11.5px;line-height:1.25;margin:0 0 2px;max-height:2.5em;overflow:hidden;text-shadow:0 1px 1px #000}
+#gScore{position:absolute;right:7px;top:4px;font-size:11px;color:#ffd23f;text-shadow:0 1px 0 #7a4b00}
+.gbar{height:12px;margin-top:0;background:#0006;border:1px solid #ffffff40;border-radius:7px;box-shadow:inset 0 2px 3px #0006}
+.gbar i{border-radius:7px;box-shadow:inset 0 2px 0 #fff6} .gbar span{display:block;font-size:10px;line-height:12px;text-shadow:0 0 3px #000,0 1px 0 #000;white-space:nowrap}   /* 行の中に置くと下にずれて半分切れていた */
+.pop{font-family:inherit;-webkit-text-stroke:1.5px #3a1d00;paint-order:stroke fill;letter-spacing:1px}
+.pop.big{font-size:38px;color:#ffd23f;text-shadow:0 4px 0 #b84a00,0 0 18px #ff8a00aa;animation:popbig 1.5s ease-out forwards}
+@keyframes popbig{0%{opacity:0;transform:translate(-50%,10px) scale(.4) rotate(-6deg)}12%{opacity:1;transform:translate(-50%,0) scale(1.35) rotate(3deg)}24%{transform:translate(-50%,0) scale(1) rotate(0)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-60px) scale(1)}}
+#flash{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 45%,#fffbe8 0,#fff6d0aa 40%,#fff0 75%);opacity:0;z-index:5}
+#combo{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%);pointer-events:none;color:#fff;font-weight:900;font-size:13px;background:var(--panel);border:1.5px solid var(--edge);border-radius:999px;padding:3px 12px;box-shadow:0 3px 0 #0006;text-shadow:0 1px 1px #000}
+#combo b{font-size:20px;color:#ffd23f;margin-right:3px;-webkit-text-stroke:1px #7a3b00;paint-order:stroke fill}
+#combo[data-tier="2"] b{color:#ff9f43} #combo[data-tier="3"]{background:linear-gradient(#ff8a3d,#c2410c);border-color:#ffd8a8} #combo[data-tier="3"] b{color:#fff}
+#combo.bump{animation:cbump .18s ease-out}
+@keyframes cbump{0%{transform:translateX(-50%) scale(1.25)}100%{transform:translateX(-50%) scale(1)}}
+#done{background:linear-gradient(#fff3c4,#ffd56b 55%,#ffb92e);border:3px solid #fff;border-radius:20px;padding:0 22px 14px;box-shadow:0 6px 0 #b56a00,0 14px 30px #0008;min-width:300px}
+#done.show{animation:resPop .5s cubic-bezier(.2,1.5,.4,1)}
+@keyframes resPop{0%{transform:translate(-50%,-50%) scale(.3);opacity:0}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
+#done .rT{font-size:22px;color:#fff;background:linear-gradient(#ff9a4d,#e8590c);margin:-14px -10px 6px;padding:7px 16px;border-radius:14px;border:3px solid #fff;box-shadow:0 4px 0 #9a3a00;text-shadow:0 2px 0 #7a2e00;letter-spacing:1px}
+#rStars{font-size:44px;letter-spacing:4px;line-height:1.1;text-shadow:none}
+#rStars span{display:inline-block;opacity:0;animation:starIn .45s cubic-bezier(.2,1.6,.4,1) forwards}
+#rStars .got{color:#ffd000;-webkit-text-stroke:2px #b85c00;paint-order:stroke fill;filter:drop-shadow(0 3px 0 #9a4a00)}
+#rStars .no{color:#c99a4a66;-webkit-text-stroke:2px #8a5a1a55}
+@keyframes starIn{0%{opacity:0;transform:scale(2.6) rotate(-30deg)}70%{opacity:1;transform:scale(.88) rotate(4deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+#rInfo{color:#5a3a00;font-size:13px}
+#done .btn{font-size:14px;padding:8px 14px}
+#bNext{background:linear-gradient(#86e486,#2f9e44)!important;color:#fff!important;border-color:#fff!important;box-shadow:0 4px 0 #1e6b2e,0 6px 10px #0005!important;text-shadow:0 1px 0 #1e6b2e!important;font-size:16px!important;padding:9px 20px!important}
+#bAgain{background:#0000002a!important;color:#5a3a00!important;border-color:#fff8!important;box-shadow:none!important;text-shadow:none!important;font-size:12px!important}
+#stages{background:var(--panel);border:2px solid var(--edge);border-radius:18px;box-shadow:0 6px 0 #0007,0 16px 36px #0009;animation:resPop .3s cubic-bezier(.2,1.4,.4,1)}
+.stTitle{align-self:center;background:linear-gradient(#ffb547,#e8790c);border:2px solid #fff;border-radius:999px;padding:3px 22px;box-shadow:0 3px 0 #9a4a00;text-shadow:0 2px 0 #7a2e00;margin-top:-2px}
+.stCol{border:2px solid #fff8;box-shadow:inset 0 2px 0 #fff6,0 3px 0 #0004}
+.stCol.d{background:linear-gradient(#ffc45e,#f08c00)} .stCol.b{background:linear-gradient(#7cc4f5,#2f86d0)}
+.stBtn{border:1.5px solid #fff;border-radius:10px;box-shadow:0 3px 0 #0003}
+.stBtn:active{transform:translateY(2px);box-shadow:0 1px 0 #0003}
+.stBtn.now{outline:none;background:#fff7c2!important;box-shadow:0 0 0 3px #ffd23f,0 3px 0 #0003}
+
+/* ---- 第 2 回（10-25） ---- */
+#pLeft,#pRight{background:var(--panel);color:#fff;border:2px solid var(--edge);box-shadow:0 5px 0 #0007,0 7px 10px #0005;text-shadow:0 1px 1px #000}
+#pFwd::before{content:"▲";display:block;font-size:11px;line-height:1;margin-bottom:2px} #pBack::before{content:"▼";display:block;font-size:11px;line-height:1;margin-bottom:2px}
+#pFwd,#pBack{font-weight:900}
+#gText{font-weight:900;font-size:12px}
+.gbar i{background:linear-gradient(#ffe27a,#f0a000)} .gbar.tr i{background:linear-gradient(#a7f3a7,#33b34a)}
+.gbar span{text-shadow:0 0 3px #000,0 1px 0 #000,0 -1px 0 #000}
+#hint{font-size:13px;padding:5px 11px;bottom:calc(160px + env(safe-area-inset-bottom))}
+.stick .lab{white-space:nowrap;font-size:10px;left:-30px;right:-30px}
+#btns .btn:active{filter:brightness(1.25)}
+#done::before{content:"";position:absolute;left:50%;top:20px;width:220px;height:220px;margin-left:-110px;background:radial-gradient(#fff9,#fff0 68%);z-index:-1;pointer-events:none;animation:spinGlow 6s linear infinite}
+@keyframes spinGlow{to{transform:rotate(360deg)}}
+.rScore{display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:2px}
+.rScore small{font-size:12px;color:#7a3b00;font-weight:900}
+.rScore b{font-size:30px;font-weight:900;color:#e8590c;-webkit-text-stroke:1.5px #fff;paint-order:stroke fill;text-shadow:0 3px 0 #9a3a00;line-height:1}
+.rScore em{font-style:normal;font-size:12px;font-weight:900;color:#fff;background:linear-gradient(#ff5e7e,#d6336c);border:1.5px solid #fff;border-radius:999px;padding:2px 8px;box-shadow:0 2px 0 #8a1c43;animation:recPulse .6s ease-in-out infinite alternate}
+@keyframes recPulse{to{transform:scale(1.12)}}
+.rSub{font-size:12px;color:#7a3b00;font-weight:bold;margin-top:2px}
+.rUnlock{display:inline-block;margin-top:5px;background:linear-gradient(#fff,#ffe9a8);border:1.5px solid #fff;border-radius:999px;padding:2px 10px;font-size:11px;font-weight:900;color:#7a3b00;box-shadow:0 2px 0 #c99a3a}
+#banner{position:absolute;left:50%;top:26%;transform:translate(-50%,-50%);pointer-events:none;text-align:center;color:#fff;font-size:22px;font-weight:900;background:linear-gradient(#ffb547,#e8790c);border:3px solid #fff;border-radius:999px;padding:4px 28px 6px;box-shadow:0 4px 0 #9a4a00,0 10px 20px #0006;text-shadow:0 2px 0 #7a2e00;white-space:nowrap}
+#banner small{display:block;font-size:11px;letter-spacing:2px;opacity:.9}
+#banner.show{animation:banIn 1.9s cubic-bezier(.2,1.4,.4,1) forwards}
+@keyframes banIn{0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.1)}25%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-80%) scale(.95)}}
+.stBtn{position:relative;padding-left:32px}
+.stNo{position:absolute;left:7px;top:50%;transform:translateY(-50%);width:19px;height:19px;border-radius:50%;font-style:normal;font-size:11px;line-height:19px;text-align:center;color:#fff;font-weight:900;box-shadow:0 2px 0 #0003}
+.stCol.d .stNo{background:linear-gradient(#ffb547,#e8790c)} .stCol.b .stNo{background:linear-gradient(#5fb3f0,#1f6fc0)}
+.stBtn.clear .stNo{background:linear-gradient(#ffe066,#e0a000)}
+.stStars{margin-left:6px;font-size:11px;letter-spacing:1px;color:#0002}
+.stStars em{font-style:normal;color:#ffc400;-webkit-text-stroke:.6px #b85c00;paint-order:stroke fill}
+.stick .lab:empty,#gText:empty{display:none}
+#stL .lab{left:-12px;right:auto} #stR .lab{right:-12px;left:auto}   /* 1 行にしたら左右の外へはみ出した */
 </style>
 </head>
 <body>
@@ -82,6 +174,9 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 <div class="rBtns"><button class="btn" id="bNext">つぎの ビルへ ▶</button><button class="btn" id="bBuild">クレーンで 建てる ▶</button><button class="btn" id="bAgain">ステージを えらぶ</button></div></div>
 <div id="goal"><div id="gStage"></div><div id="gText">読み込み中…</div><div class="gbar"><i id="gBld"></i><span id="gBldT"></span></div><div class="gbar tr"><i id="gTr"></i><span id="gTrT"></span></div><div id="gScore"></div></div>
 <div id="pops"></div>
+<div id="flash"></div>
+<div id="banner" style="display:none"></div>
+<div id="combo" style="display:none"><b>0</b>こわし</div>
 <div id="stages" style="display:none"></div>
 <div id="toast" style="display:none"></div>
 <div id="hint" style="display:none"></div>
@@ -113,7 +208,7 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "準備中…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=95"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=103"]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();

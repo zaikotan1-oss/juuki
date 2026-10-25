@@ -5,8 +5,7 @@
   const CAP = window.CAP = { out: {} };
   const loadBot = () => new Promise(r => { if (window.BOT) return r(); const s = document.createElement("script"); s.src = "tools/bot.js?" + Date.now(); s.onload = r; document.head.appendChild(s); });
   const cam = (t, r, beta, alpha) => { G.camAt = () => t; G.tp.radius = r; G.tp.beta = beta; G.tp.alpha = alpha; };
-  const toTp = () => { if (document.getElementById("bView").textContent !== "運転席") document.getElementById("bView").click(); };
-  const toFp = () => { if (document.getElementById("bView").textContent === "運転席") document.getElementById("bView").click(); };
+  const toTp = () => G.setView("tp"), toFp = () => G.setView("fp");   // ボタンの字は「今の視点」。字で判断すると逆になっていた（10-25）
   CAP.run = async (sc, round) => {
     G.testMode(); await loadBot(); BOT.scale = 1; G.engine.setHardwareScalingLevel(1);
     const snap = n => BOT.snap(`${round}_${sc}_${n}.jpg`), o = CAP.out[sc] = { t0: BOT.t };

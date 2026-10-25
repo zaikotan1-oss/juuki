@@ -513,10 +513,12 @@ const G = window.G = {};   // 確かめ用の口
     if (pi.length) { const g = new B.Mesh("sinkPane", scene), pv = new B.VertexData(); pv.positions = pp; pv.normals = pn; pv.indices = pi; pv.applyToMesh(g, false); g.material = paneM; g.parent = m; g.isPickable = false; }
     const h = CELL / 2; m.setPivotPoint(new B.Vector3((x0 + x1) / 2, y0 - h, (z0 + z1) / 2));
     const kind = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0][0];
-    if (!G.fixedDt) hitStop = 0.12;   // 沈み始めの一瞬のため（10-24 改善ループ 軸5）
+    if (!G.fixedDt) hitStop = 0.16;   // 沈み始めの一瞬のため（10-24 改善ループ 軸5）
     sinks.push({ m, v: 0, d: 0, y0: y0 - h, H: y1 - y0 + CELL, x0: x0 - h, x1: x1 + h, z0: z0 - h, z1: z1 + h, total: Math.min(150, Math.max(6, Math.round(list.length / 90))), made: 0,
       tx: (Math.random() - 0.5) * 0.14, tz: (Math.random() - 0.5) * 0.14, snd: 0, dT: 0, kind });
-    crash(1); shake(1); popup(list.length > 4000 ? "ドドドドド…!! たおれる！" : "ガラガラガラ…！", "big");
+    crash(1); shake(1); flash(0.6); cloudAt({ x0, x1, z0, z1 }, list.length > 4000 ? 70 : 25); playS("boom", 0.6, 0.7, 0.35); playS("glass", 0.55, 0.9, 0.15); playS("glass", 0.45, 1.1, 0.3);   // 沈み始めに足元から雲を一気に吹き出す
+    for (const k of [0.3, 0.6, 0.9, 1.2]) setTimeout(() => shake(0.35), k * 1000);   // 揺れの余韻
+    popup(list.length > 4000 ? "ドドドドド…!! たおれる！" : "ガラガラガラ…！", "big");
   }
   function updateSinks(dt) {
     for (let i = sinks.length - 1; i >= 0; i--) {
@@ -534,10 +536,10 @@ const G = window.G = {};   // 確かめ用の口
           const out = new B.Vector3(p.x - (q.x0 + q.x1) / 2, 0, p.z - (q.z0 + q.z1) / 2).normalize().scale(1.5 + Math.random() * 2.5);
           spawnDebris(p, new B.Vector3(0.9 + Math.random() * 0.7, 0.55 + Math.random() * 0.5, 0.9 + Math.random() * 0.7), col, out.addInPlaceFromFloats(0, 1.5, 0));
         }
-        if ((q.dT -= dt) <= 0) { q.dT = 0.14; dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.5, q.z0 + Math.random() * (q.z1 - q.z0)), 22); cloudAt(q, q.H > 20 ? 5 : 2); }
+        if ((q.dT -= dt) <= 0) { q.dT = 0.14; dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.5, q.z0 + Math.random() * (q.z1 - q.z0)), 22); cloudAt(q, q.H > 20 ? (LITE ? 6 : 8) : 3); }
         if ((q.snd -= dt) <= 0) { q.snd = 0.5; crash(0.8); shake(0.3); }
       }
-      if (under > q.H + 0.5) { q.m.dispose(); sinks.splice(i, 1); for (let j = 0; j < 4; j++) dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.6, q.z0 + Math.random() * (q.z1 - q.z0)), 30); }
+      if (under > q.H + 0.5) { q.m.dispose(); sinks.splice(i, 1); flash(0.35); shake(0.5); playS("rubble_dump", 0.7); playS("impact", 0.5, 0.7); for (let j = 0; j < 4; j++) dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.6, q.z0 + Math.random() * (q.z1 - q.z0)), 30); }
     }
   }
   // 沈む時の大きな土けむり（粒は大きく・長く残る。1 つだけ作って使い回す）
@@ -545,10 +547,10 @@ const G = window.G = {};   // 確かめ用の口
   function cloudAt(q, n) {
     if (!cloud) {
       cloud = new B.ParticleSystem("cloud", LITE ? 120 : 240, scene); cloud.particleTexture = dustTex;
-      cloud.color1 = new B.Color4(0.62, 0.57, 0.5, 0.32); cloud.color2 = new B.Color4(0.52, 0.48, 0.42, 0.26); cloud.colorDead = new B.Color4(0.6, 0.56, 0.5, 0);
-      cloud.addSizeGradient(0, 2.5, 4); cloud.addSizeGradient(1, 8, 13); cloud.minLifeTime = 2.5; cloud.maxLifeTime = 4.5; cloud.emitRate = 0; cloud.manualEmitCount = 0;
+      cloud.color1 = new B.Color4(0.66, 0.61, 0.54, 0.62); cloud.color2 = new B.Color4(0.56, 0.52, 0.46, 0.52); cloud.colorDead = new B.Color4(0.6, 0.56, 0.5, 0);
+      cloud.addSizeGradient(0, 4, 7); cloud.addSizeGradient(1, 18, 28); cloud.minLifeTime = 3; cloud.maxLifeTime = 5.5; cloud.emitRate = 0; cloud.manualEmitCount = 0;   // 大きさ・寿命: 外から見ると根元に少ししか見えなかった（10-25 改善ループ 2）
       cloud.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; cloud.gravity = new B.Vector3(0, 0.3, 0);
-      cloud.direction1 = new B.Vector3(-2, 0.3, -2); cloud.direction2 = new B.Vector3(2, 1.5, 2); cloud.minEmitPower = 1; cloud.maxEmitPower = 3;
+      cloud.direction1 = new B.Vector3(-2, 0.4, -2); cloud.direction2 = new B.Vector3(2, 2.2, 2); cloud.minEmitPower = 2; cloud.maxEmitPower = 5;
       cloud.minAngularSpeed = -0.3; cloud.maxAngularSpeed = 0.3; cloud.maxInitialRotation = 6.28; cloud.renderingGroupId = 1; cloud.start();
     }
     const hx = (q.x1 - q.x0) / 2 + 1, hz = (q.z1 - q.z0) / 2 + 1;
@@ -909,7 +911,7 @@ const G = window.G = {};   // 確かめ用の口
   canvas.addEventListener("pointerdown", e => {
     wakeAudio();
     const w = stickAt(e);
-    if (w && sticks[w].id === null) { sticks[w].id = e.pointerId; setStick(sticks[w], e); }
+    if (w && sticks[w].id === null) { sticks[w].id = e.pointerId; setStick(sticks[w], e); playS("click", 0.2, 0.85); }
     else if (lookPtr === null) lookPtr = { id: e.pointerId, x: e.clientX, y: e.clientY };
     canvas.setPointerCapture(e.pointerId);
   });
@@ -944,7 +946,7 @@ const G = window.G = {};   // 確かめ用の口
   setShadow(shadowOn); setLabels();
   for (const [id, k] of [["pFwd", "fwd"], ["pBack", "back"], ["pLeft", "left"], ["pRight", "right"]]) {
     const el = $(id);
-    const on = e => { e.preventDefault(); wakeAudio(); pedal[k] = 1; el.classList.add("on"); el.setPointerCapture(e.pointerId); };
+    const on = e => { e.preventDefault(); wakeAudio(); playS("click", 0.3); pedal[k] = 1; el.classList.add("on"); el.setPointerCapture(e.pointerId); };
     const off = () => { pedal[k] = 0; el.classList.remove("on"); };
     el.addEventListener("pointerdown", on); el.addEventListener("pointerup", off); el.addEventListener("pointercancel", off); el.addEventListener("lostpointercapture", off);
   }
@@ -969,12 +971,18 @@ const G = window.G = {};   // 確かめ用の口
   let master = null, nbuf = null;
   const OUT = () => { if (!master) { master = ac.createDynamicsCompressor(); master.connect(ac.destination); } return master; };
   const NB = () => { if (!nbuf) { nbuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = nbuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; } return nbuf; };
-  let crashT = 0;
+  let crashT = 0, crashP = 0, glassT = 0;
   // 崩れる音: 低いドーン＋ザザッ（帯域ノイズ）＋ガラガラ（小石の当たる音を時間差で）。pw 0〜1
   function crash(pw) {
     if (!ac || ac.state !== "running") return;
-    const t = ac.currentTime; if (t - crashT < 0.07) return; crashT = t;
-    if (hasS("crash_small") && hasS("crash_big")) { if (pw < 0.3) playS("crash_small", 0.45 + pw * 1.5); else playS("crash_big", Math.min(1, 0.55 + pw * 0.5)); return; }
+    const t = ac.currentTime; if (t - crashT < 0.05 && pw < crashP + 0.15) { if (pw >= 0.3) playS("impact", 0.3, 1.3); return; } crashT = t; crashP = pw;   // 続けて鳴らさない。ただし前より大きい崩れは通す
+    if (hasS("crash_small") && hasS("crash_big")) {
+      if (pw < 0.3) { playS("crash_small", 0.45 + pw * 1.5); return; }
+      // 大きい崩れは重ねる: ドーン（低い衝撃）＋ガシャーン＋少し遅れてガラガラの尾（10-25 改善ループ 2「壊れる時の爽快感の音」）
+      playS("crash_big", Math.min(1, 0.55 + pw * 0.5)); playS("impact", 0.45 + pw * 0.35, 0.8);
+      playS("crash_small", 0.5, 1.1, 0.06); if (pw > 0.55) playS("rubble_dump", 0.4, 1, 0.22);
+      return;
+    }
     const o = ac.createOscillator(), g = ac.createGain();
     o.type = "sine"; o.frequency.setValueAtTime(75, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.55);
     g.gain.setValueAtTime(Math.min(0.75, 0.12 + pw * 0.6), t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
@@ -1020,8 +1028,9 @@ const G = window.G = {};   // 確かめ用の口
   }
   // ---- 録った効果音（assets/sfx。音作りのセッションに頼んだ物 10-13）。無い音は今までの合成音のまま ----
   const SFX_FILES = ["exc_engine_loop", "exc_hydraulic_loop", "exc_tracks_loop", "crane_winch_loop", "bucket_hit_1", "bucket_hit_2", "bucket_hit_3",
-    "crash_small_1", "crash_small_2", "crash_small_3", "crash_big_1", "crash_big_2", "crash_big_3", "rubble_dump_1", "rubble_dump_2",
-    "truck_depart", "truck_horn", "steel_clang_1", "steel_clang_2", "bolt_impact", "wind_gust", "sling_hook"];
+    "crash_small_1", "crash_small_2", "crash_small_3", "crash_big_1", "crash_big_2", "crash_big_3", "rubble_dump_1", "rubble_dump_2", "rubble_dump_3",
+    "truck_depart", "truck_horn", "steel_clang_1", "steel_clang_2", "bolt_impact", "wind_gust", "sling_hook",
+    ...["impact", "glass", "coin", "boom", "levelup", "popup", "firework", "click"].flatMap(n => [1, 2, 3].map(i => n + "_" + i))];   // 派手さの音（10-25 改善ループ 2・se-library）
   const sfx = {}; let sfxLoading = false;
   // mp3 は頭と終わりに無音（エンコーダの遅れ）が付くので、ループ物は鳴っている所だけに切る（つなぎ目でプツッと切れないように）
   function trimSilence(buf) {
@@ -1087,8 +1096,8 @@ const G = window.G = {};   // 確かめ用の口
     ps.minAngularSpeed = -0.5; ps.maxAngularSpeed = 0.5; ps.minInitialRotation = 0; ps.maxInitialRotation = 6.28;
     const ch = new B.ParticleSystem("chips" + i, LITE ? 60 : 120, scene);
     ch.particleTexture = dustTex; ch.emitter = ps.emitter; ch.minEmitBox = ps.minEmitBox; ch.maxEmitBox = ps.maxEmitBox;
-    ch.color1 = new B.Color4(0.32, 0.3, 0.27, 1); ch.color2 = new B.Color4(0.5, 0.47, 0.42, 1); ch.colorDead = new B.Color4(0.3, 0.28, 0.25, 0.6);
-    ch.minSize = 0.06; ch.maxSize = 0.16; ch.minLifeTime = 0.5; ch.maxLifeTime = 1.0; ch.emitRate = 0; ch.manualEmitCount = 0;
+    ch.color1 = new B.Color4(0.32, 0.3, 0.27, 1); ch.color2 = new B.Color4(0.55, 0.38, 0.28, 1); ch.colorDead = new B.Color4(0.3, 0.28, 0.25, 0.6);   // 灰のコンクリ＋茶のレンガ
+    ch.minSize = 0.1; ch.maxSize = 0.26; ch.minLifeTime = 0.5; ch.maxLifeTime = 1.0; ch.emitRate = 0; ch.manualEmitCount = 0;
     ch.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ch.gravity = new B.Vector3(0, -9.8, 0);
     ch.direction1 = new B.Vector3(-1.5, 1, -1.5); ch.direction2 = new B.Vector3(1.5, 3, 1.5); ch.minEmitPower = 1; ch.maxEmitPower = 3;
     ps.renderingGroupId = ch.renderingGroupId = 1; ps.start(); ch.start(); dustPool.push([ps, ch]);
@@ -1096,27 +1105,41 @@ const G = window.G = {};   // 確かめ用の口
   function dust(p, n) {
     const [ps, ch] = dustPool[dustI++ % dustPool.length];
     const e = p.clone(); ps.emitter = e; ch.emitter = e;
-    ps.manualEmitCount = Math.min(LITE ? 50 : 100, Math.round(n)); ch.manualEmitCount = Math.min(LITE ? 20 : 40, Math.round(n * 0.5));
+    ps.manualEmitCount = Math.min(LITE ? 50 : 100, Math.round(n)); ch.manualEmitCount = Math.min(LITE ? 30 : 60, Math.round(n * 0.8));
   }
   // 浮かぶ数字（崩れた量を 0.5 秒ためて 1 回出す）と得点
   let hitStop = 0, score = 0, combo = 0, comboT = 0, comboP = null, lastPctStep = 0, lastDustT = -1;
+  // 画面の閃光（崩れた瞬間に白く光る。10-25 改善ループ 2「派手さ」）
+  function flash(a) { const f = $("flash"); f.style.transition = "none"; f.style.opacity = a; void f.offsetWidth; f.style.transition = "opacity .25s ease-out"; f.style.opacity = 0; }
+  // コンボの札: 続けて壊している間「N こわし」を出し、10・25・60 を越えるたびに音が上がる
+  let comboTier = 0, maxCombo = 0;
+  function showCombo() {
+    const el = $("combo"); if (combo < 3) return;
+    el.querySelector("b").textContent = combo; el.style.display = "";
+    if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }   // 毎コマ組み直すと重いので間引く
+    const tier = combo >= 60 ? 3 : combo >= 25 ? 2 : combo >= 10 ? 1 : 0;
+    if (tier > comboTier) { comboTier = tier; chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) playS("coin", 0.5); el.dataset.tier = tier; }
+  }
   function popup(text, cls) {
     const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text;
     $("pops").appendChild(el); setTimeout(() => el.remove(), 1300);
   }
   function broke(n, p, big) {      // 格子が n 個こわれた（p はその辺り）
-    combo += n; comboT = 0.5; comboP = p; score += n;
-    if (big || playT - lastDustT > 0.15) { lastDustT = playT; dust(p, (big ? 34 : 10) + n * (big ? 8 : 4)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
+    combo += n; comboT = 0.9; comboP = p; score += n;
+    if (big || playT - lastDustT > 0.08) { lastDustT = playT; dust(p, (big ? 40 : 18) + n * (big ? 8 : 6)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
     crash(Math.min(1, (big ? 0.35 : 0.05) + n * (big ? 0.06 : 0.03)));
     shake(Math.min(0.6, (big ? 0.28 : 0.08) + n * (big ? 0.03 : 0.012)));
-    if (big && n >= 6 && !G.fixedDt) hitStop = 0.07;   // 大きく崩れた瞬間だけ一瞬ため（ヒットストップ・10-24 改善ループ 軸5）
+    if (big && n >= 6 && !G.fixedDt) hitStop = 0.1;   // 大きく崩れた瞬間だけ一瞬ため（ヒットストップ・10-24 改善ループ 軸5）
+    if (big && n >= 6) { flash(Math.min(0.45, 0.15 + n * 0.01)); if (ac && ac.currentTime - glassT > 0.25) { glassT = ac.currentTime; playS("glass", 0.5, 1, 0.04); } }
+    showCombo();
     hitMk.setEnabled(false);
   }
   function updateCombo(dt) {
     if (comboT <= 0) return;
     comboT -= dt; if (comboT > 0) return;
+    $("combo").style.display = "none"; comboTier = 0; $("combo").dataset.tier = 0;
     if (combo >= 6) popup((combo >= 60 ? "ドドーン!! " : combo >= 25 ? "ガラガラ！ " : "ゴロッ ") + "+" + combo, combo >= 60 ? "big" : combo >= 25 ? "mid" : "");
-    combo = 0;
+    maxCombo = Math.max(maxCombo, combo); combo = 0;
     const pct = Math.floor((1 - bld.cells.size / bld.total) * 4);   // 25% ごとの合図
     if (pct > lastPctStep && pct < 4) { lastPctStep = pct; chime([0, 4, 7]); popup(pct * 25 + "% こわした！", "mile"); }
   }
@@ -1140,7 +1163,7 @@ const G = window.G = {};   // 確かめ用の口
       carvedToDebris(c, c.p.subtract(p).normalize().scale(2.0)); n++;
       chainAbove(c.x, c.y, c.z, 0);
     }
-    if (n) { dirty = true; broke(n, p, false); if (ac && ac.currentTime - hitT > 0.3) { hitT = ac.currentTime; playS("bucket_hit", 0.7); } }   // ガツッ（続けて当てても 0.3 秒に 1 回）
+    if (n) { dirty = true; broke(n, p, false); if (ac && ac.currentTime - hitT > 0.3) { hitT = ac.currentTime; playS("bucket_hit", 0.7); if (fp.parent === seat) fp.fov -= 0.035 + Math.min(0.03, n * 0.004); shake(0.06 + Math.min(0.15, n * 0.015)); } }   // ガツッ（続けて当てても 0.3 秒に 1 回）
     return n;
   }
   // 連鎖: 削った格子の真上と斜め上は、少し遅れて確率で崩れる（上へ 5 段まで）。「ガラガラ崩れていく」感じ
@@ -1195,7 +1218,7 @@ const G = window.G = {};   // 確かめ用の口
       f.t = Math.min(f.T, f.t + dt);
       const m = f.d.m; m.position.set(f.p0.x + f.v.x * f.t, f.p0.y + f.v.y * f.t - 4.905 * f.t * f.t, f.p0.z + f.v.z * f.t);
       m.rotationQuaternion.multiplyInPlace(B.Quaternion.FromEulerAngles(f.spin.x * dt, f.spin.y * dt, f.spin.z * dt));
-      if (f.t >= f.T) { flying.splice(i, 1); physOn(f.d, new B.Vector3(f.v.x, f.v.y - 9.81 * f.t, f.v.z)); f.d.restT = 0; if (!flying.length) { if (!playS("rubble_dump", 0.8)) crash(0.25); dust(bedCenter().addInPlaceFromFloats(0, 0.6, 0), 14); } }   // 最後の 1 個が荷台に入る時にザザッ
+      if (f.t >= f.T) { flying.splice(i, 1); physOn(f.d, new B.Vector3(f.v.x, f.v.y - 9.81 * f.t, f.v.z)); f.d.restT = 0; if (!flying.length) { if (!playS("rubble_dump", 0.8)) crash(0.25); else { playS("impact", 0.3, 1.1); playS("crash_small", 0.4, 1, 0.15); } dust(bedCenter().addInPlaceFromFloats(0, 0.6, 0), 14); } }   // 最後の 1 個が荷台に入る時にザザッ
     }
   }
   function updateHeld(dt) {
@@ -1335,6 +1358,22 @@ const G = window.G = {};   // 確かめ用の口
   }
   // ステージを選ぶ札（最初と、クリアの後）
   function stars(n) { return "★".repeat(n) + "☆".repeat(3 - n); }
+  // 結果の★を 1 つずつ付ける（ポンと出て、付くたびにチャリン）。全部付いたら紙吹雪と花火の音
+  // 結果の数字: 点数を大きく、その下に小さく内訳。前の最高点を越えたら「しんきろく！」
+  function resultInfo(pts, sub, unlock, key) {
+    let best = 0; try { best = +(localStorage.getItem("juuki_best_" + key) || 0); if (pts > best) localStorage.setItem("juuki_best_" + key, pts); } catch (e) {}
+    const rec = best > 0 && pts > best;
+    $("rInfo").innerHTML = `<div class="rScore"><small>とくてん</small><b>${pts.toLocaleString()}</b>${rec ? '<em>しんきろく！</em>' : ""}</div><div class="rSub">${sub}</div>` + (unlock ? `<div class="rUnlock">${unlock}</div>` : "");
+    if (rec) setTimeout(() => playS("levelup", 0.5), 1500);
+  }
+  function starsIn(n) {
+    const el = $("rStars"); el.innerHTML = "";
+    for (let i = 0; i < 3; i++) { const s = document.createElement("span"); s.textContent = "★"; s.className = i < n ? "got" : "no"; s.style.animationDelay = (0.45 + i * 0.3) + "s"; el.appendChild(s); }
+    const d = $("done"); d.classList.remove("show"); void d.offsetWidth; d.classList.add("show");
+    playS("popup", 0.6);
+    for (let i = 0; i < n; i++) setTimeout(() => { playS("coin", 0.55, 1 + i * 0.12); }, (450 + i * 300));
+    setTimeout(() => { confetti(); playS("firework", 0.5); if (n === 3) playS("levelup", 0.45); }, 450 + n * 300 + 100);
+  }
   // ステージ選び: 左に「こわす（ショベル）」、右に「たてる（クレーン）」。いつでも右上の「ステージ」から開ける（10-16 本人「飽きたら帰れるように」）
   // 全部最初から選べる。こわす→たてる・たてる→こわす はページを読み直して始める（重機や建材を確実に片づけるため）
   function goStage(kind, i) {
@@ -1351,7 +1390,7 @@ const G = window.G = {};   // 確かめ用の口
       list.forEach((st, i) => {
         const now = (kind === "b") === (mode === "build") && i === (kind === "b" ? bstage : stage) && canClose;
         const b = document.createElement("button"); b.className = "btn stBtn" + (now ? " now" : "");
-        b.textContent = `${i + 1}. ${st.name}　${st.free ? "♾" : stars(got[i] || 0)}`;
+        const g = got[i] || 0; b.innerHTML = `<i class="stNo">${i + 1}</i>${st.name}<span class="stStars">${st.free ? "♾" : "<em>" + "★".repeat(g) + "</em>" + "★".repeat(3 - g)}</span>`; if (g) b.classList.add("clear");   // 番号の丸・金の★（取れていない★は薄く）
         const sub = document.createElement("small"); sub.textContent = kind === "d" ? (st.free ? "じゆうに こわす" : `ダンプ ${st.trucks}だい`) : (st.sites ? "3か所に たてる" : st.unit ? "わくを つむ・かぜ つよい" : `${st.floors}かいだて`); b.appendChild(sub);
         b.onclick = () => { wakeAudio(); goStage(kind, i); };
         col.appendChild(b);
@@ -1369,18 +1408,20 @@ const G = window.G = {};   // 確かめ用の口
     for (let d = 2; d < 16; d += 0.25) { const p = ex.pos.add(f.scale(d)); if (cellsNear(p, 0.3, 0.3, 2)) { hitMk.position.set(p.x - f.x * 0.6, 3.5, p.z - f.z * 0.6); hitMk.setEnabled(true); return; } }
   }
   function startHint() { placeHitMk(); clearTimeout(placeHitMk.t); placeHitMk.t = setTimeout(() => hitMk.setEnabled(false), 9000); const h = $("hint"); h.textContent = "左レバーで うでを のばして、バケットを ビルに ぶつけよう"; h.style.display = ""; clearTimeout(startHint.t); startHint.t = setTimeout(() => { if (mode !== "build") h.style.display = "none"; }, 7000); }
-  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(STAGES[i].look ?? i); chime([0, 7]); popup("ステージ " + (i + 1) + " スタート！", "mile"); startHint(); }
+  function startStage(i) { $("goal").style.display = ""; stage = i; FLOORS = STAGES[i].floors; reset(); applyLook(STAGES[i].look ?? i); chime([0, 7]); playS("levelup", 0.4); stageBanner("ステージ " + (i + 1), STAGES[i].name); startHint(); }
+  function stageBanner(a, b) { const el = $("banner"); el.innerHTML = `<small>${a}</small>${b}`; el.style.display = ""; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); clearTimeout(stageBanner.t); stageBanner.t = setTimeout(() => el.style.display = "none", 1900); }
   // さら地の結果
   function showResult() {
     const st = STAGES[stage], n = playT <= st.star3 ? 3 : playT <= st.star2 ? 2 : 1;
     const first = !prog.stars[stage];
     prog.stars[stage] = Math.max(prog.stars[stage] || 0, n); saveProg();
     const mm = Math.floor(playT / 60), ss = String(Math.floor(playT % 60)).padStart(2, "0");
-    $("rStars").textContent = stars(n);
-    $("rInfo").textContent = `じかん ${mm}:${ss}　ダンプ ${truck.sent}だい　とくてん ${score}` + (first && UPGRADES[stage] ? `\n🔓 パワーアップ: ${UPGRADES[stage]}` : "");
+    starsIn(n);
+    maxCombo = Math.max(maxCombo, combo);
+    resultInfo(score, `じかん ${mm}:${ss}　ダンプ ${truck.sent}だい　さいだい ${maxCombo}れんぞく`, first && UPGRADES[stage] ? "🔓 パワーアップ: " + UPGRADES[stage] : "", "d" + stage);
     $("bNext").style.display = STAGES[stage + 1] ? "" : "none"; $("bBuild").style.display = "none"; $("bNext").textContent = "つぎの ステージ ▶"; $("done").querySelector(".rT").textContent = STAGES[stage].free ? "まち ぜんぶ こわした！" : "さら地 かんせい！";
     $("done").style.display = "";
-    chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti();
+    chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2);
   }
   const confettiPS = (() => {
     const ps = new B.ParticleSystem("confetti", 400, scene); ps.particleTexture = dustTex; ps.emitter = new B.Vector3(0, 12, 17);
@@ -1422,6 +1463,7 @@ const G = window.G = {};   // 確かめ用の口
 
   const lv = { sw: 0, st: 0, bo: 0, bu: 0 };   // 腕のレバーのなめらかにした値
   function reset() {
+    maxCombo = 0;
     clearDebris(); buildBuilding();
     for (const m of truck.load) m.dispose(); truck.load.length = 0; truck.amount = 0; truck.trips = 0; truck.sent = 0; finishAt = -1; truck.state = "wait"; truck.z = TRUCK_HOME.z;
     held = 0; slotUsed.fill(null); chain.length = 0; flying.length = 0; siteDone = false; $("done").style.display = "none";
@@ -1871,7 +1913,7 @@ const G = window.G = {};   // 確かめ用の口
         B.Vector3.LerpToRef(s2.from, s2.to, e, s2.m.position); B.Quaternion.SlerpToRef(s2.q, s2.h.p.q || B.Quaternion.Identity(), e, s2.m.rotationQuaternion);   // 屋根は傾けて はめる
         if (far) drawSlings(null); else drawSlings(s2.h, hb);
         cr.tgt.x += (s2.to.x - cr.tgt.x) * Math.min(1, dt * 6); cr.tgt.z += (s2.to.z - cr.tgt.z) * Math.min(1, dt * 6);   // はまる間はフックも枠の真上へ（荷だけ横へ動くとワイヤーが横に伸びた 評価 k5）
-        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.16 : 0.22); dust(s2.to, s2.good ? 26 : 14); snapRing.position.copyFrom(s2.to); snapM.emissiveColor.set(...(s2.good ? [1, 0.85, 0.2] : [0.9, 0.92, 0.95])); snapT = 0.45; snapRing.setEnabled(true); }
+        if (s2.t >= 1) { s2.slack = 0; clang(s2.good ? 1 : 0.7); shake(s2.m === bd.placed[0] ? 0.16 : 0.22); dust(s2.to, s2.good ? 26 : 14); flash(0.18); snapRing.position.copyFrom(s2.to); snapM.emissiveColor.set(...(s2.good ? [1, 0.85, 0.2] : [0.9, 0.92, 0.95])); snapT = 0.45; snapRing.setEnabled(true); }
       } else {
         s2.slack += dt; s2.drop = Math.min(0.4, s2.slack * 1.2); s2.hx = s2.hx || hb.clone();
         if (Math.hypot(hb.x - s2.hx.x, hb.z - s2.hx.z) > 0.5 || Math.hypot(hb.x - s2.to.x, hb.z - s2.to.z) > 0.8) s2.slack = 0.55;   // フックが横へ動き出したら、すぐ外す（ワイヤーが横へ引き伸ばされて見えた 評価 k4）
@@ -1955,12 +1997,12 @@ const G = window.G = {};   // 確かめ用の口
     prog.build = prog.build || []; const first = !prog.build[bstage]; prog.build[bstage] = Math.max(prog.build[bstage] || 0, n); saveProg();
     const mm = Math.floor(bd.t / 60), ss = String(Math.floor(bd.t % 60)).padStart(2, "0");
     $("done").querySelector(".rT").textContent = BLD[bldType()] + " かんせい！";
-    $("rStars").textContent = stars(n);
+    starsIn(n);
     const total = bd.placed.length;
-    $("rInfo").textContent = `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${total}　とくてん ${bd.score}` + (first && BUILD_UPS[bstage] ? `\n🔓 パワーアップ: ${BUILD_UPS[bstage]}` : "");
+    resultInfo(bd.score, `じかん ${mm}:${ss}　ぴったり ${bd.perfect}/${total}`, first && BUILD_UPS[bstage] ? "🔓 パワーアップ: " + BUILD_UPS[bstage] : "", "b" + bstage);
     $("bNext").textContent = "つぎの ステージ ▶"; $("bNext").style.display = BSTAGES[bstage + 1] ? "" : "none"; $("bBuild").textContent = "もういちど 建てる"; $("bBuild").style.display = ""; $("done").style.display = "";
     $("hint").style.display = "none";
-    confettiPS.emitter = new B.Vector3(SC.x, top + 4, SC.z); chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); confetti(); shake(0.3);
+    confettiPS.emitter = new B.Vector3(SC.x, top + 4, SC.z); chime([0, 4, 7, 12, 7, 12, 16], 0.13, 0.2); shake(0.3);
   }
   function enterBuild() {
     const BS = BSTAGES[bstage]; bd.site = 0; if (BS.sites) { SC.x = BS.sites[0][0]; SC.z = BS.sites[0][1]; }
@@ -2118,11 +2160,12 @@ const G = window.G = {};   // 確かめ用の口
   scene.onBeforeRenderObservable.add(() => {
     let dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);   // 確かめる時は G.fixedDt で固定
     if (!(dt > 0.0001)) return;
-    if (hitStop > 0) { hitStop -= dt; dt *= 0.12; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(dt); if (hitStop <= 0) plugin._useDeltaForWorldStep = true; }   // ヒットストップ中は物理もゆっくり   // 経過 0 のコマは飛ばす（フックの揺れを dt で割っていて、0 だとフックが NaN になり二度と戻らなかった 10-18）
+    if (hitStop > 0) { hitStop -= dt; dt *= 0.05; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(dt); if (hitStop <= 0) plugin._useDeltaForWorldStep = true; }   // ヒットストップ中は物理もゆっくり   // 経過 0 のコマは飛ばす（フックの揺れを dt で割っていて、0 だとフックが NaN になり二度と戻らなかった 10-18）
     if (!ride) updateWalk(dt);
     if (snapT > 0) { snapT -= dt; snapRing.scaling.setAll(1 + (0.45 - snapT) * 3); snapM.alpha = Math.max(0, snapT * 2); if (snapT <= 0) snapRing.setEnabled(false); }
     if (hitMk.isEnabled()) hitMkM.alpha = 0.3 + 0.25 * Math.sin(playT * 5);
-    if (mode !== "build" && fp.parent === seat) { const near = cellsNear(ex.pos, 4.2, 4.2, 3); fp.fov += ((near ? 1.32 : 1.2) - fp.fov) * Math.min(1, dt * 3); }   // 壁に近いと運転席の視野を少し広げる（壁で画面が埋まった・10-24 改善ループ 軸6） { updateBuild(dt); frameCommon(dt); return; }
+    if (mode !== "build" && fp.parent === seat) { const near = cellsNear(ex.pos, 4.2, 4.2, 3); fp.fov += ((near ? 1.32 : 1.2) - fp.fov) * Math.min(1, dt * 3); }   // 壁に近いと運転席の視野を少し広げる（壁で画面が埋まった・10-24 改善ループ 軸6）
+    if (mode === "build") { updateBuild(dt); frameCommon(dt); return; }
     if (craneHere) updateBuild(dt);   // さら地の後: 来たクレーン車は止まったまま（乗るまでレバーは効かない）
     if (exSlide) { exSlide.t = Math.min(1, exSlide.t + dt / 1.5); B.Vector3.LerpToRef(exSlide.from, exSlide.to, 1 - Math.pow(1 - exSlide.t, 3), ex.pos); if (exSlide.t >= 1) exSlide = null; }
     const onEx = ride === "ex", K = onEx ? kv : () => 0, L = onEx ? sticks.L : NO_STICK, R = onEx ? sticks.R : NO_STICK;   // 乗っていない時はレバーが効かない
@@ -2402,7 +2445,7 @@ const G = window.G = {};   // 確かめ用の口
   })();
 
   reset(); updateGoal(0, 0);   // 始めから目標を出す（「読み込み中」が数秒残った）
-  if (Q.has("build")) { enterBuild(); updateBuildGoal(); }   // ?build=N でクレーンの N 面（目標の札もすぐ建てる側に）
+  if (Q.has("build")) { enterBuild(); updateBuildGoal(); setTimeout(() => stageBanner("たてる " + (bstage + 1), BSTAGES[bstage].name), 300); }   // ?build=N でクレーンの N 面（目標の札もすぐ建てる側に）
   else if (!Q.has("stage") && !Q.has("nostage")) showStages("ステージを えらぼう", false);
   else startHint();
   $("msg").style.display = "none";
@@ -2444,7 +2487,7 @@ const G = window.G = {};   // 確かめ用の口
   });
 
   // 確かめ用の口（Object.assign は get を値で写してしまうので、変わる値は関数にする）
-  Object.assign(G, { carveAt, blds, sinks, chunks, planFloor, nextPiece, SC, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
+  Object.assign(G, { flash, carveAt, blds, sinks, chunks, planFloor, nextPiece, SC, getRide: () => ride, wk, nearRide, getOff, getOn, applyLook, sfxInfo: () => ({ n: Object.keys(sfx).length, ac: ac && ac.state, loops: Object.fromEntries(Object.entries(loops).map(([k, L]) => [k, +L.v.toFixed(2)])), len: Object.fromEntries(Object.entries(sfx).map(([k, b]) => [k, +b.duration.toFixed(2)])) }), playS, hook, crTip, tp, applyPose, bedCenter, isDone: () => siteDone, nFlying: () => flying.length, pipe, getScore: () => score, startStage, prog, showResult, getPlayT: () => playT, enterBuild, cr, bd, hookPos: () => hook.position.clone(), bucketJ, pedal, scene, engine, ex, bld, debris, truck, carveAt, reset, bucketLowest, spawnDebris, setShadow, sticks, bucketOpenUp,
     setView: v => { if (v !== view) $("bView").onclick(); },
     // 確かめ用: 窓が裏だと描画も物理も止まるので、1/60 秒ずつ手で進める。物理は経過時間でなく固定の刻みにする（経過 0 で止まっていた）
     testMode() { G.fixedDt = 1 / 60; scene.useConstantAnimationDeltaTime = true;   /* 粒（土けむり）も 1/60 秒ずつ進める */ plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; } });
