@@ -17,7 +17,9 @@
       let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, y1 = 0;
       for (const c of G.bld.cells.values()) { x0 = Math.min(x0, c.p.x); x1 = Math.max(x1, c.p.x); z0 = Math.min(z0, c.p.z); z1 = Math.max(z1, c.p.z); y1 = Math.max(y1, c.p.y); }
       hide(["hitMk", "goalArrow"]); await ready();
-      if (i === 5) cam(V(0, 2, 10), 70, 0.95, -Math.PI / 2 - 0.6); else fit(x0, x1, y1, z0, z1);
+      if (i === 5) cam(V(0, 2, 10), 70, 0.95, -Math.PI / 2 - 0.6);
+      else if (i === 12) cam(V(0, 3, 22), 44, 0.9, -Math.PI / 2 - 0.35);   // ガソリンスタンドは見下ろして奥の売店も入れる
+      else fit(x0, x1, y1, z0, z1);
       await BOT.step(4); await BOT.snap(`th_d${i}.jpg`);
     }
     G.camAt = null;

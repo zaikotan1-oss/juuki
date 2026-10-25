@@ -331,12 +331,82 @@ const G = window.G = {};   // 確かめ用の口
     houseW(10, 50, 8, 8, 5, BIG);
     addFence(gx(-14), gz(26), 20, 3, "block"); addFence(gx(28), gz(12), 16, 3, "block");
   }
-  // 3D の線を格子で引く（a・b は格子の座標・小数でよい。kf は高さ y から種類を返す）
+  // なめらかな部材（10-26 本人「観覧車とか斜めの所がカクカクでマイクラみたい」）
+  // 斜めの棒・丸い壁は格子を隠し（c.hid）、本物の角棒・曲がった板で描く。格子は削る判定・崩れの判定のために残す
+  // 部材は 1.5m ほどの区間に切ってあり、区間のどこか 1 マスが削れると、その区間の絵が消える
+  const rods = []; let rodDirty = false, rodMesh = null;
+  function newRod(o) { const r = Object.assign({ cells: [], alive: true, ext: true }, o); rods.push(r); rodDirty = true; return r; }
+  function rodCell(r, x, y, z, kind) {
+    const k = key(x, y, z), had = bld.cells.get(k); addCell(x, y, z, kind);
+    const c = bld.cells.get(k); if (!had) c.hid = true;
+    (c.segs || (c.segs = [])).push(r); r.cells.push(c);
+  }
+  // 角棒（a→b、太さ t。u と w を渡すと横幅 w の板）を足す
+  function pushRod(r, pos, nor, uv, col, idx) {
+    if (r.wedge) return pushWedge(r, pos, nor, uv, col, idx);
+    const d = r.b.subtract(r.a), L = d.length(); if (L < 1e-4) return;
+    const w = d.scale(1 / L), e = r.ext ? r.t / 2 : 0;
+    const u = r.u || B.Vector3.Cross(w, Math.abs(w.y) < 0.9 ? B.Axis.Y : B.Axis.X).normalize(), v = B.Vector3.Cross(u, w).normalize();
+    const hu = (r.w || r.t) / 2, hv = r.t / 2, a = r.a.subtract(w.scale(e)), L2 = L + 2 * e, k = KIND_COL[r.kind];
+    const P = (i, j, s2) => a.add(w.scale(s2 * L2)).addInPlace(u.scale(i * hu)).addInPlace(v.scale(j * hv));
+    const quad = (ps, n, du, dv) => { const b0 = pos.length / 3; ps.forEach((q, i) => { pos.push(q.x, q.y, q.z); nor.push(n.x, n.y, n.z); uv.push([0, du, du, 0][i] / TEXM, [0, 0, dv, dv][i] / TEXM); col.push(k[0], k[1], k[2], 1); }); idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3); };
+    quad([P(1, -1, 0), P(1, 1, 0), P(1, 1, 1), P(1, -1, 1)], u, 2 * hv, L2); quad([P(-1, -1, 0), P(-1, 1, 0), P(-1, 1, 1), P(-1, -1, 1)], u.negate(), 2 * hv, L2);
+    quad([P(-1, 1, 0), P(1, 1, 0), P(1, 1, 1), P(-1, 1, 1)], v, 2 * hu, L2); quad([P(-1, -1, 0), P(1, -1, 0), P(1, -1, 1), P(-1, -1, 1)], v.negate(), 2 * hu, L2);
+    quad([P(-1, -1, 1), P(1, -1, 1), P(1, 1, 1), P(-1, 1, 1)], w, 2 * hu, 2 * hv); quad([P(-1, -1, 0), P(1, -1, 0), P(1, 1, 0), P(-1, 1, 0)], w.negate(), 2 * hu, 2 * hv);
+  }
+  // 丸い板の一切れ（タンクの底・ふた）
+  function pushWedge(r, pos, nor, uv, col, idx) {
+    const k = KIND_COL[r.kind], C = (y) => new B.Vector3(r.c.x, y, r.c.z), A = (t, y) => new B.Vector3(r.c.x + Math.cos(t) * r.rad, y, r.c.z + Math.sin(t) * r.rad);
+    const tri = (ps, n) => { const b0 = pos.length / 3; for (const q of ps) { pos.push(q.x, q.y, q.z); nor.push(n.x, n.y, n.z); uv.push(q.x / TEXM, q.z / TEXM); col.push(k[0], k[1], k[2], 1); } if (ps.length === 3) idx.push(b0, b0 + 1, b0 + 2); else idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3); };
+    tri([C(r.y1), A(r.t0, r.y1), A(r.t1, r.y1)], B.Axis.Y); tri([C(r.y0), A(r.t0, r.y0), A(r.t1, r.y0)], B.Axis.Y.negate());
+    const tm = (r.t0 + r.t1) / 2; tri([A(r.t0, r.y0), A(r.t1, r.y0), A(r.t1, r.y1), A(r.t0, r.y1)], new B.Vector3(Math.cos(tm), 0, Math.sin(tm)));
+  }
+  function rebuildRods() {
+    rodDirty = false;
+    if (!rodMesh) { rodMesh = new B.Mesh("rods", scene); rodMesh.material = bldM; rodMesh.receiveShadows = true; rodMesh.isPickable = false; shadow.addShadowCaster(rodMesh); }
+    const pos = [], nor = [], uv = [], col = [], idx = [];
+    for (const r of rods) if (r.alive) pushRod(r, pos, nor, uv, col, idx);
+    if (!idx.length) { rodMesh.setEnabled(false); return; }
+    const vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx; vd.applyToMesh(rodMesh, false); rodMesh.setEnabled(true);
+  }
+  const gw = (gxv, gyv, gzv) => new B.Vector3(bld.origin.x + gxv * CELL, bld.origin.y + gyv * CELL, bld.origin.z + gzv * CELL);   // 格子の座標（小数）→ 世界の位置
+  // 3D の線を格子で引き、見た目は角棒（a・b は格子の座標・小数でよい。kf は高さ y から種類を返す）
   function lineCells(a, b, kf, th = 1) {
-    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * 2));
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) * 2)), PER = 6;
+    const W = t => gw(a[0] + (b[0] - a[0]) * t + th / 2, a[1] + (b[1] - a[1]) * t + 0.5, a[2] + (b[2] - a[2]) * t + th / 2);
+    let r = null;
     for (let i = 0; i <= n; i++) {
       const t = i / n, x = Math.round(a[0] + (b[0] - a[0]) * t), y = Math.round(a[1] + (b[1] - a[1]) * t), z = Math.round(a[2] + (b[2] - a[2]) * t);
-      for (let dx = 0; dx < th; dx++) for (let dz = 0; dz < th; dz++) if (y >= 0) addCell(x + dx, y, z + dz, kf(y));
+      if (i % PER === 0 && i < n) { const t1 = Math.min(1, (i + PER) / n); r = newRod({ a: W(t), b: W(t1), t: th * CELL * 0.8, kind: kf(Math.round(a[1] + (b[1] - a[1]) * (t + t1) / 2)) }); }
+      for (let dx = 0; dx < th; dx++) for (let dz = 0; dz < th; dz++) if (y >= 0) rodCell(r, x + dx, y, z + dz, kf(y));
+    }
+  }
+  // 丸い壁（煙突・タンク）: 中心 cx,cz（格子の角）、半径は高さで変えられる rf(y)、厚さ th マス。見た目は 32 枚の曲がった板を帯ごとに
+  function ringWall(cx, cz, y0, y1, rf, th, kf, band) {
+    const NS = 32, segs = new Map();
+    const seg = (i, j) => {
+      const id = i + "," + j; if (segs.has(id)) return segs.get(id);
+      const ya = y0 + j * band, yb = Math.min(y1, ya + band), rm = rf((ya + yb) / 2) - th / 2, tm = (i + 0.5) / NS * Math.PI * 2;
+      const r = newRod({ a: gw(cx + rm * Math.cos(tm), ya, cz + rm * Math.sin(tm)), b: gw(cx + rm * Math.cos(tm), yb, cz + rm * Math.sin(tm)), t: th * CELL, w: 2 * Math.PI * rm * CELL / NS * 1.06,
+        u: new B.Vector3(-Math.sin(tm), 0, Math.cos(tm)), kind: kf(ya), ext: false });
+      segs.set(id, r); return r;
+    };
+    const R = Math.ceil(rf(y0)) + 1;
+    for (let y = y0; y < y1; y++) for (let x = -R; x <= R; x++) for (let z = -R; z <= R; z++) {
+      const rr = Math.hypot(x + 0.5, z + 0.5), ro = rf(y); if (rr > ro || rr <= ro - th) continue;
+      let t = Math.atan2(z + 0.5, x + 0.5); if (t < 0) t += Math.PI * 2;
+      rodCell(seg(Math.min(NS - 1, Math.floor(t / (Math.PI * 2) * NS)), Math.floor((y - y0) / band)), cx + x, y, cz + z, kf(y));
+    }
+  }
+  // 丸い板（タンクの底・ふた）: 16 切れ
+  function discCells(cx, cz, y0, y1, rad, kind) {
+    const NS = 16, cw = gw(cx, 0, cz), list = [];
+    for (let i = 0; i < NS; i++) list.push(newRod({ wedge: true, c: cw, rad: rad * CELL, t0: i / NS * Math.PI * 2, t1: (i + 1) / NS * Math.PI * 2, y0: bld.origin.y + y0 * CELL, y1: bld.origin.y + y1 * CELL, kind }));
+    const R = Math.ceil(rad);
+    for (let y = y0; y < y1; y++) for (let x = -R; x <= R; x++) for (let z = -R; z <= R; z++) {
+      if (Math.hypot(x + 0.5, z + 0.5) > rad) continue;
+      let t = Math.atan2(z + 0.5, x + 0.5); if (t < 0) t += Math.PI * 2;
+      rodCell(list[Math.min(NS - 1, Math.floor(t / (Math.PI * 2) * NS))], cx + x, y, cz + z, kind);
     }
   }
   // 送電の鉄塔: 4 本の脚がすぼまって高さ 40m。4m ごとに輪とバツの筋交い、上に 3 段の腕。赤白のしま
@@ -344,10 +414,10 @@ const G = window.G = {};   // 確かめ用の口
     const cx = gx(wx), cz = gz(wz), Hc = 80, w = y => 12 - 10 * y / Hc, kf = y => Math.floor(y / 16) % 2 ? "twr_w" : "twr_r";
     newB(6, true); curB.topple = true;
     const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-    for (let y = 0; y <= Hc; y++) for (const [sx, sz] of C) { const x = Math.round(cx + sx * w(y)), z = Math.round(cz + sz * w(y)); for (let a = -1; a < 1; a++) for (let b2 = -1; b2 < 1; b2++) addCell(x + a, y, z + b2, kf(y)); }
-    const P = (i, y) => [cx + C[i][0] * w(y), y, cz + C[i][1] * w(y)];
-    for (let y = 0; y < Hc; y += 10) {
-      const y2 = Math.min(Hc, y + 10);
+    const P = (i, y) => [cx + C[i][0] * w(y), y, cz + C[i][1] * w(y)], P2 = (i, y) => [cx + C[i][0] * w(y) - 1, y, cz + C[i][1] * w(y) - 1];
+    for (let i = 0; i < 4; i++) lineCells(P2(i, 0), P2(i, Hc), kf, 2);
+    for (let y = 0; y < Hc; y += 16) {
+      const y2 = Math.min(Hc, y + 16);
       for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; lineCells(P(i, y2), P(j, y2), kf); lineCells(P(i, y), P(j, y2), kf); lineCells(P(j, y), P(i, y2), kf); }
     }
     for (const [ay, half] of [[58, 16], [68, 13], [78, 10]]) {
@@ -380,17 +450,15 @@ const G = window.G = {};   // 確かめ用の口
       newB(6, true); curB.topple = true;
       const x = gx(wx), z = gz(wz);
       for (let y = 0; y < 52; y++) for (let a = 0; a < 2; a++) for (let b2 = 0; b2 < 2; b2++) addCell(x + a, y, z + b2, y > 46 ? "twr_w" : "conc");
-      for (let y = 52; y < 58; y++) for (let a = -4; a < 6; a++) for (let b2 = 0; b2 < 2; b2++) addCell(x + a, y, z + b2, "twr_w");
+      for (let y = 52; y < 58; y++) for (let a = -4; a < 6; a++) for (let b2 = 0; b2 < 2; b2++) addCell(x + a, y, z + b2, y === 52 || y === 57 || a === -4 || a === 5 ? "steelc" : (a + y) % 2 ? "lamp" : "twr_w");   // ライトの升目
     }
   }
   // 工場の煙突: れんがの筒（下 3m・上 2.2m の半径、高さ 44m、上 10m は赤白）＋横にトタンの工場
   function buildChimney(wx, wz) {
     const cx = gx(wx), cz = gz(wz), Hc = 88;
     newB(6, true); curB.topple = true;
-    for (let y = 0; y < Hc; y++) {
-      const ro = 6 - 1.6 * y / Hc, ri = ro - 2, kind = y < Hc - 20 ? "brick" : Math.floor(y / 5) % 2 ? "twr_w" : "twr_r";
-      for (let x = -7; x <= 7; x++) for (let z = -7; z <= 7; z++) { const r = Math.hypot(x + 0.5, z + 0.5); if (r <= ro && r > ri) addCell(cx + x, y, cz + z, kind); }
-    }
+    ringWall(cx, cz, 0, Hc - 20, y => 6 - 1.6 * y / Hc, 2, () => "brick", 6);
+    ringWall(cx, cz, Hc - 20, Hc, y => 6 - 1.6 * y / Hc, 2, y => Math.floor(y / 5) % 2 ? "twr_w" : "twr_r", 5);
     addHouse(gx(-17), gz(14), 18, 14, 1, 9, TIN);
   }
   // 観覧車: 半径 13m の輪 2 枚＋スポーク 12 本＋ゴンドラ 12 個、A 字の脚 4 本。脚を削ると倒れる
@@ -418,13 +486,12 @@ const G = window.G = {};   // 確かめ用の口
     for (let i = 0; i < 4; i++) lineCells(P(i, 0), P(i, Hl), kf, 2);
     for (let y = 0; y < Hl; y += 12) for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; lineCells(P(i, y + 12), P(j, y + 12), kf); lineCells(P(i, y), P(j, y + 12), kf); lineCells(P(j, y), P(i, y + 12), kf); }
     const RT = 11;
-    for (let y = Hl; y < Hl + 22; y++) {
-      const rr = y < Hl + 14 ? RT : RT * (1 - (y - Hl - 14) / 8), kind = y >= Hl + 6 && y < Hl + 8 ? "twr_r" : "tank";
-      for (let x = -RT - 1; x <= RT + 1; x++) for (let z = -RT - 1; z <= RT + 1; z++) {
-        const r = Math.hypot(x + 0.5, z + 0.5);
-        if (r <= rr && (y === Hl || y >= Hl + 13 || r > rr - 1.2)) addCell(cx + x, y, cz + z, kind);   // 底と屋根は中まで、胴は殻だけ
-      }
-    }
+    discCells(cx, cz, Hl, Hl + 1, RT, "tank");
+    ringWall(cx, cz, Hl + 1, Hl + 6, () => RT, 1, () => "tank", 5);
+    ringWall(cx, cz, Hl + 6, Hl + 8, () => RT, 1, () => "twr_r", 2);
+    ringWall(cx, cz, Hl + 8, Hl + 13, () => RT, 1, () => "tank", 5);
+    discCells(cx, cz, Hl + 13, Hl + 14, RT + 0.6, "tank");          // ふた（少しはみ出す）
+    discCells(cx, cz, Hl + 14, Hl + 16, 2.5, "steelc");             // ふたの上の換気口
   }
   // ガソリンスタンド: 柱 4 本の大きな屋根（柱を削ると屋根が落ちて崩れる）＋給油機＋奥の売店＋値段の看板（倒れる）
   function buildGas() {
@@ -455,9 +522,27 @@ const G = window.G = {};   // 確かめ用の口
     newB(6, true); curB.sinkR = 0.6; deck(P1 - 2, P2 + 2);
     for (const px of [P1, P2]) for (let x = px - 2; x < px + 2; x++) for (let y = 0; y < 10; y++) for (let z = Z0 + 1; z < Z1 - 1; z++) addCell(x, y, z, "conc");
   }
+  // 球場のグラウンド（土の内野と芝の外野）。格子ではなく地面に置く板
+  let fieldM = null;
+  function stadiumField(on) {
+    if (!fieldM) {
+      const dirt = new B.StandardMaterial("fieldDirt", scene); dirt.diffuseColor = new B.Color3(0.72, 0.5, 0.34); dirt.specularColor = B.Color3.Black();
+      const turf = new B.StandardMaterial("fieldTurf", scene); turf.diffuseColor = new B.Color3(0.34, 0.62, 0.3); turf.specularColor = B.Color3.Black();
+      const lineM = new B.StandardMaterial("fieldLine", scene); lineM.diffuseColor = new B.Color3(0.95, 0.95, 0.92); lineM.specularColor = B.Color3.Black();
+      const Hx = 0, Hz = 28, mk = [];
+      const fan = B.MeshBuilder.CreateDisc("fieldTurf", { radius: 34, arc: 0.25, tessellation: 48 }, scene);   // 外野: ホームから手前（-z）へ 90 度の扇
+      fan.rotation.x = Math.PI / 2; fan.rotation.y = Math.PI * 0.75; fan.position.set(Hx, 0.03, Hz); fan.material = turf; mk.push(fan);
+      const inf = B.MeshBuilder.CreateGround("fieldDirt", { width: 15, height: 15 }, scene);   // 内野: 菱形
+      inf.rotation.y = Math.PI / 4; inf.position.set(Hx, 0.05, Hz - 10.6); inf.material = dirt; mk.push(inf);
+      for (const sx of [-1, 1]) { const l = B.MeshBuilder.CreateGround("fieldLine", { width: 0.2, height: 34 }, scene); l.rotation.y = -sx * Math.PI / 4; l.position.set(Hx + sx * 12, 0.07, Hz - 12); l.material = lineM; mk.push(l); }
+      for (const m of mk) { m.receiveShadows = true; m.isPickable = false; m.material.backFaceCulling = false; }
+      fieldM = mk;
+    }
+    for (const m of fieldM) m.setEnabled(on);
+  }
   function buildBuilding() {
     for (const ch of chunks.values()) { if (ch.body) { ch.body.dispose(); ch.shape.dispose(); } ch.mesh.dispose(); }
-    chunks.clear(); chunkGen++; bld.cells.clear(); winSet.clear(); blds.length = 0; dirtyB.clear(); curB = null;
+    chunks.clear(); chunkGen++; bld.cells.clear(); winSet.clear(); blds.length = 0; dirtyB.clear(); curB = null; rods.length = 0; rodDirty = true;
     for (const q of sinks) q.m.dispose(); sinks.length = 0; for (const q of fading) q.m.dispose(); fading.length = 0;
     const S = STAGES[stage];
     if (S.sky) addHouse(-4, 0, 24, 16, FLOORS, FH / CELL, BIG);       // 30 階: 12m × 8m・高さ 90m
@@ -471,6 +556,7 @@ const G = window.G = {};   // 確かめ用の口
     else if (S.kind === "gas") buildGas();
     else if (S.kind === "bridge") buildBridge();
     else addHouse(0, 0, BW / CELL, BD / CELL, FLOORS, FH / CELL);     // 真ん中のビル 16 × 12、1 階 6 段
+    stadiumField(S.kind === "stadium");
     if (S.town) {
       // まち: 右に木造の家（2 階・切妻屋根）とブロック塀、左にトタンの倉庫、右奥にプレハブ小屋（格子 0.5m。ビルの左手前の角 = 世界の x -4, z 14）
       addHouse(24, -2, 12, 10, 2, 5, WOOD);
@@ -494,10 +580,11 @@ const G = window.G = {};   // 確かめ用の口
   const KIND_COL = { wall: [1, 0.98, 0.94], slab: [0.78, 0.78, 0.78], pillar: [0.9, 0.88, 0.85],   // 写真素材に掛ける色（壁・床・柱で少し変える）
     wood: [0.78, 0.55, 0.34], beam: [0.5, 0.33, 0.2], wfloor: [0.62, 0.48, 0.36], roof: [0.3, 0.33, 0.42],      // 木造の家（茶色の板壁・こげ茶の柱・紺の瓦）
     block: [0.86, 0.84, 0.76], tin: [0.62, 0.72, 0.8], steelc: [0.5, 0.55, 0.6], tinroof: [0.66, 0.36, 0.3],     // ブロック塀・トタンの倉庫（水色の壁・赤さびの屋根）
-    prefab: [0.95, 0.92, 0.75],
+    prefab: [0.95, 0.92, 0.75],                                                                                    // プレハブ小屋（クリーム色）
     twr_r: [0.86, 0.22, 0.16], twr_w: [0.95, 0.95, 0.93], fire: [0.8, 0.13, 0.1], firew: [0.96, 0.95, 0.92],      // 鉄塔（赤白）・消防署（赤と白）
-    seat: [0.2, 0.42, 0.85], seat2: [0.95, 0.55, 0.15], conc: [0.8, 0.79, 0.77], brick: [0.66, 0.38, 0.27],
-    g1: [0.95, 0.42, 0.6], g2: [0.98, 0.82, 0.22], g3: [0.36, 0.8, 0.42], g4: [0.3, 0.74, 0.95], tank: [0.64, 0.79, 0.87], brg: [0.22, 0.45, 0.76] };   // 観覧車のゴンドラ 4 色・給水塔のタンク・橋の桁   // 球場の席（青・橙）・コンクリ・煙突のれんが                                                                              // プレハブ小屋（クリーム色）
+    seat: [0.2, 0.42, 0.85], seat2: [0.95, 0.55, 0.15], conc: [0.8, 0.79, 0.77], brick: [0.66, 0.38, 0.27],      // 球場の席（青・橙）・コンクリ・煙突のれんが
+    g1: [0.95, 0.42, 0.6], g2: [0.98, 0.82, 0.22], g3: [0.36, 0.8, 0.42], g4: [0.3, 0.74, 0.95], tank: [0.64, 0.79, 0.87], brg: [0.22, 0.45, 0.76],
+    lamp: [1.25, 1.2, 0.95] };   // 観覧車のゴンドラ 4 色・給水塔のタンク・橋の桁・照明のライト（明るめ）
   const FACE = [
     { n: [1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] }, { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
     { n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1] }, { n: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
@@ -519,11 +606,12 @@ const G = window.G = {};   // 確かめ用の口
     const pos = [], nor = [], uv = [], col = [], idx = [], h = CELL / 2;
     const bp = [], bn = [], bu = [], bc = [], bi = [], bars = [];
     for (const c of ch.cells) {
+      if (c.hid) continue;                 // なめらかな部材の中の格子（絵は rodMesh）
       const k = KIND_COL[c.kind], vary = 0.94 + ((c.x * 7 + c.y * 13 + c.z * 5) % 7) * 0.012;
       for (const f of FACE) {
-        const nk = key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2]);
-        if (bld.cells.has(nk)) continue;     // 隣が埋まっている面は見えない
-        if (bld.orig && bld.orig.has(nk)) {   // 壊れた断面
+        const nk = key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2]), nc = bld.cells.get(nk);
+        if (nc && !nc.hid) continue;     // 隣が埋まっている面は見えない
+        if (!nc && bld.orig && bld.orig.has(nk)) {   // 壊れた断面
           pushFace(c, f, k, vary, 1.4, 1, bp, bn, bu, bc, bi);
           // 鉄筋: 面ごとに 0〜2 本、少し曲がって飛び出す（位置は格子の座標から決まるので毎回同じ）
           const hsh = Math.abs((c.x * 73856093) ^ (c.y * 19349663) ^ (c.z * 83492791) ^ (f.n[0] * 3 + f.n[1] * 5 + f.n[2] * 7)) % 1000;
@@ -584,6 +672,7 @@ const G = window.G = {};   // 確かめ用の口
   }
   // 壊れた塊だけ組み直す。鉄筋・窓枠・ガラスは全部の塊のをまとめて 1 回で描く
   function rebuildCellMesh() {
+    if (rodDirty) rebuildRods();
     let any = false;
     for (const ch of chunks.values()) if (ch.dirty) { ch.dirty = false; buildChunk(ch); any = true; }
     if (!any) return;
@@ -601,10 +690,16 @@ const G = window.G = {};   // 確かめ用の口
   }
   const NBD = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [0, 2, 0], [0, -2, 0]];
   function removeCell(c) {
+    if (bld.cells.get(key(c.x, c.y, c.z)) !== c) return;   // もう消えている（部材の巻き添えで先に消えた等）
     bld.cells.delete(key(c.x, c.y, c.z));
     const ch = chunkOf(c.x, c.y, c.z, false); if (ch) { ch.cells.delete(c); ch.dirty = true; }
     for (const d of NBD) { const n = chunkOf(c.x + d[0], c.y + d[1], c.z + d[2], false); if (n) n.dirty = true; }   // 隣の塊の面・窓も変わる
     if (c.b) { c.b.cells.delete(c); if (c.y < c.b.baseY) c.b.baseN--; dirtyB.add(c.b); }
+    // 部材の区間: 1 マス削れたら区間の絵を消し、ほかの区間に属さない残りの格子も消す（見えない格子が支えに残らないように）
+    if (c.segs) for (const r of c.segs) if (r.alive) {
+      r.alive = false; rodDirty = true;
+      for (const o of r.cells) if (o !== c && o.segs.every(q => !q.alive)) removeCell(o);
+    }
   }
   // p の周り（x ±rx・z ±rz・高さ ymax まで）に格子があるか（全部の格子を調べずに、その辺りの番号だけ見る）
   function cellsNear(p, rx, rz, ymax) {
@@ -641,8 +736,10 @@ const G = window.G = {};   // 確かめ用の口
       x0 = Math.min(x0, c.p.x); x1 = Math.max(x1, c.p.x); z0 = Math.min(z0, c.p.z); z1 = Math.max(z1, c.p.z); y0 = Math.min(y0, c.p.y); y1 = Math.max(y1, c.p.y);
       kinds[c.kind] = (kinds[c.kind] || 0) + 1;
       const k = KIND_COL[c.kind], vary = 0.94 + ((c.x * 7 + c.y * 13 + c.z * 5) % 7) * 0.012;
-      for (const f of FACE) { const n = bld.cells.get(key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2])); if (n && set.has(n)) continue; pushFace(c, f, k, vary, TEXM, f.n[1] < 0 ? 0.7 : 1, pos, nor, uv, col, idx); }
+      if (c.hid) continue;
+      for (const f of FACE) { const n = bld.cells.get(key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2])); if (n && set.has(n) && !n.hid) continue; pushFace(c, f, k, vary, TEXM, f.n[1] < 0 ? 0.7 : 1, pos, nor, uv, col, idx); }
     }
+    { const rs = new Set(); for (const c of list) if (c.segs) for (const r of c.segs) if (r.alive) rs.add(r); for (const r of rs) pushRod(r, pos, nor, uv, col, idx); }   // なめらかな部材も同じ塊に
     // 窓ガラスも一緒に沈める（無いと窓が全部 穴に見えた）
     const pp = [], pn = [], pi = [], h2 = CELL / 2;
     for (const w of winSet) {
