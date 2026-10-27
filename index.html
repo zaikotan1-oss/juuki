@@ -233,6 +233,13 @@ html,body{margin:0;height:100%;background:#1b2838;overflow:hidden;touch-action:n
 .stBtn:hover{filter:brightness(1.08)} .stBtn:active{transform:translateY(2px) scale(.97)}
 .stClose{font-size:15px;padding:4px 18px}
 @media (max-width:640px){.stCols{flex-wrap:wrap}.stCol.d,.stCol.b{flex:1 1 100%}.stCol.d .stGrid{--n:4}.stCol.b .stGrid{--n:3}}
+
+/* ---- 左右の旋回ボタンをレバーのすぐ内側へ（10-28 本人「右回転と左回転をアーム操作に近づけて」） ---- */
+#pedals{left:0;right:0;transform:none;justify-content:center;pointer-events:none}
+#pedals .pd{pointer-events:auto}
+#pLeft,#pRight{position:absolute;bottom:28px}
+#pLeft{left:calc(22px + 110px + 10px + env(safe-area-inset-left))}
+#pRight{right:calc(22px + 110px + 10px + env(safe-area-inset-right))}
 </style>
 </head>
 <body>
