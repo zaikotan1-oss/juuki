@@ -193,7 +193,12 @@ const G = window.G = {};   // 確かめ用の口
     { floors: 2, name: "かんらんしゃ", trucks: 5, star3: 300, star2: 500, kind: "wheel", look: 3, goal: "🎡 あしを けずると たおれる！" },
     { floors: 2, name: "きゅうすいとう", trucks: 5, star3: 240, star2: 420, kind: "wtower", look: 0, goal: "💧 あしを けずると たおれる！" },
     { floors: 2, name: "ガソリンスタンド", trucks: 6, star3: 300, star2: 540, kind: "gas", look: 2, goal: "⛽ はしらを けずると やねが おちる！" },
-    { floors: 2, name: "はし", trucks: 6, star3: 300, star2: 540, kind: "bridge", look: 1, goal: "🌉 はしの あしを けずると おちる！" }];
+    { floors: 2, name: "はし", trucks: 6, star3: 300, star2: 540, kind: "bridge", look: 1, goal: "🌉 はしの あしを けずると おちる！" },
+    // 10-28 本人「壊すステージをもっと足す」。★の時間は推測
+    { floors: 2, name: "がっこう", trucks: 10, star3: 600, star2: 1000, kind: "school", look: 0, goal: "🏫 がっこうを こわそう！ 時計の とうは 根元を けずると たおれる" },
+    { floors: 2, name: "おしろ", trucks: 8, star3: 480, star2: 800, kind: "castle", look: 1, goal: "🏯 石がきを けずると しずむ！" },
+    { floors: 2, name: "タワークレーン", trucks: 4, star3: 240, star2: 420, kind: "tcrane", look: 2, goal: "🏗 あしを けずると たおれる！" },
+    { floors: 2, name: "ごじゅうのとう", trucks: 5, star3: 300, star2: 500, kind: "pagoda", look: 3, goal: "⛩ 根元を けずると たおれる！" }];
   const BLD = { biru: "じゅうきビル", mansion: "じゅうきマンション", tower: "じゅうきタワー", house: "あたらしい おうち" };
   // クレーンで建てるステージ（10-16 本人「ショベルとクレーンを完全に分ける」）。look は空気（LOOKS の番号）
   const BSTAGES = [
@@ -555,6 +560,65 @@ const G = window.G = {};   // 確かめ用の口
     }
     for (const m of fieldM) m.setEnabled(on);
   }
+  // 箱を格子で積む（x1・y1・z1 は含まない。hollow なら外の壁だけ。kind は関数でもよい）
+  function box(x0, x1, y0, y1, z0, z1, kind, hollow) {
+    for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) for (let z = z0; z < z1; z++)
+      if (!hollow || x === x0 || x === x1 - 1 || z === z0 || z === z1 - 1) addCell(x, y, z, typeof kind === "function" ? kind(x, y, z) : kind);
+  }
+  // 学校: 3 階の長い校舎＋前に時計の塔（倒れる）＋右手前に体育館
+  function buildSchool() {
+    addHouse(gx(-16), gz(19), 64, 14, 3, 6, { wall: "wall", pillar: "pillar", slab: "slab", roof: "parapet", winRows: [2, 3, 4], door: [28, 35, 5], sink: true });
+    addHouse(gx(-2), gz(15.5), 8, 7, 5, 6, { wall: "twr_w", pillar: "brick", slab: "brick", roof: "gable", winRows: [3], door: [3, 4, 4], sink: true, topple: true });
+    addHouse(gx(12), gz(6), 20, 16, 1, 12, { wall: "tin", pillar: "steelc", slab: "tinroof", roof: "gable", winRows: [8, 9], door: [8, 11, 6] });
+  }
+  // お城: 石がきの上に白い壁の 3 段（段ごとに黒い屋根が張り出す）。石がきを削ると丸ごと沈む
+  function buildCastle(wx, wz) {
+    const cx = gx(wx), cz = gz(wz);
+    newB(4, true);
+    box(cx - 14, cx + 14, 0, 8, cz - 11, cz + 11, "block", true); box(cx - 14, cx + 14, 7, 8, cz - 11, cz + 11, "block");
+    const wall = y0 => (x, y, z) => (y - y0) % 7 === 3 && (x + z) % 4 === 0 ? "roof" : "twr_w";   // 白壁に黒い窓
+    const tiers = [[11, 8, 8, 16], [8, 6, 17, 24], [5, 4, 25, 31]];
+    for (const [hx, hz, y0, y1] of tiers) {
+      box(cx - hx, cx + hx, y0, y1, cz - hz, cz + hz, wall(y0), true);
+      box(cx - hx - 2, cx + hx + 2, y1, y1 + 1, cz - hz - 2, cz + hz + 2, "roof");
+      box(cx - hx - 1, cx + hx + 1, y1 + 1, y1 + 2, cz - hz - 1, cz + hz + 1, "roof");   // 屋根を 2 段にして厚みを出す（次の段の壁が上書きする）
+    }
+    box(cx - 5, cx + 5, 32, 34, cz - 1, cz + 1, "roof");
+    for (const sx of [-1, 1]) box(cx + sx * 5 - (sx > 0 ? 1 : 0), cx + sx * 5 + (sx > 0 ? 0 : 1), 34, 36, cz - 1, cz + 1, "g2");   // しゃちほこ（金）
+  }
+  // タワークレーン: 黄色い格子のマスト 36m＋長い腕と短い腕（おもり）＋運転室＋吊り荷。マストの脚を削ると倒れる
+  function buildTowerCrane(wx, wz) {
+    const cx = gx(wx), cz = gz(wz), H = 72, kf = () => "g2", ks = () => "steelc";
+    newB(1, false); box(cx - 5, cx + 5, 0, 2, cz - 5, cz + 5, "conc");
+    newB(6, true); curB.topple = true; curB.sinkR = 0.6;
+    const C = [[-2, -2], [2, -2], [2, 2], [-2, 2]];
+    for (const [a, b] of C) lineCells([cx + a, 2, cz + b], [cx + a, H, cz + b], kf);
+    for (let y = 2; y < H; y += 6) for (let i = 0; i < 4; i++) { const [a, b] = C[i], [c, d] = C[(i + 1) % 4], y2 = Math.min(H, y + 6); lineCells([cx + a, y2, cz + b], [cx + c, y2, cz + d], kf); lineCells([cx + a, y, cz + b], [cx + c, y2, cz + d], kf); }
+    const J0 = cx - 18, J1 = cx + 44, top = x => H + 5 - 4 * (x - cx) / (J1 - cx);
+    for (const b of [-2, 2]) lineCells([J0, H, cz + b], [J1, H, cz + b], kf);
+    lineCells([cx, H + 5, cz], [J1, top(J1), cz], kf);
+    for (let x = cx + 2; x < J1 - 3; x += 6) for (const b of [-2, 2]) { lineCells([x, H, cz + b], [x + 3, top(x + 3), cz], kf); lineCells([x + 3, top(x + 3), cz], [x + 6, H, cz + b], kf); }
+    for (const [a, b] of C) lineCells([cx + a, H, cz + b], [cx, H + 14, cz], kf);
+    lineCells([cx, H + 14, cz], [cx + 26, top(cx + 26), cz], ks); lineCells([cx, H + 14, cz], [J0 + 2, H + 1, cz], ks);
+    box(J0, J0 + 5, H - 6, H, cz - 3, cz + 3, "conc");                 // おもり
+    box(cx + 3, cx + 7, H - 5, H, cz - 3, cz + 2, "twr_w");            // 運転室
+    lineCells([cx + 36, H - 34, cz], [cx + 36, H - 1, cz], ks);
+    box(cx + 35, cx + 38, H - 37, H - 34, cz - 1, cz + 2, "twr_r");     // 吊り荷
+  }
+  // 五重塔: 石の台の上に 5 段（赤い柱・白い壁）、段ごとに黒い屋根が大きく張り出す。てっぺんに相輪。根元を削ると倒れる
+  function buildPagoda(wx, wz) {
+    const cx = gx(wx), cz = gz(wz);
+    newB(4, true); curB.topple = true; curB.sinkR = 0.5;
+    box(cx - 10, cx + 10, 0, 2, cz - 10, cz + 10, "block", true); box(cx - 10, cx + 10, 1, 2, cz - 10, cz + 10, "block");
+    for (let i = 0; i < 5; i++) {
+      const h = 7 - i, y0 = 2 + i * 7;
+      box(cx - h, cx + h, y0, y0 + 5, cz - h, cz + h, (x, y, z) => Math.abs(x - cx + 0.5) > h - 1 && Math.abs(z - cz + 0.5) > h - 1 || y === y0 + 4 ? "fire" : "firew", true);
+      box(cx - h - 3, cx + h + 3, y0 + 5, y0 + 6, cz - h - 3, cz + h + 3, "roof");
+      box(cx - h - 1, cx + h + 1, y0 + 6, y0 + 7, cz - h - 1, cz + h + 1, "roof");
+    }
+    lineCells([cx - 0.5, 37, cz - 0.5], [cx - 0.5, 54, cz - 0.5], () => "brg");   // 相輪
+    for (const y of [41, 44, 47, 50]) discCells(cx, cz, y, y + 1, 1.6, "brg");
+  }
   function buildBuilding() {
     for (const ch of chunks.values()) { if (ch.body) { ch.body.dispose(); ch.shape.dispose(); } ch.mesh.dispose(); }
     chunks.clear(); chunkGen++; bld.cells.clear(); winSet.clear(); blds.length = 0; dirtyB.clear(); curB = null; rods.length = 0; rodDirty = true;
@@ -570,6 +634,10 @@ const G = window.G = {};   // 確かめ用の口
     else if (S.kind === "wtower") buildWaterTower(0, 19);
     else if (S.kind === "gas") buildGas();
     else if (S.kind === "bridge") buildBridge();
+    else if (S.kind === "school") buildSchool();
+    else if (S.kind === "castle") buildCastle(0, 21);
+    else if (S.kind === "tcrane") buildTowerCrane(0, 22);
+    else if (S.kind === "pagoda") buildPagoda(0, 21);
     else addHouse(0, 0, BW / CELL, BD / CELL, FLOORS, FH / CELL);     // 真ん中のビル 16 × 12、1 階 6 段
     stadiumField(S.kind === "stadium");
     if (S.town) {
@@ -587,7 +655,7 @@ const G = window.G = {};   // 確かめ用の口
     Object.assign(AREA, S.wide ? { x0: -66, x1: 66, z0: -58, z1: 74 } : S.big ? { x0: -34, x1: 34, z0: -16, z1: 52 } : { x0: -23.4, x1: 23.4, z0: -13.4, z1: 41.4 });
     for (const h of hoards) h.setEnabled(!S.wide && !S.big);
     // 影: 30 階は太陽を遠くへ（近いと上の階の影が切れる）。まちは影の範囲がショベルについていく
-    SUN_D = S.sky || ["pylon", "chimney", "wheel", "wtower"].includes(S.kind) ? 240 : 110; sun.shadowMaxZ = SUN_D + 130; sunC.set(0, 0, 15); sun.position = sunC.subtract(sun.direction.scale(SUN_D));
+    SUN_D = S.sky || ["pylon", "chimney", "wheel", "wtower", "tcrane", "pagoda"].includes(S.kind) ? 240 : 110; sun.shadowMaxZ = SUN_D + 130; sunC.set(0, 0, 15); sun.position = sunC.subtract(sun.direction.scale(SUN_D));
     bld.total = bld.cells.size;
     bld.orig = new Set(bld.cells.keys());
     rebuildCellMesh();
