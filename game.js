@@ -1719,9 +1719,22 @@ const G = window.G = {};   // 確かめ用の口
   const FOOT = []; for (const k of [2.1, 1.05, 0, -1.05, -2.1]) for (const s of [-1.4, 0, 1.4]) FOOT.push([s, k]);
   function overlap(np, h) {
     const f = new B.Vector3(Math.sin(h), 0, Math.cos(h)), r = new B.Vector3(f.z, 0, -f.x);
-    let n = 0, front = null;
-    for (const [s, k] of FOOT) { const p = np.add(r.scale(s)).add(f.scale(k)); if (cellsNear(p, 0.3, 0.3, 3.6)) { n++; if (!front && k > 0) front = p; } }
-    return { n, front };
+    let n = 0, front = null; const pts = [];
+    for (const [s, k] of FOOT) { const p = np.add(r.scale(s)).add(f.scale(k)); if (cellsNear(p, 0.3, 0.3, 3.6)) { n++; pts.push(p); if (!front && k > 0) front = p; } }
+    return { n, front, pts };
+  }
+  // ガガガと削る: 正面は強く、横やお尻など密着している所も少しずつ（そこが残って抜けられなくなった・10-31 本人）
+  function grind(o, dt) {
+    ramK = 1;
+    if ((rammT -= dt) <= 0) {
+      rammT = 0.13 / Math.sqrt(upV("pow"));
+      const pw = upV("pow"); let n = 0;
+      for (const q of o.pts) n += q === o.front ? smash(new B.Vector3(q.x, 0.6 + Math.random() * 2.4, q.z), 0.8 + pw * 0.1, fwd(), 10, 3)
+        : smash(new B.Vector3(q.x, 0.3 + Math.random() * 3.2, q.z), 0.55 + pw * 0.05, null, 2 + Math.floor(pw / 2), 2);
+      const hit = o.front || o.pts[Math.floor(Math.random() * o.pts.length)] || ex.pos.add(fwd().scale(2.1));
+      playS("bucket_hit", 0.45, 0.75 + Math.random() * 0.3); sparks(new B.Vector3(hit.x, 1 + Math.random() * 2, hit.z), 8); shake(0.06);
+      if (n) broke(n, hit, false); else dust(new B.Vector3(hit.x, 1, hit.z), 6);
+    }
   }
   const _jit = new B.Vector3(); let ramK = 0;
   function moveEx(dt) {
@@ -1731,7 +1744,9 @@ const G = window.G = {};   // 確かめ用の口
     if (mag > 0.12) {
       const wantH = Math.atan2(mv.x, mv.y), diff = wrapA(wantH - ex.heading);
       const nh = ex.heading + B.Scalar.Clamp(diff, -4.2 * dt, 4.2 * dt);
-      if (overlap(ex.pos, nh).n <= cur) ex.heading = nh;   // 回ると建物にめり込む時は回らない
+      const ov = overlap(ex.pos, nh);
+      if (ov.n <= cur) ex.heading = nh;   // 回ると建物にめり込む時は回らない（代わりに当たる所を削る）
+      else grind(ov, dt);
       want = top * mag * Math.max(0, Math.cos(diff));
     }
     speed += (want - speed) * Math.min(1, dt * (want > speed ? 3 : 6));
@@ -1745,14 +1760,7 @@ const G = window.G = {};   // 確かめ用の口
       const nx = new B.Vector3(np.x, 0, ex.pos.z), nz = new B.Vector3(ex.pos.x, 0, np.z);
       if (!overlap(nx, ex.heading).n) ex.pos.copyFrom(nx); else if (!overlap(nz, ex.heading).n) ex.pos.copyFrom(nz);
       speed = Math.min(speed, 1.2);
-      ramK = 1;
-      const hit = o.front || np.add(fwd().scale(2.1));
-      if ((rammT -= dt) <= 0) {
-        rammT = 0.13 / Math.sqrt(upV("pow"));
-        const n = smash(new B.Vector3(hit.x, 0.6 + Math.random() * 2.4, hit.z), 0.8 + upV("pow") * 0.1, fwd(), 10, 3);
-        playS("bucket_hit", 0.45, 0.75 + Math.random() * 0.3); sparks(new B.Vector3(hit.x, 1 + Math.random() * 2, hit.z), 8); shake(0.06);
-        if (n) broke(n, hit, false); else dust(new B.Vector3(hit.x, 1, hit.z), 6);
-      }
+      grind(o, dt);
     }
     const lim = HALF + 30; ex.pos.x = B.Scalar.Clamp(ex.pos.x, -lim, lim); ex.pos.z = B.Scalar.Clamp(ex.pos.z, -lim, lim);
     return speed / top;
