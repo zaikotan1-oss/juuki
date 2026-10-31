@@ -198,7 +198,7 @@ const G = window.G = {};   // 確かめ用の口
     if (K.roof === "gable") {      // 切妻屋根: 手前と奥から 1 段ずつ上がる。軒は 1 格子はみ出す。両端は壁でふさぐ
       for (let k = 0; ; k++) {
         const zL = k - 1, zR = D - k; if (zL > zR) break;
-        for (let x = -1; x <= W; x++) { addCell(ox + x, top + k, oz + zL, "roof"); if (zR !== zL) addCell(ox + x, top + k, oz + zR, "roof"); }
+        const rk = K.roofK || "roof"; for (let x = -1; x <= W; x++) { addCell(ox + x, top + k, oz + zL, rk); if (zR !== zL) addCell(ox + x, top + k, oz + zR, rk); }   // roofK で屋根の色を変えられる（ゆうえんち）
         for (const x of [0, W - 1]) for (let z = Math.max(0, zL + 1); z <= Math.min(D - 1, zR - 1); z++) addCell(ox + x, top + k, oz + z, K.wall);
       }
     }
@@ -1300,6 +1300,204 @@ const G = window.G = {};   // 確かめ用の口
     }
     if (n) { dirty = true; broke(n, cellWorld(chainLast.x, chainLast.y, chainLast.z), false); }
   }
+  // ================= ステージとテーマ（10-31 本人「ある程度壊したら次のステージへ・建物の雰囲気が毎回かわるように。遊園地とか異国とか」） =================
+  // 街の 4 割を壊すと「つぎの まちへ」。テーマは まち → ゆうえんち → ヨーロッパ → さばくの国 → まち（2 周目は並びが別）…
+  // テーマごとに: 土地の種類の出方・名所 10 個・色の差し替え・土地の地面の色
+  const THEMES = [
+    { id: "city", name: "まち", lms: ["pylon", "chimney", "wheel", "wtower", "gas", "fire", "school", "castle", "tcrane", "pagoda"],
+      kind: (r, down) => r < 0.08 ? "park" : r < 0.16 ? "parking" : r < 0.42 - down * 0.15 ? "house" : r < 0.6 ? "apart" : r < 0.7 ? "shop" : r < 0.78 ? "ware" : down > 0.35 ? "office" : "apart",
+      first: r => r < 0.5 ? "park" : "house", col: {}, lotG: "#8f8d87", parkG: "#5f7d40" },
+    { id: "fun", name: "ゆうえんち", lms: ["wheel", "coaster", "carousel", "tent", "droptower", "cups", "castle", "coaster", "carousel", "wtower"],
+      kind: r => r < 0.14 ? "park" : r < 0.22 ? "parking" : r < 0.62 ? "fun" : r < 0.86 ? "stall" : "apart",
+      first: r => r < 0.5 ? "park" : "stall", col: { roof: [0.3, 0.45, 0.9] }, lotG: "#a59d8e", parkG: "#5f9440" },
+    { id: "eu", name: "ヨーロッパ", lms: ["church", "clock", "windmill", "arch", "castle", "wheel", "pylon", "church", "windmill", "fire"],
+      kind: (r, down) => r < 0.1 ? "park" : r < 0.15 ? "parking" : r < 0.66 ? "eu" : r < 0.84 ? "eushop" : down > 0.35 ? "apart" : "eu",
+      first: r => r < 0.5 ? "park" : "eu", col: { roof: [0.74, 0.33, 0.19], twr_r: [0.42, 0.32, 0.24], twr_w: [0.86, 0.82, 0.74] }, lotG: "#8d8579", parkG: "#5f7d40" },
+    { id: "desert", name: "さばくの くに", lms: ["mosque", "pyramid", "obelisk", "palace", "gas", "wtower", "mosque", "pyramid", "chimney", "obelisk"],
+      kind: r => r < 0.06 ? "park" : r < 0.12 ? "parking" : r < 0.74 ? "adobe" : r < 0.9 ? "bazaar" : "ware",
+      first: r => r < 0.5 ? "bazaar" : "adobe", col: { wall: [0.92, 0.8, 0.6], roof: [0.66, 0.46, 0.3], slab: [0.85, 0.74, 0.56] }, lotG: "#c2ad85", parkG: "#8a9450" },
+  ];
+  Object.assign(KIND_COL, {
+    eu1: [0.96, 0.8, 0.58], eu2: [0.72, 0.84, 0.92], eu3: [0.95, 0.68, 0.66], eu4: [0.84, 0.9, 0.66], stone: [0.76, 0.73, 0.67],   // ヨーロッパの家の淡い壁・石
+    sand: [0.9, 0.77, 0.56], sand2: [0.78, 0.64, 0.45], dome: [0.24, 0.52, 0.86], coast: [0.88, 0.16, 0.2] });                       // さばくの土壁・青い丸屋根・ジェットコースターの赤
+  const LM_NAME2 = { coaster: "ジェットコースター", carousel: "メリーゴーランド", tent: "サーカス", droptower: "フリーフォール", cups: "コーヒーカップ",
+    church: "きょうかい", clock: "とけいだい", windmill: "ふうしゃ", arch: "がいせんもん", mosque: "まるやねの きゅうでん", pyramid: "ピラミッド", obelisk: "オベリスク", palace: "おうきゅう" };
+  const COLS4 = ["g1", "g2", "g3", "g4"];
+  // 丸屋根: (cx, cz) を中心に、y0 から半径 R の半球（上に小さなふた）
+  function domeCells(cx, cz, y0, R, kind) {
+    ringWall(cx, cz, y0, y0 + R - 1, y => Math.sqrt(Math.max(0, R * R - (y - y0) ** 2)), 2, () => kind, 2);
+    discCells(cx, cz, y0 + R - 2, y0 + R, Math.max(2, Math.sqrt(R * 2)), kind);
+  }
+  // 中が詰まった形の表面だけを格子にする（solid(x,y,z) が true の所のうち、外に面した所）
+  function shellCells(x0, x1, y0, y1, z0, z1, solid, kind) {
+    const S = (x, y, z) => x >= x0 && x < x1 && y >= y0 && y < y1 && z >= z0 && z < z1 && solid(x, y, z);
+    for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) for (let z = z0; z < z1; z++)
+      if (S(x, y, z) && (!S(x + 1, y, z) || !S(x - 1, y, z) || !S(x, y + 1, z) || !S(x, y - 1, z) || !S(x, y, z + 1) || !S(x, y, z - 1))) addCell(x, y, z, typeof kind === "function" ? kind(x, y, z) : kind);
+  }
+
+  // ---- ゆうえんち ----
+  // ジェットコースター: 上下に波打つ輪のレール（赤）＋鉄の支柱＋車両。支柱を削ると全部が沈む
+  function buildCoaster() {
+    const cx = gx(0), cz = gz(20), N = 72, T = Math.PI * 2;
+    const P = i => { const t = i / N * T; return [cx + 28 * Math.cos(t), 6 + 22 * (0.5 + 0.5 * Math.sin(2 * t + 0.5)) + 6 * Math.max(0, Math.sin(3 * t)), cz + 22 * Math.sin(t)]; };
+    newB(6, true); curB.sinkR = 0.6;
+    for (let i = 0; i < N; i++) { lineCells(P(i), P(i + 1), () => "coast", 2); if (i % 6 === 0) { const [x, y, z] = P(i); lineCells([x, 0, z], [x, y - 1, z], () => "steelc"); } }
+    for (let k = 0; k < 3; k++) { const [x, y, z] = P(3 + k * 2); box(Math.round(x) - 1, Math.round(x) + 2, Math.round(y) + 2, Math.round(y) + 4, Math.round(z) - 1, Math.round(z) + 2, k % 2 ? "g2" : "g4"); }
+    houseW(-5, 3.5, 10, 4, 1, { wall: "g2", pillar: "twr_w", slab: "twr_w", roof: "gable", roofK: "fire", winRows: [2] }, 3);   // 乗り場
+  }
+  // メリーゴーランド: 丸い台＋真ん中の柱＋縞の とんがり屋根＋柱に付いた馬 8 頭
+  function buildCarousel() {
+    const cx = gx(0), cz = gz(20);
+    newB(4, true);
+    discCells(cx, cz, 0, 2, 15, "g2");
+    box(cx - 2, cx + 2, 2, 17, cz - 2, cz + 2, "g4");
+    for (let k = 0; k < 8; k++) {
+      const t = k / 8 * Math.PI * 2, px = Math.round(cx + 10.5 * Math.cos(t)), pz = Math.round(cz + 10.5 * Math.sin(t));
+      lineCells([px, 2, pz], [px, 16, pz], () => "g2");
+      box(px - 1, px + 2, 5, 8, pz - 1, pz + 1, k % 2 ? "twr_w" : "g3"); box(px + 1, px + 2, 8, 10, pz - 1, pz + 1, k % 2 ? "twr_w" : "g3");
+    }
+    ringWall(cx, cz, 16, 26, y => Math.max(1.5, 17 - (y - 16) * 1.6), 2, y => y % 2 ? "g1" : "twr_w", 1);
+    discCells(cx, cz, 26, 28, 2, "g2");
+  }
+  // サーカスのテント: 赤白の縞の丸い壁＋とんがり屋根＋てっぺんの旗
+  function buildTent() {
+    const cx = gx(0), cz = gz(20), st = y => Math.floor(y / 3) % 2 ? "fire" : "twr_w";
+    newB(4, true);
+    ringWall(cx, cz, 0, 12, () => 22, 2, st, 3);
+    ringWall(cx, cz, 12, 34, y => Math.max(2, 23 - (y - 12) * 0.95), 2, y => Math.floor(y / 2) % 2 ? "fire" : "twr_w", 2);
+    lineCells([cx - 0.5, 0, cz - 0.5], [cx - 0.5, 42, cz - 0.5], () => "steelc");
+    box(cx, cx + 6, 38, 41, cz, cz + 1, "g2");
+  }
+  // フリーフォール: 50m の塔（青白の縞）＋座席の輪＋てっぺんの箱。根元を削ると倒れる
+  function buildDropTower() {
+    const cx = gx(0), cz = gz(20);
+    newB(1, false); box(cx - 8, cx + 8, 0, 2, cz - 8, cz + 8, "conc");
+    newB(6, true); curB.topple = true;
+    box(cx - 3, cx + 3, 2, 110, cz - 3, cz + 3, (x, y) => Math.floor(y / 10) % 2 ? "g4" : "twr_w", true);
+    box(cx - 6, cx + 6, 40, 44, cz - 6, cz + 6, "g2", true);
+    box(cx - 5, cx + 5, 110, 115, cz - 5, cz + 5, "g1");
+  }
+  // コーヒーカップ: 緑の丸い床＋色とりどりのカップ 6 つ＋真ん中のポット
+  function buildCups() {
+    const cx = gx(0), cz = gz(20);
+    newB(1, false); discCells(cx, cz, 0, 1, 28, "g3");
+    newB(3, true);
+    for (let k = 0; k < 6; k++) {
+      const t = k / 6 * Math.PI * 2, px = Math.round(cx + 17 * Math.cos(t)), pz = Math.round(cz + 17 * Math.sin(t)), c = COLS4[k % 4];
+      discCells(px, pz, 1, 2, 5, c); ringWall(px, pz, 2, 7, y => 4 + (y - 2) * 0.3, 1, () => c, 5);
+    }
+    ringWall(cx, cz, 1, 15, y => Math.sqrt(Math.max(4, 81 - (y - 6) ** 2)), 2, () => "twr_w", 2);
+    discCells(cx, cz, 14, 16, 3, "g1");
+  }
+  // ---- ヨーロッパ ----
+  // 教会: 石の身廊（急な屋根・奥にステンドグラスの丸窓）＋前に高い鐘の塔ととんがり屋根（倒れる）
+  function buildChurch() {
+    const cx = gx(0), cz = gz(16);
+    newB(4, true);
+    box(cx - 8, cx + 8, 0, 18, cz - 2, cz + 26, "stone", true);
+    for (let k = 0; k < 10; k++) {
+      const y = 18 + k;
+      for (let z = cz - 3; z < cz + 27; z++) { addCell(cx - 9 + k, y, z, "roof"); addCell(cx + 8 - k, y, z, "roof"); }
+      for (let x = cx - 8 + k; x < cx + 8 - k; x++) { addCell(x, y, cz - 2, "stone"); addCell(x, y, cz + 25, "stone"); }
+    }
+    for (let x = cx - 3; x < cx + 3; x++) for (let y = 9; y < 15; y++) if (Math.hypot(x - cx + 0.5, y - 11.5) < 3.2) addCell(x, y, cz + 25, (x + y) % 2 ? "g4" : "g1");
+    newB(6, true); curB.topple = true;
+    box(cx - 4, cx + 4, 0, 44, cz - 10, cz - 2, "stone", true);
+    for (let y = 44; y < 72; y++) { const h = Math.max(1, Math.round(4.5 * (1 - (y - 44) / 28))); box(cx - h, cx + h, y, y + 1, cz - 6 - h, cz - 6 + h, "roof", true); }
+    box(cx, cx + 1, 72, 79, cz - 6, cz - 5, "g2"); box(cx - 2, cx + 3, 76, 77, cz - 6, cz - 5, "g2");
+  }
+  // 時計台: 42m の石の塔＋4 面の白い文字盤＋上の とんがり屋根。根元を削ると倒れる
+  function buildClock() {
+    const cx = gx(0), cz = gz(20);
+    newB(6, true); curB.topple = true;
+    box(cx - 6, cx + 6, 0, 84, cz - 6, cz + 6, (x, y) => y % 12 === 0 ? "stone" : "sand2", true);
+    const face = (x, y, z) => { const r = Math.hypot(y - 71.5, (x !== null ? x : z) - (x !== null ? cx : cz) + 0.5); return r < 0.8 ? "steelc" : r < 4.2 ? "twr_w" : null; };
+    for (let a = cx - 5; a < cx + 5; a++) for (let y = 67; y < 77; y++) { const k = face(a, y, null); if (k) { addCell(a, y, cz - 7, k); addCell(a, y, cz + 6, k); } }
+    for (let a = cz - 5; a < cz + 5; a++) for (let y = 67; y < 77; y++) { const k = face(null, y, a); if (k) { addCell(cx - 7, y, a, k); addCell(cx + 6, y, a, k); } }
+    for (let y = 84; y < 104; y++) { const h = Math.max(1, Math.round(6.5 * (1 - (y - 84) / 20))); box(cx - h, cx + h, y, y + 1, cz - h, cz + h, "steelc", true); }
+  }
+  // 風車: 白い丸い塔＋とんがり屋根＋木の羽根 4 枚（布の帆つき）。根元を削ると倒れる
+  function buildWindmill() {
+    const cx = gx(0), cz = gz(22);
+    newB(6, true); curB.topple = true;
+    ringWall(cx, cz, 0, 40, y => 8 - 3 * y / 40, 2, () => "twr_w", 4);
+    ringWall(cx, cz, 40, 48, y => Math.max(1, 5.5 - (y - 40) * 0.6), 2, () => "roof", 2);
+    const hub = [cx - 0.5, 40, cz - 8];
+    box(cx - 1, cx + 1, 39, 41, cz - 9, cz - 4, "beam");
+    for (let k = 0; k < 4; k++) {
+      const a = Math.PI / 4 + k * Math.PI / 2, dx = Math.cos(a), dy = Math.sin(a), px = -dy, py = dx;
+      lineCells(hub, [hub[0] + dx * 24, hub[1] + dy * 24, hub[2]], () => "wood", 2);
+      lineCells([hub[0] + dx * 7 + px * 3.5, hub[1] + dy * 7 + py * 3.5, hub[2]], [hub[0] + dx * 23 + px * 3.5, hub[1] + dy * 23 + py * 3.5, hub[2]], () => "firew", 2);
+    }
+  }
+  // 凱旋門: 大きな石の門（真ん中が丸いアーチで抜けている）。表面だけ格子にする
+  function buildArch() {
+    const cx = gx(0), cz = gz(20);
+    newB(4, true);
+    shellCells(cx - 16, cx + 16, 0, 44, cz - 6, cz + 6, (x, y) => { const dx = x - cx + 0.5; return !((Math.abs(dx) < 7 && y < 26) || dx * dx + (y - 26) ** 2 < 49); }, (x, y) => y >= 38 && y < 40 ? "sand2" : "stone");
+  }
+  // ---- さばくの くに ----
+  // 丸屋根の宮殿: 土壁の四角い建物＋大きな青い丸屋根＋金の飾り。左右に高い塔 2 本（倒れる）
+  function buildMosque() {
+    const cx = gx(0), cz = gz(22);
+    newB(4, true);
+    box(cx - 14, cx + 14, 0, 16, cz - 14, cz + 14, "sand", true); box(cx - 14, cx + 14, 15, 16, cz - 14, cz + 14, "sand2");
+    domeCells(cx, cz, 16, 12, "dome");
+    lineCells([cx - 0.5, 28, cz - 0.5], [cx - 0.5, 34, cz - 0.5], () => "g2");
+    for (const sx of [-1, 1]) {
+      const mx = cx + sx * 21, mz = cz - 14;
+      newB(6, true); curB.topple = true;
+      ringWall(mx, mz, 0, 64, () => 3, 2, y => y % 16 === 0 ? "sand2" : "sand", 4);
+      discCells(mx, mz, 46, 48, 4.5, "sand2");
+      ringWall(mx, mz, 64, 72, y => Math.max(1, 3.5 - (y - 64) * 0.35), 2, () => "dome", 2);
+    }
+  }
+  // ピラミッド: 段々に積んだ石（外側だけ格子）。削ると沈む
+  function buildPyramid() {
+    const cx = gx(0), cz = gz(20);
+    newB(6, true); curB.sinkR = 0.5;
+    for (let y = 0; y < 36; y++) { const h = 30 - Math.floor(y * 0.85); if (h < 1) break; box(cx - h, cx + h, y, y + 1, cz - h, cz + h, "sand", h > 2); }
+  }
+  // オベリスク: 細長い石の柱＋金のてっぺん。根元を削ると倒れる
+  function buildObelisk() {
+    const cx = gx(0), cz = gz(20);
+    newB(1, false); box(cx - 6, cx + 6, 0, 4, cz - 6, cz + 6, "sand2");
+    newB(6, true); curB.topple = true;
+    box(cx - 3, cx + 3, 4, 70, cz - 3, cz + 3, (x, y) => y % 10 === 0 ? "sand2" : "sand", true);
+    box(cx - 2, cx + 2, 70, 73, cz - 2, cz + 2, "g2"); box(cx - 1, cx + 1, 73, 76, cz - 1, cz + 1, "g2");
+  }
+  // 王宮: 横に長い 2 階の土壁の建物＋屋上に大小 3 つの丸屋根
+  function buildPalace() {
+    addHouse(gx(-14), gz(10), 56, 32, 2, 8, { wall: "sand", pillar: "sand2", slab: "sand2", roof: "parapet", winRows: [3, 4, 5], door: [24, 31, 6], sink: true });
+    domeCells(gx(0), gz(18), 17, 11, "dome");
+    for (const sx of [-1, 1]) domeCells(gx(sx * 10), gz(18), 17, 6, "g2");
+  }
+  const LM_BUILD = { coaster: buildCoaster, carousel: buildCarousel, tent: buildTent, droptower: buildDropTower, cups: buildCups,
+    church: buildChurch, clock: buildClock, windmill: buildWindmill, arch: buildArch, mosque: buildMosque, pyramid: buildPyramid, obelisk: buildObelisk, palace: buildPalace };
+  // テーマの土地: ゆうえんちの店・屋台、ヨーロッパの家・店、さばくの土の家・市場
+  function buildThemeLot(L, fx, fz, extras, set) {
+    const cx = L.cx, cz = L.cz;
+    switch (L.kind) {
+      case "fun": { const w = pick([8, 10]), d = pick([6, 8]), x0 = fx(w), z0 = fz(d); set(x0, z0, w, d);
+        houseW(x0, z0, w, d, pick([1, 2]), { wall: "twr_w", pillar: pick(COLS4), slab: "twr_w", roof: "gable", roofK: pick(["g1", "g2", "g4", "fire", "g3"]), winRows: [2, 3] });
+        for (let x = gx(x0); x < gx(x0 + w); x++) addCell(x, 5, gz(z0) - 1, x % 2 ? "g1" : "twr_w"); extras(1); return true; }
+      case "stall": { for (const k of [-1, 1]) houseW(cx + k * 4.5 - 2, cz - 2, 4, 4, 1, { wall: pick(COLS4), pillar: "twr_w", slab: "twr_w", roof: "gable", roofK: pick(["g1", "g2", "g4", "fire"]), winRows: [2], door: [2, 5, 4] }, 2.5); return true; }
+      case "eu": { const w = pick([8, 10]), d = pick([8, 10]), x0 = fx(w), z0 = fz(d), f = 3 + Math.floor(rnd() * (1 + L.down * 3)); set(x0, z0, w, d);
+        houseW(x0, z0, w, d, f, { wall: pick(["eu1", "eu2", "eu3", "eu4"]), pillar: "stone", slab: "stone", roof: "gable", winRows: [2, 3, 4], sink: f >= 4 }); extras(f); return true; }
+      case "eushop": { const w = 14, d = 8, x0 = fx(w), z0 = fz(d); set(x0, z0, w, d);
+        houseW(x0, z0, w, d, 3, { wall: "brick", pillar: "stone", slab: "stone", roof: "gable", winRows: [1, 2, 3], door: [8, 19, 5] }); extras(3);
+        for (let x = gx(x0); x < gx(x0 + w); x++) addCell(x, 5, gz(z0) - 1, x % 2 ? "fire" : "twr_w"); return true; }
+      case "adobe": { const w = pick([8, 10, 12]), d = pick([8, 10]), x0 = fx(w), z0 = fz(d), f = 1 + Math.floor(rnd() * (1.5 + L.down * 2.5)); set(x0, z0, w, d);
+        houseW(x0, z0, w, d, f, { wall: "sand", pillar: "sand2", slab: "sand2", roof: "parapet", winRows: [2, 3], sink: f >= 3 }); extras(f);
+        if (rnd() < 0.35) domeCells(gx(x0 + w / 2), gz(z0 + d / 2), f * 6 + 1, Math.floor(Math.min(w, d) / CELL / 2) - 3, "dome"); return true; }
+      case "bazaar": { for (const k of [-1, 1]) {   // 布の屋根の店 2 つ（木の柱・台）
+          newB(1, false); const bx = gx(cx + k * 4.5 - 2), bz = gz(cz - 3), cl = pick([["g1", "twr_w"], ["g4", "twr_w"], ["g2", "fire"]]);
+          for (const [a, b] of [[0, 0], [7, 0], [0, 11], [7, 11]]) box(bx + a, bx + a + 1, 0, 6, bz + b, bz + b + 1, "wood");
+          box(bx - 1, bx + 9, 6, 7, bz - 1, bz + 13, x => x % 2 ? cl[0] : cl[1]); box(bx + 1, bx + 7, 0, 2, bz + 1, bz + 3, "wood");
+        } return true; }
+    }
+    return false;
+  }
   // ================= 街 =================
   // 6×6 区画（1 区画 40m・道 12m）。真ん中寄りの 1 区画が ひきとりじょ。名所（鉄塔・観覧車…）を 10 区画、ほかは 2×2 の土地に家・マンション・ビル・倉庫・公園
   const NBK = Math.max(3, Math.min(8, Number(Q.get("nb") || 6))), BLK = 40, ROAD = 12, PITCH = BLK + ROAD, HALF = NBK * PITCH / 2;
@@ -1314,8 +1512,12 @@ const G = window.G = {};   // 確かめ用の口
 
   // ---- 保存（お金・強化・こわしきった土地） ----
   const SAVE_KEY = "machi_kowashi_v1";
-  const sv = (() => { try { return Object.assign({ money: 0, up: { cap: 0, spd: 0, pow: 0, suck: 0 }, gone: [], delivered: 0 }, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); } catch (e) { return { money: 0, up: { cap: 0, spd: 0, pow: 0, suck: 0 }, gone: [], delivered: 0 }; } })();
-  if (Q.has("fresh")) Object.assign(sv, { money: 0, up: { cap: 0, spd: 0, pow: 0, suck: 0 }, gone: [], delivered: 0 });
+  const sv = (() => { try { return Object.assign({ money: 0, up: { cap: 0, spd: 0, pow: 0, suck: 0 }, gone: [], delivered: 0, stage: 0 }, JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); } catch (e) { return { money: 0, up: { cap: 0, spd: 0, pow: 0, suck: 0 }, gone: [], delivered: 0 }; } })();
+  if (Q.has("fresh")) Object.assign(sv, { money: 0, up: { cap: 0, spd: 0, pow: 0, suck: 0 }, gone: [], delivered: 0, stage: 0 });
+  // ステージ（?stage=N で試せる・保存はしない）。並びの種は ステージごとに変える（ステージ 0 は前と同じ街）
+  const STAGE = Q.has("stage") ? Number(Q.get("stage")) || 0 : sv.stage || 0, TH = THEMES[STAGE % THEMES.length];
+  seed = 20261029 + STAGE * 7919;
+  Object.assign(KIND_COL, TH.col);
   let saveDirty = false;
   const save = () => { saveDirty = false; try { localStorage.setItem(SAVE_KEY, JSON.stringify(sv)); } catch (e) {} };
 
@@ -1398,8 +1600,8 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ---- 土地（区画の中の建てる場所）を決める ----
-  const LANDMARKS = ["pylon", "chimney", "wheel", "wtower", "gas", "fire", "school", "castle", "tcrane", "pagoda"];
-  const LM_NAME = { pylon: "てっとう", chimney: "えんとつ", wheel: "かんらんしゃ", wtower: "きゅうすいとう", gas: "ガソリンスタンド", fire: "しょうぼうしょ", school: "がっこう", castle: "おしろ", tcrane: "タワークレーン", pagoda: "ごじゅうのとう" };
+  const LANDMARKS = TH.lms;
+  const LM_NAME = { pylon: "てっとう", chimney: "えんとつ", wheel: "かんらんしゃ", wtower: "きゅうすいとう", gas: "ガソリンスタンド", fire: "しょうぼうしょ", school: "がっこう", castle: "おしろ", tcrane: "タワークレーン", pagoda: "ごじゅうのとう", ...LM_NAME2 };
   const lots = [];
   {
     const blocks = [];
@@ -1415,9 +1617,8 @@ const G = window.G = {};   // 確かめ用の口
       const dsx = i < (NBK - 1) / 2 ? 1 : -1, dsz = j < (NBK - 1) / 2 ? 1 : -1;   // おろしばは、区画の街の真ん中に近い角
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
         if (dropBlk.has(i + "," + j) && sx === dsx && sz === dsz) { drops.push({ x: b.x + sx * 8.75, z: b.z + sz * 8.75, h: 8.75 }); continue; }
-        const r = rnd(), kind = i === YI && j === YJ - 1 ? (r < 0.5 ? "park" : "house")       // 最初の場所の前は低い物
-          : r < 0.08 ? "park" : r < 0.16 ? "parking" : r < 0.42 - down * 0.15 ? "house" : r < 0.6 ? "apart" : r < 0.7 ? "shop" : r < 0.78 ? "ware" : down > 0.35 ? "office" : "apart";
-        lots.push({ id: lots.length, cx: b.x + sx * 8.75, cz: b.z + sz * 8.75, w: 16.5, d: 16.5, kind, down, ground: kind === "park" ? "#5f7d40" : "#8f8d87" });
+        const r = rnd(), kind = i === YI && j === YJ - 1 ? TH.first(r) : TH.kind(r, down);   // 最初の場所の前は低い物
+        lots.push({ id: lots.length, cx: b.x + sx * 8.75, cz: b.z + sz * 8.75, w: 16.5, d: 16.5, kind, down, ground: kind === "park" ? TH.parkG : TH.lotG });
       }
     }
   }
@@ -1426,6 +1627,7 @@ const G = window.G = {};   // 確かめ用の口
 
   // ---- 建物を建てる（ショベルが近づいた土地から順に） ----
   const KIND_VAL = { tin: 2, steelc: 3, tinroof: 2, brick: 2, twr_r: 3, twr_w: 3, g1: 2, g2: 2, g3: 2, g4: 2, tank: 3, brg: 3, lamp: 2, pipe: 3, gasm: 2 };   // 1 格子の値段（無い物は 1）
+  Object.assign(KIND_VAL, { stone: 2, dome: 3, coast: 3 });
   const CHAR_COL = [0.16, 0.14, 0.13];
   Object.assign(KIND_COL, { gasm: [1.0, 0.82, 0.12], pipe: [0.25, 0.5, 0.95], shopw: [0.88, 0.86, 0.8], awn: [0.85, 0.25, 0.2] });
   bld.orig = new Set();
@@ -1445,7 +1647,7 @@ const G = window.G = {};   // 確かめ用の口
       if (rnd() < 0.75) gasMeter(gx0, gz0);
       if (rnd() < 0.55) waterPipe(gx(x0) - 1, gz(z0) + 3 + Math.floor(rnd() * Math.max(1, d / CELL - 6)), Math.min(floors * 6, 14));
     };
-    switch (L.kind) {
+    if (!buildThemeLot(L, fx, fz, extras, (a, b, c, e) => { x0 = a; z0 = b; w = c; d = e; })) switch (L.kind) {
       case "house": { w = pick([8, 10]); d = pick([6, 8]); x0 = fx(w); z0 = fz(d); houseW(x0, z0, w, d, pick([1, 2, 2]), pick([WOOD, Object.assign({}, WOOD, { wall: "prefab" })]), 2.5); extras(2);
         if (rnd() < 0.5) addFence(gx(cx - W / 2 + 0.5), gz(cz - L.d / 2 + 0.5), Math.round(W / CELL) - 2, 2, "block"); break; }
       case "apart": { w = pick([10, 12]); d = pick([8, 10]); x0 = fx(w); z0 = fz(d); const f = 3 + Math.floor(rnd() * (2 + L.down * 4)); houseW(x0, z0, w, d, f, f >= 4 ? BIG : {}); extras(f); break; }
@@ -1460,7 +1662,7 @@ const G = window.G = {};   // 確かめ用の口
         OFF.x = cx; OFF.z = cz - 20;
         ({ pylon: () => buildPylon(0, 19), chimney: () => buildChimney(0, 21), wheel: () => buildWheel(0, 20), wtower: () => buildWaterTower(0, 19),
           gas: () => { buildGas(); for (const [px, pz] of [[-2.5, 15], [2.5, 15], [-2.5, 19], [2.5, 19]]) { const m = { done: false, big: true }; meters.push(m); for (let y = 0; y < 3; y++) for (let a = 0; a < 2; a++) { addCell(gx(px) + a, y, gz(pz), "gasm"); bld.cells.get(key(gx(px) + a, y, gz(pz))).gm = m; } } },
-          fire: () => buildFire(), school: () => buildSchool(), castle: () => buildCastle(0, 21), tcrane: () => buildTowerCrane(0, 22), pagoda: () => buildPagoda(0, 21) })[L.kind]();
+          fire: () => buildFire(), school: () => buildSchool(), castle: () => buildCastle(0, 21), tcrane: () => buildTowerCrane(0, 22), pagoda: () => buildPagoda(0, 21), ...LM_BUILD })[L.kind]();
         OFF.x = OFF.z = 0;
       }
     }
@@ -1470,7 +1672,7 @@ const G = window.G = {};   // 確かめ用の口
   }
   // まだ建てていない土地は、遠くから見えた時のために箱だけ置く（名所・公園・駐車場は置かない）
   const proxyM = mat("proxyM", 0.6, 0.6, 0.58, 0.9);
-  const PROXY_H = { house: 5, apart: 12, office: 30, shop: 6, ware: 4.5 };
+  const PROXY_H = { house: 5, apart: 12, office: 30, shop: 6, ware: 4.5, fun: 5, eu: 12, eushop: 9, adobe: 6 };
   for (const L of lots) if (!L.gone && PROXY_H[L.kind]) {
     const p = B.MeshBuilder.CreateBox("proxy", { width: 10, depth: 9, height: PROXY_H[L.kind] * (L.kind === "office" ? 0.6 + L.down : 1) }, scene);
     p.position.set(L.cx, p.getBoundingInfo().boundingBox.extendSize.y, L.cz); p.material = proxyM; p.isPickable = false; L.proxy = p;
@@ -2197,8 +2399,6 @@ const G = window.G = {};   // 確かめ用の口
       b.onclick = () => { wakeAudio(); shopSel = i; buy(k); };
       el.appendChild(b);
     });
-    const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
-    $("rebuild").style.display = pct >= 60 ? "" : "none";
   }
   function buy(k) {
     const u = UPS[k], lv = sv.up[k] || 0; if (lv >= u.vals.length - 1) return;
@@ -2207,7 +2407,14 @@ const G = window.G = {};   // 確かめ用の口
     playS("levelup", 0.5); playS("coin", 0.4); flash(0.3, true); popup(u.icon + " " + u.name + " Lv" + (lv + 2) + "！", "mile");
     $("money").textContent = fmtY(sv.money); renderShop();
   }
-  $("rebuild").onclick = () => { if (confirm("こわした まちを ぜんぶ たてなおしますか？（お金と強化は そのまま）")) { sv.gone = []; save(); location.reload(); } };
+  // つぎの まちへ: 4 割こわしたら出る。荷台の分は売ったことにして、次のテーマの街を建てる（ページを開き直す）
+  const NEXT_PCT = 40, nextTh = THEMES[(STAGE + 1) % THEMES.length];
+  $("stageT").textContent = "ステージ " + (STAGE + 1) + "：" + TH.name;
+  $("bNext").onclick = () => {
+    if (!confirm("つぎの まち（" + nextTh.name + "）へ いきますか？（お金と強化は そのまま）")) return;
+    sv.money += bed.money; sv.stage = STAGE + 1; sv.gone = []; save();
+    const u = new URL(location.href); u.searchParams.delete("fresh"); u.searchParams.delete("stage"); location.href = u.toString();
+  };
   $("shopClose").onclick = () => setShop(false);
 
   // ---- こわしきった土地: 1 割より減ったら「こわしきった！」＋ほうび ----
@@ -2260,7 +2467,8 @@ const G = window.G = {};   // 確かめ用の口
     if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 6, 0.4, ex.pos.z + Math.cos(a) * 6); arrowP.rotation.y = a; arrowM.alpha = 0.55 + 0.35 * Math.sin(playT * 6); }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
-    $("city").textContent = `まち ${pct}% こわした　🧟 ${kills}`;
+    $("city").textContent = `${TH.name} ${pct}% こわした　🧟 ${kills}`;
+    if (pct >= NEXT_PCT && $("bNext").style.display === "none") { $("bNext").style.display = ""; $("bNext").textContent = "つぎの まちへ ▶ " + nextTh.name; popup("🎉 つぎの まちへ いけるよ！", "mile"); }
     drawMap();
   }
 

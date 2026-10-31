@@ -39,7 +39,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 .upBtn.can{background:linear-gradient(#3fa34d,#2b7a37);color:#fff;border-color:#b2f2bb}
 .upBtn.sel{outline:2px solid #ffd23f}
 .upBtn .ic{font-size:20px}.upBtn .nm{flex:1;font-size:14px;font-weight:bold;line-height:1.1}.upBtn small{display:block;font-size:10px;font-weight:normal;opacity:.85}.upBtn .pr{font-size:13px;font-weight:900;color:#ffd23f}
-#rebuild{width:100%;margin-top:4px;padding:6px;border-radius:9px;border:none;background:#4dabf7;color:#fff;font:inherit;font-weight:bold}
+#bNext{position:absolute;left:50%;top:calc(44px + env(safe-area-inset-top));transform:translateX(-50%);z-index:7;border:none;border-radius:999px;padding:9px 20px;background:#4dabf7;color:#fff;font:inherit;font-size:16px;font-weight:900;box-shadow:0 4px 0 #0006;animation:blink .7s infinite alternate}
 /* 文字のポップ */
 #pops{position:absolute;left:50%;top:30%;width:0;height:0;pointer-events:none;z-index:6}
 .pop{position:absolute;left:0;top:0;transform:translate(-50%,0);white-space:nowrap;color:#fff;font-weight:900;font-size:21px;-webkit-text-stroke:1.5px #3a1d00;paint-order:stroke fill;letter-spacing:1px;text-shadow:0 3px 0 #000a;animation:popup 1.3s ease-out forwards}
@@ -60,6 +60,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 /* はじめの画面 */
 #start{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0005;z-index:10}
 #start div{background:#ffd23f;color:#3a1d00;border-radius:20px;padding:16px 26px;text-align:center;box-shadow:0 6px 0 #0005;font-weight:900}
+#start small{display:block;font-size:15px;font-weight:900;margin-bottom:2px}
 #start h1{margin:0;font-size:34px;letter-spacing:2px}
 #start p{margin:8px 0 0;font-size:14px;line-height:1.6}
 #start b{display:inline-block;margin-top:10px;background:#3a1d00;color:#ffd23f;border-radius:999px;padding:6px 18px;font-size:16px;animation:blink .7s infinite alternate}
@@ -70,13 +71,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 <div id="hud"><div id="money">¥0</div><div id="bedBox"><div id="bedT">にだい 0</div><div class="gbar"><div id="bedBar"></div></div></div><div id="city"></div></div>
 <canvas id="map" width="240" height="240"></canvas>
 <button id="bZoom">🔍</button>
+<button id="bNext" style="display:none">つぎの まちへ ▶</button>
 <div id="joyHint">ここを<br>さわって<br>うごかす</div>
 <div id="joy" style="display:none"><div id="joyK"></div></div>
-<div id="shop" style="display:none"><h3>🏗 きょうか<button id="shopClose">✕</button></h3><div id="shopList"></div><button id="rebuild" style="display:none">🏙 まちを たてなおす</button></div>
+<div id="shop" style="display:none"><h3>🏗 きょうか<button id="shopClose">✕</button></h3><div id="shopList"></div></div>
 <div id="combo" style="display:none"><b>0</b>れんぞく</div>
 <div id="pops"></div>
 <div id="flash"></div>
-<div id="start"><div><h1>まち こわし</h1><p>ショベルを うごかして まちを こわそう<br>がれきは うしろの にだいに すいこむ<br>いっぱいになったら 🟨ひきとりじょ で お金に！</p><b id="startB">じゅんびちゅう…</b></div></div>
+<div id="start"><div><small id="stageT"></small><h1>まち こわし</h1><p>ショベルを うごかして まちを こわそう<br>がれきは うしろの にだいに すいこむ<br>いっぱいになったら 🟨ひきとりじょ で お金に！</p><b id="startB">じゅんびちゅう…</b></div></div>
 <div id="msg">読み込み中…</div>
 <script>
 // 止まった時は、理由を画面に出す（スマホでは中が見えないので・10-31）
