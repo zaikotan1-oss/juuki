@@ -1,6 +1,6 @@
 # 重機で建てる（juuki）
 
-> **2026-10-31 から公開 URL（https://zaikotan1-oss.github.io/juuki/）はまち こわし（C:SERSZAIKOMACHI-KOWASHI）。一番上の index.html・game.js・assets/manifest.json は machi-kowashi の tools/publish.py が写した物で、ここで直さない。前の重機のゲームの一番上のファイルは old/ に残した（old/README.md）。**
+> **2026-10-31 から公開 URL（https://zaikotan1-oss.github.io/juuki/）はまち こわし（C:\Users\zaiko\machi-kowashi）。一番上の index.html・game.js・assets/manifest.json は machi-kowashi の tools/publish.py が写した物で、ここで直さない。前の重機のゲームの一番上のファイルは old/ に残した（old/README.md）。**
 
 一人称で重機を乗り換えながら「ショベルでビルを壊す → ダンプに廃材を積む → ブルドーザーで整地 → クレーンで鉄骨・足場を組んで家を建てる」ゲーム。リアル寄り。見た目は最後に詰める。iPad（iPadOS 26 以上）で遊ぶのが目標。
 
