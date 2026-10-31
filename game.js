@@ -1676,6 +1676,8 @@ const G = window.G = {};   // 確かめ用の口
     joy.x = dx / JR; joy.y = -dy / JR; $("joyK").style.transform = `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px))`;
   });
   const joyEnd = e => { if (e.pointerId !== joy.id) return; joy.id = null; joy.x = joy.y = 0; $("joy").style.display = "none"; };
+  // スタートの幕は絵の上にかぶさるので、幕を触っても閉じる（スマホで動かなかった 10-31）
+  $("start").addEventListener("pointerdown", () => { wakeAudio(); hideStart(); });
   canvas.addEventListener("pointerup", joyEnd); canvas.addEventListener("pointercancel", joyEnd); canvas.addEventListener("lostpointercapture", joyEnd);
   let padPrev = [];
   function readInput() {
@@ -2322,7 +2324,10 @@ const G = window.G = {};   // 確かめ用の口
     cam.target.x += (camT.x - cam.target.x) * Math.min(1, dt * 5); cam.target.z += (camT.z - cam.target.z) * Math.min(1, dt * 5); cam.target.y = camT.y;
     cam.target.x += (Math.random() - 0.5) * tr * 0.7; cam.target.z += (Math.random() - 0.5) * tr * 0.7;
     cam.radius += (ZOOMS[zoomI] - cam.radius) * Math.min(1, dt * 4);
-    cam.beta = 0.62 - (zoomI - 1) * 0.04;
+    // 縦持ち（スマホ・10-31 本人「縦で作って」）: 横幅を基準に見る。真上寄りにして奥（描かない遠く）を映さない
+    const port = engine.getRenderHeight() > engine.getRenderWidth();
+    cam.fovMode = port ? B.Camera.FOVMODE_HORIZONTAL_FIXED : B.Camera.FOVMODE_VERTICAL_FIXED; cam.fov = port ? 0.66 : 0.75;
+    cam.beta = (port ? 0.42 : 0.62) - (zoomI - 1) * 0.04;
     // 影はショベルの周りだけ（街全体では細かさが足りない）
     sun.position.set(ex.pos.x - sun.direction.x * 120, -sun.direction.y * 120, ex.pos.z - sun.direction.z * 120);
     if ((saveT += dt) > 3) { saveT = 0; if (saveDirty) { saveDirty = false; save(); } }
