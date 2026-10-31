@@ -76,10 +76,17 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 <div id="combo" style="display:none"><b>0</b>れんぞく</div>
 <div id="pops"></div>
 <div id="flash"></div>
-<div id="start"><div><h1>まち こわし</h1><p>ショベルを うごかして まちを こわそう<br>がれきは うしろの にだいに すいこむ<br>いっぱいになったら 🟨ひきとりじょ で お金に！</p><b>さわって スタート</b></div></div>
+<div id="start"><div><h1>まち こわし</h1><p>ショベルを うごかして まちを こわそう<br>がれきは うしろの にだいに すいこむ<br>いっぱいになったら 🟨ひきとりじょ で お金に！</p><b id="startB">じゅんびちゅう…</b></div></div>
 <div id="msg">読み込み中…</div>
 <script>
 // 止まった時は、理由を画面に出す（スマホでは中が見えないので・10-31）
+// 家の受け口（8822）で開いた時だけ、様子を PC に送る（tools/phone.log）
+const PLOG = location.port === "8822" ? (s => { try { fetch("/log", { method: "POST", body: new Date().toISOString().slice(11, 19) + " " + s }); } catch (e) { } }) : () => { };
+PLOG("open " + navigator.userAgent + " " + innerWidth + "x" + innerHeight + " touch=" + navigator.maxTouchPoints);
+addEventListener("error", e => PLOG("error " + (e.message || e.target?.src) + " " + (e.filename || "") + ":" + (e.lineno || "")), true);
+addEventListener("unhandledrejection", e => PLOG("reject " + (e.reason?.stack || e.reason)));
+for (const ev of ["pointerdown", "touchstart", "click"]) addEventListener(ev, e => { const t = e.target; PLOG(ev + " on " + (t.id || t.tagName) + " ready=" + !!(window.G && G.ready) + " start=" + document.getElementById("start").style.display); }, true);
+setInterval(() => PLOG("tick ready=" + !!(window.G && G.ready) + " msg=" + document.getElementById("msg").style.display + ":" + document.getElementById("msg").textContent.slice(0, 40)), 5000);
 addEventListener("error", e => { const m = document.getElementById("msg"); m.style.display = ""; m.textContent = "エラー: " + (e.message || e.target?.src || "?"); });
 addEventListener("unhandledrejection", e => { const m = document.getElementById("msg"); m.style.display = ""; m.textContent = "エラー: " + (e.reason?.message || e.reason); });
 </script>

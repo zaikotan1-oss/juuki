@@ -2351,5 +2351,6 @@ const G = window.G = {};   // 確かめ用の口
   engine.resize();
   engine.runRenderLoop(() => scene.render());
   addEventListener("resize", () => engine.resize());
+  $("startB").textContent = "さわって スタート";   // 用意ができるまでは「じゅんびちゅう…」（触っても始まらない時に見分ける）
   G.ready = true;
 })();
