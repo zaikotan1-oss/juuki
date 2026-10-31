@@ -1305,7 +1305,10 @@ const G = window.G = {};   // 確かめ用の口
   const NBK = Math.max(3, Math.min(8, Number(Q.get("nb") || 6))), BLK = 40, ROAD = 12, PITCH = BLK + ROAD, HALF = NBK * PITCH / 2;
   const blockC = (i, j) => ({ x: -HALF + ROAD / 2 + i * PITCH + BLK / 2, z: -HALF + ROAD / 2 + j * PITCH + BLK / 2 });
   const YI = Math.floor((NBK - 1) / 2), YJ = Math.floor((NBK - 1) / 2);
-  const yard = Object.assign(blockC(YI, YJ), { h: BLK / 2 });
+  const yard = Object.assign(blockC(YI, YJ), { h: BLK / 2, main: true });
+  // おろしば: 街の角と辺の真ん中にも、がれきを売れる小さな場所（土地 1 つぶん）。強化も買える（10-31 本人「あちこちにおろせる場所」）
+  const drops = [yard], dropBlk = new Set();
+  for (const [i, j] of [[0, 0], [NBK - 1, 0], [0, NBK - 1], [NBK - 1, NBK - 1], [YI, 0], [YI, NBK - 1], [0, YJ], [NBK - 1, YJ]]) if (!(i === YI && j === YJ)) dropBlk.add(i + "," + j);
   let seed = 20261029; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const pick = a => a[Math.floor(rnd() * a.length)];
 
@@ -1377,9 +1380,9 @@ const G = window.G = {};   // 確かめ用の口
       speckle(lx, ly, L.w * PPM, L.d * PPM, L.w * L.d * 3, L.ground === "#5f7d40" ? ["#557238", "#6a8a48", "#4d6a32"] : ["#7d7b75", "#94928b", "#6f6d68"]);
       if (sv.gone.includes(L.id)) rubbleMark(L.cx, L.cz, Math.min(L.w, L.d) * 0.45);
     }
-    // ひきとりじょ: 黄色と黒のしまの縁＋コンクリの床
-    { const [yx, yy] = W2P(yard.x - BLK / 2, yard.z + BLK / 2); c.fillStyle = "#77746c"; c.fillRect(yx, yy, BLK * PPM, BLK * PPM);
-      for (let s = 0; s < BLK; s += 1.5) { c.fillStyle = (s / 1.5) % 2 ? "#e0b419" : "#1d1d1d"; for (const [x, y, w, h] of [[s, 0, 1.5, 1], [s, BLK - 1, 1.5, 1], [0, s, 1, 1.5], [BLK - 1, s, 1, 1.5]]) c.fillRect(yx + x * PPM, yy + y * PPM, w * PPM, h * PPM); } }
+    // ひきとりじょ・おろしば: 黄色と黒のしまの縁＋コンクリの床
+    for (const d of drops) { const S = d.h * 2, [yx, yy] = W2P(d.x - d.h, d.z + d.h); c.fillStyle = "#77746c"; c.fillRect(yx, yy, S * PPM, S * PPM);
+      for (let s = 0; s < S; s += 1.5) { c.fillStyle = (s / 1.5) % 2 ? "#e0b419" : "#1d1d1d"; for (const [x, y, w, h] of [[s, 0, 1.5, 1], [s, S - 1, 1.5, 1], [0, s, 1, 1.5], [S - 1, s, 1, 1.5]]) c.fillRect(yx + x * PPM, yy + y * PPM, w * PPM, h * PPM); } }
     groundTex.update();
   }
   function rubbleMark(x, z, r) {   // こわした跡（黒っぽい土とがれきの点）
@@ -1400,7 +1403,7 @@ const G = window.G = {};   // 確かめ用の口
   const lots = [];
   {
     const blocks = [];
-    for (let i = 0; i < NBK; i++) for (let j = 0; j < NBK; j++) if (!(i === YI && j === YJ) && !(i === YI && j === YJ - 1)) blocks.push([i, j]);
+    for (let i = 0; i < NBK; i++) for (let j = 0; j < NBK; j++) if (!(i === YI && j === YJ) && !(i === YI && j === YJ - 1) && !dropBlk.has(i + "," + j)) blocks.push([i, j]);
     const lmBlocks = new Set(); const pool = blocks.slice();
     for (const k of LANDMARKS) { if (!pool.length) break; const n = Math.floor(rnd() * pool.length); lmBlocks.add(pool[n].join(",") + "," + k); pool.splice(n, 1); }
     const lmOf = {}; for (const s of lmBlocks) { const [i, j, k] = s.split(","); lmOf[i + "," + j] = k; }
@@ -1409,7 +1412,9 @@ const G = window.G = {};   // 確かめ用の口
       const b = blockC(i, j), down = 1 - Math.hypot(i - (NBK - 1) / 2, j - (NBK - 1) / 2) / (NBK * 0.7);   // 真ん中ほど高い建物
       const lm = lmOf[i + "," + j];
       if (lm) { lots.push({ id: lots.length, cx: b.x, cz: b.z, w: BLK - 6, d: BLK - 6, kind: lm, lm: true, ground: "#857a66" }); continue; }
+      const dsx = i < (NBK - 1) / 2 ? 1 : -1, dsz = j < (NBK - 1) / 2 ? 1 : -1;   // おろしばは、区画の街の真ん中に近い角
       for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        if (dropBlk.has(i + "," + j) && sx === dsx && sz === dsz) { drops.push({ x: b.x + sx * 8.75, z: b.z + sz * 8.75, h: 8.75 }); continue; }
         const r = rnd(), kind = i === YI && j === YJ - 1 ? (r < 0.5 ? "park" : "house")       // 最初の場所の前は低い物
           : r < 0.08 ? "park" : r < 0.16 ? "parking" : r < 0.42 - down * 0.15 ? "house" : r < 0.6 ? "apart" : r < 0.7 ? "shop" : r < 0.78 ? "ware" : down > 0.35 ? "office" : "apart";
         lots.push({ id: lots.length, cx: b.x + sx * 8.75, cz: b.z + sz * 8.75, w: 16.5, d: 16.5, kind, down, ground: kind === "park" ? "#5f7d40" : "#8f8d87" });
@@ -1567,24 +1572,30 @@ const G = window.G = {};   // 確かめ用の口
     else { car.pos.set(l.line - off, 0, l.s); car.root.rotation.y = l.dir > 0 ? 0 : Math.PI; }
   }
 
-  // ---- ひきとりじょ: 大きな穴（がれきの山が育つ）・看板・光る輪 ----
-  const pitM = mat("pitM", 0.12, 0.11, 0.1, 0.95);
-  { const p = B.MeshBuilder.CreateBox("pit", { width: 18, height: 0.05, depth: 18 }, scene); p.position.set(yard.x, 0.03, yard.z + 3); p.material = pitM; p.receiveShadows = true;
-    for (const [w, d, x, z] of [[18.6, 0.5, 0, 9], [18.6, 0.5, 0, -9], [0.5, 18, 9, 0], [0.5, 18, -9, 0]]) { const wl = B.MeshBuilder.CreateBox("pitWall", { width: w, height: 1.2, depth: d }, scene); wl.position.set(yard.x + x, 0.6, yard.z + 3 + z); wl.material = mat("pitWallM", 0.62, 0.6, 0.55, 0.9); shadow.addShadowCaster(wl); wl.receiveShadows = true; }
-  }
-  const pile = B.MeshBuilder.CreateSphere("pile", { diameter: 1, segments: 10 }, scene);
-  pile.material = pbrTex("pileM", "concrete_debris", 3, [0.85, 0.8, 0.74]); pile.position.set(yard.x, -0.1, yard.z + 3); pile.receiveShadows = true; shadow.addShadowCaster(pile);
-  const pileSize = () => { const k = Math.min(1, Math.sqrt(sv.delivered / 30000)); pile.scaling.set(4 + k * 12, 0.6 + k * 7, 4 + k * 12); };
-  pileSize();
-  { const dt2 = new B.DynamicTexture("signT", { width: 512, height: 160 }, scene, true), c = dt2.getContext();
-    c.fillStyle = "#1a5f2a"; c.fillRect(0, 0, 512, 160); c.strokeStyle = "#fff"; c.lineWidth = 8; c.strokeRect(6, 6, 500, 148);
-    c.fillStyle = "#fff"; c.font = "bold 58px sans-serif"; c.textAlign = "center"; c.fillText("ひきとりじょ", 256, 78); c.font = "bold 34px sans-serif"; c.fillText("がれき かいます ¥", 256, 130); dt2.update();
-    const sm = new B.StandardMaterial("signM", scene); sm.diffuseTexture = dt2; sm.emissiveColor = new B.Color3(0.45, 0.45, 0.45); sm.backFaceCulling = false;
-    const sg = B.MeshBuilder.CreatePlane("sign", { width: 10, height: 3.1 }, scene); sg.material = sm; sg.position.set(yard.x, 5.2, yard.z + 16); sg.rotation.x = 0.55;   // 北の端（入る所をふさがない）
-    for (const sx of [-4, 4]) { const p = B.MeshBuilder.CreateCylinder("signPole", { diameter: 0.25, height: 5 }, scene); p.position.set(yard.x + sx, 2.5, yard.z + 16.2); p.material = SRC.pole.material; shadow.addShadowCaster(p); } }
+  // ---- ひきとりじょ・おろしば: 穴（がれきの山が育つ）・看板・光る輪 ----
+  const pitM = mat("pitM", 0.12, 0.11, 0.1, 0.95), pitWallM = mat("pitWallM", 0.62, 0.6, 0.55, 0.9), pileM = pbrTex("pileM", "concrete_debris", 3, [0.85, 0.8, 0.74]);
   const ringM = new B.StandardMaterial("ringM", scene); ringM.emissiveColor = new B.Color3(1, 0.8, 0.15); ringM.disableLighting = true; ringM.alpha = 0.35; ringM.backFaceCulling = false;
-  const yardRing = B.MeshBuilder.CreateTube("yardRing", { path: [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, b]) => new B.Vector3(yard.x + a * (BLK / 2 - 0.7), 0.25, yard.z + b * (BLK / 2 - 0.7))), radius: 0.18, tessellation: 6 }, scene);
-  yardRing.material = ringM; yardRing.isPickable = false;
+  function signTex(name, t1, t2) {
+    const dt2 = new B.DynamicTexture(name + "T", { width: 512, height: 160 }, scene, true), c = dt2.getContext();
+    c.fillStyle = "#1a5f2a"; c.fillRect(0, 0, 512, 160); c.strokeStyle = "#fff"; c.lineWidth = 8; c.strokeRect(6, 6, 500, 148);
+    c.fillStyle = "#fff"; c.font = "bold 58px sans-serif"; c.textAlign = "center"; c.fillText(t1, 256, 78); c.font = "bold 34px sans-serif"; c.fillText(t2, 256, 130); dt2.update();
+    const sm = new B.StandardMaterial(name + "M", scene); sm.diffuseTexture = dt2; sm.emissiveColor = new B.Color3(0.45, 0.45, 0.45); sm.backFaceCulling = false; return sm;
+  }
+  const signM = signTex("sign", "ひきとりじょ", "がれき かいます ¥"), signM2 = signTex("sign2", "おろしば", "ここでも うれます ¥");
+  for (const d of drops) {
+    const P = d.main ? 18 : 9, oz = d.main ? 3 : 0, H = P / 2;
+    const p = B.MeshBuilder.CreateBox("pit", { width: P, height: 0.05, depth: P }, scene); p.position.set(d.x, 0.03, d.z + oz); p.material = pitM; p.receiveShadows = true;
+    for (const [w, dd, x, z] of [[P + 0.6, 0.5, 0, H], [P + 0.6, 0.5, 0, -H], [0.5, P, H, 0], [0.5, P, -H, 0]]) { const wl = B.MeshBuilder.CreateBox("pitWall", { width: w, height: 1.2, depth: dd }, scene); wl.position.set(d.x + x, 0.6, d.z + oz + z); wl.material = pitWallM; shadow.addShadowCaster(wl); wl.receiveShadows = true; }
+    d.pile = B.MeshBuilder.CreateSphere("pile", { diameter: 1, segments: 10 }, scene);
+    d.pile.material = pileM; d.pile.position.set(d.x, -0.1, d.z + oz); d.pile.receiveShadows = true; shadow.addShadowCaster(d.pile);
+    const sw = d.main ? 10 : 6.5, sy = d.main ? 5.2 : 4, sz = d.z + (d.main ? 16 : d.h - 0.6);   // 北の端（入る所をふさがない）
+    const sg = B.MeshBuilder.CreatePlane("sign", { width: sw, height: sw * 0.31 }, scene); sg.material = d.main ? signM : signM2; sg.position.set(d.x, sy, sz); sg.rotation.x = 0.55;
+    for (const sx of [-sw * 0.4, sw * 0.4]) { const pl = B.MeshBuilder.CreateCylinder("signPole", { diameter: 0.25, height: sy }, scene); pl.position.set(d.x + sx, sy / 2, sz + 0.2); pl.material = SRC.pole.material; shadow.addShadowCaster(pl); }
+    const rr = d.h - 0.7, ring = B.MeshBuilder.CreateTube("yardRing", { path: [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, b]) => new B.Vector3(d.x + a * rr, 0.25, d.z + b * rr)), radius: 0.18, tessellation: 6 }, scene);
+    ring.material = ringM; ring.isPickable = false;
+  }
+  const pileSize = () => { const k = Math.min(1, Math.sqrt(sv.delivered / 30000)); for (const d of drops) { const m = d.main ? 1 : 0.45; d.pile.scaling.set((4 + k * 12) * m, (0.6 + k * 7) * m, (4 + k * 12) * m); } };
+  pileSize();
 
   // ---- ゾンビ: 道を歩いて、ショベルに寄ってくる。当たると吹き飛んで緑の煙 ----
   const zombies = [];
@@ -2141,14 +2152,17 @@ const G = window.G = {};   // 確かめ用の口
 
   // ---- ひきとりじょ: 中に入ると荷台を傾けて がれきを穴へ。お金になる ----
   let dump = null, inYardPrev = false;
-  const inYard = () => Math.abs(ex.pos.x - yard.x) < yard.h && Math.abs(ex.pos.z - yard.z) < yard.h;
+  // いま入っている ひきとりじょ・おろしば（無ければ null）と、いちばん近い所
+  const dropAt = () => drops.find(d => Math.abs(ex.pos.x - d.x) < d.h && Math.abs(ex.pos.z - d.z) < d.h) || null;
+  const inYard = () => !!dropAt();
+  const nearDrop = () => { let best = drops[0], bd = 1e9; for (const d of drops) { const dd = Math.hypot(d.x - ex.pos.x, d.z - ex.pos.z); if (dd < bd) { bd = dd; best = d; } } return best; };
   function updateYard(dt) {
-    const here = inYard();
+    const at = dropAt(), here = !!at;
     if (here && !inYardPrev) { setShop(true); }
     if (!here && inYardPrev) setShop(false);
     inYardPrev = here;
     ringM.alpha = 0.25 + 0.2 * Math.sin(playT * 4) + (bed.load >= upV("cap") * 0.6 ? 0.25 : 0);
-    if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0 }; playS("rubble_dump", 0.7); }
+    if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); }
     if (!dump) { bedTilt.rotation.x += (0 - bedTilt.rotation.x) * Math.min(1, dt * 5); return; }
     dump.t += dt; const D = 1.6;
     bedTilt.rotation.x = -Math.min(1, dump.t / 0.35) * 0.9 * (dump.t < D ? 1 : Math.max(0, 1 - (dump.t - D) / 0.4));
@@ -2156,7 +2170,7 @@ const G = window.G = {};   // 確かめ用の口
     // 荷台から穴へ がれきが飛ぶ（見た目だけ）
     while (dump.chunks < Math.min(24, dump.t / D * 24)) {
       dump.chunks++; const m = debrisSrc.createInstance("dumpd"); const s = 0.6 + Math.random() * 0.6; m.scaling.set(s, s * 0.7, s); m.instancedBuffers.color = new B.Color4(0.8, 0.77, 0.72, 1);
-      m.position.copyFrom(bedPos()); const tg = pile.position.add(new B.Vector3((Math.random() - 0.5) * 6, 1, (Math.random() - 0.5) * 6));
+      m.position.copyFrom(bedPos()); const tg = dump.d.pile.position.add(new B.Vector3((Math.random() - 0.5) * 6, 1, (Math.random() - 0.5) * 6));
       flyers.push({ node: m, from: m.position.clone(), t: 0, dur: 0.5, s0: m.scaling.clone(), val: 0, toP: tg, done: () => { m.dispose(); dust(tg, 6); } });
     }
     const shown = Math.round(dump.money * Math.min(1, dump.t / D));
@@ -2220,7 +2234,7 @@ const G = window.G = {};   // 確かめ用の口
     const c = mctx; c.clearRect(0, 0, mapC.width, mapC.height);
     c.fillStyle = "#2d3034cc"; c.fillRect(0, 0, mapC.width, mapC.height);
     for (const L of lots) { const [x, y] = M(L.cx - L.w / 2, L.cz + L.d / 2); c.fillStyle = L.gone ? "#5a5148" : L.lm ? "#c9a55a" : L.kind === "park" ? "#5f7d40" : "#9a9890"; c.fillRect(x, y, L.w * MS, L.d * MS); }
-    { const [x, y] = M(yard.x - BLK / 2, yard.z + BLK / 2); c.fillStyle = "#f2c230"; c.fillRect(x, y, BLK * MS, BLK * MS); c.fillStyle = "#222"; c.font = "bold 10px sans-serif"; c.textAlign = "center"; c.fillText("¥", x + BLK * MS / 2, y + BLK * MS / 2 + 4); }
+    for (const d of drops) { const S = d.h * 2, [x, y] = M(d.x - d.h, d.z + d.h); c.fillStyle = "#f2c230"; c.fillRect(x, y, S * MS, S * MS); c.fillStyle = "#222"; c.font = "bold " + (d.main ? 10 : 7) + "px sans-serif"; c.textAlign = "center"; c.fillText("¥", x + S * MS / 2, y + S * MS / 2 + (d.main ? 4 : 3)); }
     c.fillStyle = "#ff8a2a"; for (const q of fires) { const [x, y] = M(q.p.x, q.p.z); c.fillRect(x - 1.5, y - 1.5, 3, 3); }
     c.fillStyle = "#7de05a"; for (const z of zombies) { const [x, y] = M(z.pos.x, z.pos.z); c.fillRect(x - 1, y - 1, 2, 2); }
     const [ex0, ey0] = M(ex.pos.x, ex.pos.z); c.save(); c.translate(ex0, ey0); c.rotate(ex.heading); c.fillStyle = "#ffdf3a"; c.strokeStyle = "#000"; c.lineWidth = 1.5;
@@ -2238,12 +2252,12 @@ const G = window.G = {};   // 確かめ用の口
   function updateHud(dt) {
     const cap = upV("cap"), k = Math.min(1, bed.load / cap);
     $("bedBar").style.width = (k * 100).toFixed(1) + "%"; $("bedBar").classList.toggle("full", k >= 1);
-    const yd = Math.round(Math.hypot(yard.x - ex.pos.x, yard.z - ex.pos.z));
+    const nd = nearDrop(), yd = Math.round(Math.hypot(nd.x - ex.pos.x, nd.z - ex.pos.z));
     $("bedT").textContent = `にだい ${Math.round(bed.load)} / ${cap}` + (inYard() ? "" : `　🟨まで ${yd}m`);
     if (!dump) $("money").textContent = fmtY(sv.money);
     const show = k >= 0.6 && !inYard();
     arrowP.setEnabled(show);
-    if (show) { const a = Math.atan2(yard.x - ex.pos.x, yard.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 6, 0.4, ex.pos.z + Math.cos(a) * 6); arrowP.rotation.y = a; arrowM.alpha = 0.55 + 0.35 * Math.sin(playT * 6); }
+    if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 6, 0.4, ex.pos.z + Math.cos(a) * 6); arrowP.rotation.y = a; arrowM.alpha = 0.55 + 0.35 * Math.sin(playT * 6); }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
     $("city").textContent = `まち ${pct}% こわした　🧟 ${kills}`;
@@ -2278,7 +2292,7 @@ const G = window.G = {};   // 確かめ用の口
 
   // ---- 確かめ用 ----
   G.testMode = () => { G.fixedDt = 1 / 60; scene.useConstantAnimationDeltaTime = true; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); engine.stopRenderLoop(); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; };
-  Object.assign(G, { sinkSet, sinks, scene, engine, ex, lots, sv, bed, props, zombies, fires, explode, geyser, smash, debris, yard, upV, buy, setZoom, cam, activateNear, bld, chunks, startFire, inYard, applyPose, mv: null });
+  Object.assign(G, { sinkSet, sinks, scene, engine, ex, lots, sv, bed, props, zombies, fires, explode, geyser, smash, debris, yard, drops, upV, buy, setZoom, cam, activateNear, bld, chunks, startFire, inYard, applyPose, mv: null });
   // ================= 毎コマ =================
   ex.pos.set(yard.x, 0, yard.z - BLK / 2 - ROAD / 2); ex.heading = Math.PI;   // ひきとりじょの南の道から、南（低い家と公園）を向いて始める
   if (Q.has("x")) { ex.pos.x = Number(Q.get("x")); ex.pos.z = Number(Q.get("z") || 0); }
