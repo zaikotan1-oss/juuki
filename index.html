@@ -79,6 +79,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 <div id="start"><div><h1>まち こわし</h1><p>ショベルを うごかして まちを こわそう<br>がれきは うしろの にだいに すいこむ<br>いっぱいになったら 🟨ひきとりじょ で お金に！</p><b>さわって スタート</b></div></div>
 <div id="msg">読み込み中…</div>
 <script>
+// 止まった時は、理由を画面に出す（スマホでは中が見えないので・10-31）
+addEventListener("error", e => { const m = document.getElementById("msg"); m.style.display = ""; m.textContent = "エラー: " + (e.message || e.target?.src || "?"); });
+addEventListener("unhandledrejection", e => { const m = document.getElementById("msg"); m.style.display = ""; m.textContent = "エラー: " + (e.reason?.message || e.reason); });
+</script>
+<script>
 // 読み込み画面: 先に全ファイルを取ってきて「何MB中何MB」を出す（juuki と同じ）
 (async () => {
   const msg = document.getElementById("msg");
@@ -106,7 +111,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
     await Promise.all([worker(), worker(), worker(), worker()]);
   } catch (e) { console.warn("先読みできませんでした", e); }
   msg.textContent = "まちを つくっています…";
-  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=1"]) {
+  for (const src of ["vendor/babylon.js", "vendor/HavokPhysics_umd.js", "vendor/babylonjs.loaders.min.js", "game.js?v=" + Date.now()]) {
     await new Promise((ok, ng) => { const sc = document.createElement("script"); sc.src = src; sc.onload = ok; sc.onerror = ng; document.body.appendChild(sc); });
   }
 })();

@@ -1677,7 +1677,7 @@ const G = window.G = {};   // 確かめ用の口
   });
   const joyEnd = e => { if (e.pointerId !== joy.id) return; joy.id = null; joy.x = joy.y = 0; $("joy").style.display = "none"; };
   // スタートの幕は絵の上にかぶさるので、幕を触っても閉じる（スマホで動かなかった 10-31）
-  $("start").addEventListener("pointerdown", () => { wakeAudio(); hideStart(); });
+  for (const ev of ["pointerdown", "touchstart", "click"]) $("start").addEventListener(ev, () => { wakeAudio(); hideStart(); });
   canvas.addEventListener("pointerup", joyEnd); canvas.addEventListener("pointercancel", joyEnd); canvas.addEventListener("lostpointercapture", joyEnd);
   let padPrev = [];
   function readInput() {
