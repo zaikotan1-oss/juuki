@@ -1032,6 +1032,42 @@ const G = window.G = {};   // 確かめ用の口
   for (const sx of [-0.33, 0.33]) piston("boomCyl", anchor("bA", upper, [0.45 + sx, 0.55, 0.6]), anchor("bB", boomJ, [sx, 0.3, 2.2]), 0.2, yel);
   piston("armCyl", anchor("aA", boomJ, [0, 1.05, 2.5]), anchor("aB", stickJ, [0, 0.45, -0.6]), 0.2, yel);
   piston("bkCyl", anchor("kA", stickJ, [0, 0.32, 0.5]), anchor("kB", bucketJ, [0, 0.3, 0.2]), 0.17, yel);
+  // ---- 強化で見た目がいかつくなる（11-04 本人）。段 1〜4 は強化の合計、爪の長さはパワー ----
+  const look = { g: [null, [], [], [], []], teeth: bucketJ.getChildMeshes(true).filter(m => m.name.startsWith("tooth")) };
+  {
+    const stripeTex = new B.DynamicTexture("stripeTex", { width: 256, height: 64 }, scene, false, B.Texture.BILINEAR_SAMPLINGMODE);
+    { const c = stripeTex.getContext(); c.fillStyle = "#151515"; c.fillRect(0, 0, 256, 64); c.fillStyle = "#f2b81a"; for (let x = -64; x < 320; x += 48) { c.beginPath(); c.moveTo(x, 64); c.lineTo(x + 24, 64); c.lineTo(x + 56, 0); c.lineTo(x + 32, 0); c.fill(); } stripeTex.update(); }
+    const stripeM = new B.PBRMaterial("stripeM", scene); stripeM.albedoTexture = stripeTex; stripeM.metallic = 0; stripeM.roughness = 0.5;
+    const redL = mat("redL", 1, 0.15, 0.1, 0.3); redL.emissiveColor = new B.Color3(1, 0.12, 0.05);
+    const ambL = mat("ambL", 1, 0.6, 0.1, 0.3); ambL.emissiveColor = new B.Color3(1, 0.55, 0.05);
+    const spikeM = steel;
+    const add = (t, m) => { m.isPickable = false; look.g[t].push(m); return m; };
+    const spike = (t, parent, pos, rot, h = 0.7, d = 0.36) => { const s = B.MeshBuilder.CreateCylinder("spike", { diameterTop: 0, diameterBottom: d, height: h, tessellation: 8 }, scene); s.parent = parent; s.position.set(...pos); if (rot) s.rotation.set(...rot); s.material = spikeM; shadow.addShadowCaster(s); return add(t, s); };
+    // 段 1: 屋根の黄色い回転灯・後ろの黒黄しま
+    for (const x of [-1.05, -0.45]) add(1, cyl("beacon", 0.22, 0.2, upper, [x, 2.86, 0.35], null, ambL, 12));
+    add(1, deco("stripe", [2.7, 0.5, 0.06], upper, [0.2, 0.75, -2.62], stripeM));
+    add(1, deco("stripeL", [0.06, 0.25, 4.2], upper, [-1.13, 0.2, -0.4], stripeM));
+    add(1, deco("stripeR", [0.06, 0.25, 4.2], upper, [1.53, 0.2, -0.4], stripeM));
+    // 段 2: 横の鉄板・後ろのとげ・太い排気管 2 本
+    for (const x of [-1.16, 1.56]) add(2, deco("armor", [0.1, 0.7, 2.2], upper, [x, 0.75, -0.9], dark));
+    for (const x of [-0.8, 0.2, 1.2]) spike(2, upper, [x, 0.75, -2.55], [-Math.PI / 2, 0, 0], 0.9, 0.42);
+    for (const x of [0.75, 1.25]) add(2, cyl("stack", 0.26, 1.3, upper, [x, 1.95, -1.55], null, chrome, 14));
+    // 段 3: 運転席の守りの格子・屋根の赤い灯・履帯の横のとげ
+    for (let i = 0; i < 4; i++) add(3, deco("guard", [0.06, 1.3, 0.06], upper, [-1.25 + i * 0.33, 1.95, 1.15], grilleM));
+    add(3, deco("guardTop", [1.2, 0.08, 0.08], upper, [-0.75, 2.6, 1.15], grilleM));
+    add(3, deco("roofBar", [1.2, 0.12, 0.14], upper, [-0.75, 2.84, 1.05], grilleM));
+    for (const x of [-1.05, -0.75, -0.45]) add(3, cyl("redLamp", 0.14, 0.1, upper, [x, 2.94, 1.05], [Math.PI / 2, 0, 0], redL, 10));
+    for (const sx of [-1, 1]) for (let i = 0; i < 4; i++) spike(3, root, [sx * 1.62, 0.5, -1.2 + i * 0.8], [0, 0, -sx * Math.PI / 2], 0.6, 0.3);
+    // 段 4: ブームの上のとげ・バケットの横のとげ（車体は赤・バケットは黒。黒い車体は道路にとけて見えなかった）
+    for (const [y, z] of [[0.95, 1.2], [1.4, 2.55], [1.05, 4.0]]) spike(4, boomJ, [0, y, z], null, 0.7, 0.34);
+    for (const sx of [-1, 1]) spike(4, bucketJ, [sx * (BUCKET.W / 2 + 0.1), -BUCKET.H * 0.5, BUCKET.L * 0.5], [0, 0, -sx * Math.PI / 2], 0.6, 0.3);
+  }
+  const YEL0 = yel.albedoColor.clone(), EX_RED = new B.Color3(0.72, 0.06, 0.04).toLinearSpace(), EX_BLK = new B.Color3(0.05, 0.05, 0.055);
+  function exLook(tier, powLv) {
+    for (let t = 1; t <= 4; t++) for (const m of look.g[t]) m.setEnabled(tier >= t);
+    yel.albedoColor = tier >= 4 ? EX_RED : YEL0; bkM.albedoColor = tier >= 4 ? EX_BLK : YEL0;
+    for (const m of look.teeth) { m.scaling.z = 1 + powLv * 0.1; m.scaling.x = 1 + powLv * 0.03; m.position.z = BUCKET.L + 0.14 + powLv * 0.016; }
+  }
   // 壊す当たり点: バケットの先・角・背中、アームの先と中ほど
   const HIT_PTS_B = [[0, -BUCKET.H, BUCKET.L], [-BUCKET.W / 2, -BUCKET.H, BUCKET.L], [BUCKET.W / 2, -BUCKET.H, BUCKET.L], [-BUCKET.W / 2, 0, BUCKET.L], [BUCKET.W / 2, 0, BUCKET.L],
     [0, -BUCKET.H * 0.5, BUCKET.L * 0.6], [0, 0.1, BUCKET.L * 0.4], [0, 0.2, 0]].map(a => new B.Vector3(...a));
@@ -1847,14 +1883,19 @@ const G = window.G = {};   // 確かめ用の口
   // ================= 遊び =================
   let playT = 0;
   // ---- 強化（ひきとりじょで買う） ----
+  // 「強化すぐおわっちゃう」（11-04 本人）→ 各 20 段・1 段ずつは小さく・値段は 1.32 倍ずつ。全部さいだいまで ざっと 6〜7 まち分
+  const UP_N = 20, steps = (a, b, geo, r = 1) => Array.from({ length: UP_N }, (_, i) => { const k = i / (UP_N - 1); return Math.round((geo ? a * Math.pow(b / a, k) : a + (b - a) * k) * r) / r; });
   const UPS = {
-    cap: { name: "にだい", icon: "🧺", vals: [150, 260, 420, 650, 1000, 1500, 2300, 3500], fmt: v => v + " はいる" },
-    spd: { name: "はやさ", icon: "💨", vals: [6, 7, 8.2, 9.5, 11, 12.5], fmt: v => v.toFixed(1) + " m/秒" },
-    pow: { name: "パワー", icon: "💥", vals: [1, 1.35, 1.75, 2.2, 2.8, 3.5], fmt: v => "×" + v.toFixed(2) },
-    suck: { name: "すいこみ", icon: "🌀", vals: [8, 9.5, 11, 13, 15.5, 18], fmt: v => v + " m" },
+    cap: { name: "にだい", icon: "🧺", vals: steps(150, 6000, true), fmt: v => v + " はいる", pm: 1.2 },
+    spd: { name: "はやさ", icon: "💨", vals: steps(6, 14, false, 10), fmt: v => v.toFixed(1) + " m/秒", pm: 1 },
+    pow: { name: "パワー", icon: "💥", vals: steps(1, 5, true, 100), fmt: v => "×" + v.toFixed(2), pm: 1 },
+    suck: { name: "すいこみ", icon: "🌀", vals: steps(8, 24, false, 2), fmt: v => v + " m", pm: 1 },
   };
   const upV = k => UPS[k].vals[Math.min(sv.up[k] || 0, UPS[k].vals.length - 1)];
-  const upPrice = k => Math.round(120 * Math.pow(2.15, sv.up[k] || 0));
+  const upPrice = k => Math.round(100 * UPS[k].pm * Math.pow(1.32, sv.up[k] || 0) / 10) * 10;
+  // 見た目の段: 強化の合計（0〜76）で 8・20・36・56 を越えるごとに いかつくなる
+  const lookTier = () => { const s = Object.keys(UPS).reduce((a, k) => a + (sv.up[k] || 0), 0); return [8, 20, 36, 56].filter(n => s >= n).length; };
+  const applyLook = () => exLook(lookTier(), sv.up.pow || 0);
   const fmtY = n => "¥" + Math.round(n).toLocaleString();
 
   // ---- 荷台: 上の旋回体の後ろ（カウンターウェイトの後ろ）に箱。中の山は量で高くなる ----
@@ -2400,11 +2441,13 @@ const G = window.G = {};   // 確かめ用の口
       el.appendChild(b);
     });
   }
+  applyLook();
   function buy(k) {
     const u = UPS[k], lv = sv.up[k] || 0; if (lv >= u.vals.length - 1) return;
     const price = upPrice(k); if (sv.money < price) { playS("click", 0.3, 0.6); return; }
-    sv.money -= price; sv.up[k] = lv + 1; save(); showBed();
+    const t0 = lookTier(); sv.money -= price; sv.up[k] = lv + 1; save(); showBed(); applyLook();
     playS("levelup", 0.5); playS("coin", 0.4); flash(0.3, true); popup(u.icon + " " + u.name + " Lv" + (lv + 2) + "！", "mile");
+    if (lookTier() > t0) { setTimeout(() => popup(["", "🚨 かいてんとう つけた！", "🔩 てっぱん と とげ！", "🛡 うんてんせき を まもる こうし！", "🔥 まっか の さいきょう ショベル！"][lookTier()], "mile"), 900); playS("boom", 0.4, 1.2, 0.5); }
     $("money").textContent = fmtY(sv.money); renderShop();
   }
   // つぎの まちへ: 4 割こわしたら出る。荷台の分は売ったことにして、次のテーマの街を建てる（ページを開き直す）
@@ -2500,7 +2543,7 @@ const G = window.G = {};   // 確かめ用の口
 
   // ---- 確かめ用 ----
   G.testMode = () => { G.fixedDt = 1 / 60; scene.useConstantAnimationDeltaTime = true; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(1 / 60); engine.stopRenderLoop(); G.step = n => { for (let i = 0; i < n; i++) scene.render(); }; };
-  Object.assign(G, { sinkSet, sinks, scene, engine, ex, lots, sv, bed, props, zombies, fires, explode, geyser, smash, debris, yard, drops, upV, buy, setZoom, cam, activateNear, bld, chunks, startFire, inYard, applyPose, mv: null });
+  Object.assign(G, { sinkSet, sinks, scene, engine, ex, lots, sv, bed, props, zombies, fires, explode, geyser, smash, debris, yard, drops, upV, buy, exLook, upPrice, setZoom, cam, activateNear, bld, chunks, startFire, inYard, applyPose, mv: null });
   // ================= 毎コマ =================
   ex.pos.set(yard.x, 0, yard.z - BLK / 2 - ROAD / 2); ex.heading = Math.PI;   // ひきとりじょの南の道から、南（低い家と公園）を向いて始める
   if (Q.has("x")) { ex.pos.x = Number(Q.get("x")); ex.pos.z = Number(Q.get("z") || 0); }
