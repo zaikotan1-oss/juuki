@@ -553,7 +553,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     // 窓ガラスと窓枠: 窓の穴の上と下の壁が残っている時だけ
     const frames = [], pp = [], pn = [];
     for (const w of ch.wins) {
-      const [x, y, z, ax, sg] = w.split(","), X = +x, Y = +y, Z = +z;
+      const [X, Y, Z, ax, sg] = winOf(w);   // 窓の文字を毎回切り分けると、塊を作り直すたびにごみが出た（11-17 改善ループ 8）
       if (!bld.cells.has(key(X, Y - 1, Z)) && !bld.cells.has(key(X, Y + 1, Z))) continue;
       if (!bld.cells.has(key(X, Y + 1, Z)) && !bld.cells.has(key(X, Y + 2, Z)) && !bld.cells.has(key(X, Y - 1, Z))) continue;
       const p = cellWorld(X, Y, Z);
@@ -591,14 +591,14 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   // 壊れた塊だけ組み直す。鉄筋・窓枠・ガラスは全部の塊のをまとめて 1 回で描く
   function rebuildCellMesh(all) {
-    if (rodDirty) rebuildRods();
+    if (rodDirty) PF("m.rods", rebuildRods);
     // 大きいビルが崩れると数十の塊を 1 コマで作り直して 100ms 止まった（11-17 本人「ラグ」）→ ショベルに近い順に 1 コマ 6ms まで。残りは次のコマ
     const list = []; for (const ch of chunks.values()) if (ch.dirty && !ch.far) list.push(ch);   // 遠くの塊は近づいた時に作り直す
     if (!list.length) return 0;
     if (list.length > 1) { const ox = ex.pos.x - bld.origin.x, oz = ex.pos.z - bld.origin.z, d2 = c => (c.wx - ox) ** 2 + (c.wz - oz) ** 2; list.sort((a, b) => d2(a) - d2(b)); }
     const t0 = performance.now(); let n = 0;
-    for (const ch of list) { if (n && !all && performance.now() - t0 > 6) break; ch.dirty = false; buildChunk(ch); n++; }
-    if (n) { const bars = []; for (const ch of chunks.values()) if (ch.bars.length && ch.mesh.isEnabled()) for (const m of ch.bars) { if (bars.length >= 1200) break; bars.push(m); } setThin(rebar, bars); }
+    for (const ch of list) { if (n && !all && performance.now() - t0 > 6) break; ch.dirty = false; PF("m.chunk", () => buildChunk(ch)); n++; }
+    if (n) PF("m.bars", () => { const bars = []; for (const ch of chunks.values()) if (ch.bars.length && ch.mesh.isEnabled()) for (const m of ch.bars) { if (bars.length >= 1200) break; bars.push(m); } setThin(rebar, bars); });
     return n;
   }
   function setPanes(ch) {
@@ -683,6 +683,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   // （2 万格子を全部瓦礫にすると物理が止まる。iPad でも動く重さにする 10-16）
   const sinks = [], fading = [];
   const winParse = new Map();
+  function winOf(w) { let wp = winParse.get(w); if (!wp) { const [x, y, z, ax, sg] = w.split(","); wp = [+x, +y, +z, ax, sg]; winParse.set(w, wp); } return wp; }
   function sinkSet(list) {
     const set = new Set(list), pos = [], nor = [], uv = [], col = [], idx = [], coarse = list.length > (G.coarseN ?? 1500);
     let tq = performance.now(); const lap = k => { if (G.prof) { const n = performance.now(), q = G.prof[k] || (G.prof[k] = { sum: 0, max: 0 }); q.sum += n - tq; q.max = Math.max(q.max, n - tq); tq = n; } };
@@ -716,7 +717,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       const ch = chunks.get(key(gx, gy, gz)); if (ch) for (const w of ch.wins) if (winSet.has(w)) wins.push(w);
     }
     for (const w of wins) {
-      let wp = winParse.get(w); if (!wp) { const [x, y, z, ax] = w.split(","); wp = [+x, +y, +z, ax]; winParse.set(w, wp); }   // 街じゅうの窓を毎回 文字から読み直していた（11-17）
+      const wp = winOf(w);   // 街じゅうの窓を毎回 文字から読み直していた（11-17）
       const [X, Y, Z, ax] = wp;
       if (X < mx0 || X > mx1 || Z < mz0 || Z > mz1 || Y < my0 - 1 || Y > my1 + 1) continue;   // この建物の範囲の外の窓は見ない
       const up = bld.cells.get(key(X, Y + 1, Z)), dn = bld.cells.get(key(X, Y - 1, Z));
@@ -1715,9 +1716,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       for (let s = 0; s < S; s += 1.5) { c.fillStyle = (s / 1.5) % 2 ? "#e0b419" : "#1d1d1d"; for (const [x, y, w, h] of [[s, 0, 1.5, 1], [s, S - 1, 1.5, 1], [0, s, 1, 1.5], [S - 1, s, 1, 1.5]]) c.fillRect(yx + x * PPM, yy + y * PPM, w * PPM, h * PPM); } }
     groundTex.update();
   }
-  function rubbleMark(x, z, r) {   // こわした跡（黒っぽい土とがれきの点）
+  // こわした跡は茶色い土（黒いと煙の影や穴に見えた・11-17 改善ループ 7）
+  function rubbleMark(x, z, r) {   // こわした跡（土とがれきの点）
     const [px, py] = W2P(x, z), g = gctx.createRadialGradient(px, py, 0, px, py, r * PPM);
-    g.addColorStop(0, "rgba(60,54,46,0.85)"); g.addColorStop(1, "rgba(60,54,46,0)"); gctx.fillStyle = g; gctx.fillRect(px - r * PPM, py - r * PPM, r * 2 * PPM, r * 2 * PPM);
+    g.addColorStop(0, "rgba(112,92,70,0.8)"); g.addColorStop(0.7, "rgba(96,80,62,0.55)"); g.addColorStop(1, "rgba(96,80,62,0)"); gctx.fillStyle = g; gctx.fillRect(px - r * PPM, py - r * PPM, r * 2 * PPM, r * 2 * PPM);
     speckle(px - r * PPM * 0.7, py - r * PPM * 0.7, r * PPM * 1.4, r * PPM * 1.4, r * r * 8, ["#8b867c", "#5a554d", "#a39d92"]);
   }
   let scorchDirty = 0, groundFlushT = 0;
@@ -1726,7 +1728,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   function groundTick(dt) { if ((groundFlushT -= dt) > 0 || !scorchDirty) return; groundFlushT = 2.5; scorchDirty = 0; groundTex.update(); }
   function scorch(x, z, r) {      // 爆発の焦げ跡（絵の送り直しは間引く）
     const [px, py] = W2P(x, z), g = gctx.createRadialGradient(px, py, 0, px, py, r * PPM);
-    g.addColorStop(0, "rgba(15,12,10,0.8)"); g.addColorStop(0.6, "rgba(25,20,16,0.45)"); g.addColorStop(1, "rgba(25,20,16,0)"); gctx.fillStyle = g; gctx.fillRect(px - r * PPM, py - r * PPM, r * 2 * PPM, r * 2 * PPM);
+    g.addColorStop(0, "rgba(34,26,20,0.65)"); g.addColorStop(0.6, "rgba(48,38,30,0.35)"); g.addColorStop(1, "rgba(25,20,16,0)"); gctx.fillStyle = g; gctx.fillRect(px - r * PPM, py - r * PPM, r * 2 * PPM, r * 2 * PPM);
     scorchDirty = 1;
   }
 
