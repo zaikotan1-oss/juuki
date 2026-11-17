@@ -19,7 +19,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 #hud{position:absolute;left:calc(8px + env(safe-area-inset-left));top:calc(8px + env(safe-area-inset-top));color:#fff;pointer-events:none;font-weight:900;text-shadow:0 1px 2px #000}
 #money{font-size:24px;color:#ffd23f;-webkit-text-stroke:1.5px #5a2a00;paint-order:stroke fill;letter-spacing:1px}
 #bedBox{width:min(38vw,190px);margin-top:3px;background:var(--panel);border:1.5px solid var(--edge);border-radius:8px;padding:3px 6px}
-#bedT{font-size:11px}
+#bedT{font-size:11px;white-space:nowrap}#bedT.full{color:#ffd23a;font-weight:bold;font-size:13px;animation:blink .6s infinite alternate}
 .gbar{height:9px;background:#fff3;border-radius:5px;overflow:hidden;margin-top:2px}
 #bedBar{height:100%;width:0;background:linear-gradient(#ffcf3f,#f08c00);transition:width .15s}
 #bedBar.full{background:linear-gradient(#ff8a8a,#e03131);animation:blink .5s infinite alternate}

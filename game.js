@@ -513,8 +513,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   const TEXM = 4;     // 写真素材 1 枚が何 m 四方か
   const QUAD = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
   // 格子 c の面 f を 1 枚足す（sc: 模様の大きさ m・dim: 暗さ）
-  function pushFace(c, f, k, vary, sc, dim, pos, nor, uv, col, idx) {
-    const b = pos.length / 3, h = CELL / 2;
+  function pushFace(c, f, k, vary, sc, dim, pos, nor, uv, col, idx, hs) {
+    const b = pos.length / 3, h = hs || CELL / 2;
     for (const [su, sv] of QUAD) {
       const px = c.p.x + (f.n[0] + f.u[0] * su + f.v[0] * sv) * h, py = c.p.y + (f.n[1] + f.u[1] * su + f.v[1] * sv) * h, pz = c.p.z + (f.n[2] + f.u[2] * su + f.v[2] * sv) * h;
       pos.push(px, py, pz); nor.push(f.n[0], f.n[1], f.n[2]);
@@ -612,12 +612,19 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     ch.paneC = new B.Vector3(pp[0], pp[1], pp[2]);
   }
   const NBD = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1], [0, 2, 0], [0, -2, 0]];
+  let massCh = null;
+  // 浮いた塊・建物 1 棟をまとめて消す（沈む時）。消した物が支えていた物は無いので、浮いた所探しには入れない
+  function removeCells(list) {
+    massCh = new Map(); for (const c of list) removeCell(c); const t = massCh; massCh = null;
+    for (const [, c] of t) for (const d of N6) { const n = chunkOf(c.x + d[0] * CH, c.y + d[1] * CH, c.z + d[2] * CH, false); if (n) n.dirty = true; }
+  }
   function removeCell(c) {
     if (bld.cells.get(key(c.x, c.y, c.z)) !== c) return;   // もう消えている（部材の巻き添えで先に消えた等）
     bld.cells.delete(key(c.x, c.y, c.z));
     const ch = chunkOf(c.x, c.y, c.z, false); if (ch) { ch.cells.delete(c); ch.dirty = true; }
-    for (const d of NBD) { const n = chunkOf(c.x + d[0], c.y + d[1], c.z + d[2], false); if (n) n.dirty = true; }   // 隣の塊の面・窓も変わる
-    if (c.b) { c.b.cells.delete(c); if (c.y < c.b.baseY) c.b.baseN--; dirtyB.add(c.b); }
+    if (massCh) { if (ch && !massCh.has(ch)) massCh.set(ch, c); }   // まとめて消す時は、隣の塊の印は後で塊ごとに 1 回だけ付ける
+    else for (const d of NBD) { const n = chunkOf(c.x + d[0], c.y + d[1], c.z + d[2], false); if (n) n.dirty = true; }   // 隣の塊の面・窓も変わる
+    if (c.b) { c.b.cells.delete(c); if (c.y < c.b.baseY) c.b.baseN--; dirtyB.add(c.b); if (!massCh) removedQ.push(c); }
     // 部材の区間: 1 マス削れたら区間の絵を消し、ほかの区間に属さない残りの格子も消す（見えない格子が支えに残らないように）
     if (c.segs) for (const r of c.segs) if (r.alive) {
       r.alive = false; rodDirty = true;
@@ -635,7 +642,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
 
   // 地面(y=0)につながっていない格子を探す（壊した建物の中だけ）
   const N6 = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
-  function floatingCells() {
+  function floatingCellsFull() {   // 前のやり方（建物ごとに地面から全部たどる）。G.floatCheck の時に答え合わせに使う
     const out = [];
     for (const b of dirtyB) {
       const seen = new Set(), q = [];
@@ -646,38 +653,83 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       }
       for (const c of b.cells) if (!seen.has(c)) out.push(c);
     }
-    dirtyB.clear();
+    return out;
+  }
+  // 浮いた格子を探す: 削った格子のとなりからだけ、下を先にたどり、地面（y=0）か支えありと分かった格子に着いたらやめる
+  // 前は 0.2 秒ごとに建物を丸ごとたどっていて、大きいビルで 1 回 70ms 固まった（11-17 改善ループ 1）
+  const removedQ = [], N6D = [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]];   // 最後に積んだ「下」から先に見る
+  function floatingCells() {
+    const full = G.floatCheck ? new Set(floatingCellsFull()) : null;
+    const out = [], ok = new Set(), bad = new Set();
+    for (const r of removedQ) {
+      if (!r.b) continue;
+      for (const d of N6) {
+        const s0 = bld.cells.get(key(r.x + d[0], r.y + d[1], r.z + d[2]));
+        if (!s0 || s0.b !== r.b || ok.has(s0) || bad.has(s0)) continue;
+        const seen = new Set([s0]), st = [s0]; let grounded = false;
+        while (st.length) {
+          const c = st.pop();
+          if (c.y === 0 || ok.has(c)) { grounded = true; break; }
+          for (const e of N6D) { const n = bld.cells.get(key(c.x + e[0], c.y + e[1], c.z + e[2])); if (n && n.b === c.b && !seen.has(n)) { seen.add(n); st.push(n); } }
+        }
+        if (grounded) for (const c of seen) ok.add(c); else for (const c of seen) { bad.add(c); out.push(c); }
+      }
+    }
+    removedQ.length = 0; dirtyB.clear();
+    if (full) { const miss = [...full].filter(c => !bad.has(c)).length, extra = out.filter(c => !full.has(c)).length; G.floatCheck.n++; if (miss || extra) G.floatCheck.bad.push({ miss, extra, full: full.size, now: out.length }); }
     return out;
   }
   // 沈むように崩れる: 大きな建物（または大きな浮いた塊）を 1 つのメッシュにして、地面へ沈めながら瓦礫と粉塵を出す
   // （2 万格子を全部瓦礫にすると物理が止まる。iPad でも動く重さにする 10-16）
   const sinks = [], fading = [];
+  const winParse = new Map();
   function sinkSet(list) {
-    const set = new Set(list), pos = [], nor = [], uv = [], col = [], idx = [];
+    const set = new Set(list), pos = [], nor = [], uv = [], col = [], idx = [], coarse = list.length > (G.coarseN ?? 1500);
+    let tq = performance.now(); const lap = k => { if (G.prof) { const n = performance.now(), q = G.prof[k] || (G.prof[k] = { sum: 0, max: 0 }); q.sum += n - tq; q.max = Math.max(q.max, n - tq); tq = n; } };
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, y0 = 1e9, y1 = -1e9; const kinds = {};
     for (const c of list) {
       x0 = Math.min(x0, c.p.x); x1 = Math.max(x1, c.p.x); z0 = Math.min(z0, c.p.z); z1 = Math.max(z1, c.p.z); y0 = Math.min(y0, c.p.y); y1 = Math.max(y1, c.p.y);
       kinds[c.kind] = (kinds[c.kind] || 0) + 1;
       const k = KIND_COL[c.kind], vary = 0.94 + ((c.x * 7 + c.y * 13 + c.z * 5) % 7) * 0.012;
-      if (c.hid) continue;
+      if (c.hid || coarse) continue;
       for (const f of FACE) { const n = bld.cells.get(key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2])); if (n && set.has(n) && !n.hid) continue; pushFace(c, f, k, vary, TEXM, f.n[1] < 0 ? 0.7 : 1, pos, nor, uv, col, idx); }
     }
+    // 大きい建物は 2×2×2 の格子を 1m の箱にまとめて組む（面の数が 4〜8 分の 1。沈む時は粉の雲に包まれるので粗さは目立たない）
+    // 格子ごとに組むと 1 棟 9000 格子で 21ms・混んだ PC で 130ms 止まった（11-17 改善ループ 2）
+    if (coarse) {
+      const gk = (x, y, z) => key(x >> 1, y >> 1, z >> 1), grp = new Map();
+      for (const c of list) if (!c.hid) { const g = gk(c.x, c.y, c.z); if (!grp.has(g)) grp.set(g, c); }
+      for (const [g, c] of grp) {
+        const gx = c.x >> 1, gy = c.y >> 1, gz = c.z >> 1, k = KIND_COL[c.kind], vary = 0.94 + ((gx * 7 + gy * 13 + gz * 5) % 7) * 0.012;
+        const q = { p: new B.Vector3(c.p.x + (gx * 2 + 0.5 - c.x) * CELL, c.p.y + (gy * 2 + 0.5 - c.y) * CELL, c.p.z + (gz * 2 + 0.5 - c.z) * CELL) };
+        for (const f of FACE) { if (grp.has(key(gx + f.n[0], gy + f.n[1], gz + f.n[2]))) continue; pushFace(q, f, k, vary, TEXM, f.n[1] < 0 ? 0.7 : 1, pos, nor, uv, col, idx, CELL); }
+      }
+    }
+    lap("s.faces");
     { const rs = new Set(); for (const c of list) if (c.segs) for (const r of c.segs) if (r.alive) rs.add(r); for (const r of rs) pushRod(r, pos, nor, uv, col, idx); }   // なめらかな部材も同じ塊に
     // 窓ガラスも一緒に沈める（無いと窓が全部 穴に見えた）
     const pp = [], pn = [], pi = [], h2 = CELL / 2;
+    let mx0 = 1e9, mx1 = -1e9, my0 = 1e9, my1 = -1e9, mz0 = 1e9, mz1 = -1e9;
+    for (const c of list) { if (c.x < mx0) mx0 = c.x; if (c.x > mx1) mx1 = c.x; if (c.y < my0) my0 = c.y; if (c.y > my1) my1 = c.y; if (c.z < mz0) mz0 = c.z; if (c.z > mz1) mz1 = c.z; }
     for (const w of winSet) {
-      const [x, y, z, ax] = w.split(","), X = +x, Y = +y, Z = +z, up = bld.cells.get(key(X, Y + 1, Z)), dn = bld.cells.get(key(X, Y - 1, Z));
+      let wp = winParse.get(w); if (!wp) { const [x, y, z, ax] = w.split(","); wp = [+x, +y, +z, ax]; winParse.set(w, wp); }   // 街じゅうの窓を毎回 文字から読み直していた（11-17）
+      const [X, Y, Z, ax] = wp;
+      if (X < mx0 || X > mx1 || Z < mz0 || Z > mz1 || Y < my0 - 1 || Y > my1 + 1) continue;   // この建物の範囲の外の窓は見ない
+      const up = bld.cells.get(key(X, Y + 1, Z)), dn = bld.cells.get(key(X, Y - 1, Z));
       if (!(up && set.has(up)) && !(dn && set.has(dn))) continue;
       const q = cellWorld(X, Y, Z), b = pp.length / 3, u = ax === "z" ? [h2, 0, 0] : [0, 0, h2];
       for (const [su, sv] of QUAD) { pp.push(q.x + u[0] * su, q.y + sv * h2, q.z + u[2] * su); pn.push(ax === "z" ? 0 : 1, 0, ax === "z" ? 1 : 0); }
       pi.push(b, b + 1, b + 2, b, b + 2, b + 3);
     }
-    for (const c of list) removeCell(c);
+    lap("s.wins");
+    removeCells(list);
+    lap("s.remove");
     if (!idx.length) return;
     sinkValue(list.length);
     const m = new B.Mesh("sink", scene), vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx; vd.applyToMesh(m, false);
     m.material = bldM; m.receiveShadows = true; m.isPickable = false; shadow.addShadowCaster(m);
     if (pi.length) { const g = new B.Mesh("sinkPane", scene), pv = new B.VertexData(); pv.positions = pp; pv.normals = pn; pv.indices = pi; pv.applyToMesh(g, false); g.material = paneM; g.parent = m; g.isPickable = false; }
+    lap("s.mesh");
     const h = CELL / 2; m.setPivotPoint(new B.Vector3((x0 + x1) / 2, y0 - h, (z0 + z1) / 2));
     const kind = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0][0];
     if (!G.fixedDt) hitStop = 0.16;   // 沈み始めの一瞬のため（10-24 改善ループ 軸5）
@@ -1206,7 +1258,15 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   const hasS = n => !!(sfx[n] || sfx[n + "_1"]);
   // 1 回鳴らす。name_1〜3 があれば、その中から選ぶ（同じ音が続かないように）
   const lastPick = {};
+  // 音の入口でまとめて抑える（11-17 改善ループ 1: 場所ごとに間引いても、別々の所の音が重なって 1 秒に 20 回鳴っていた）
+  // 同じ音は 0.09 秒あける・1 秒に 9 回を超えたら小さい音は鳴らさない（大きい音＝大事な音は通す）。sndNow は 90_tail が毎コマ playT を入れる
+  let sndNow = 0; const sndLast = {}, sndWin = [];
   function playS(name, vol = 1, rate = 1, delay = 0) {
+    const t = sndNow + delay;
+    if (t - (sndLast[name] ?? -9) < 0.09 && vol < 0.7) return false;
+    while (sndWin.length && t - sndWin[0] > 1) sndWin.shift();
+    if (sndWin.length >= 9 && vol < 0.55) return false;
+    sndLast[name] = t; sndWin.push(t);
     if (G.snd) G.snd[name] = (G.snd[name] || 0) + 1;
     if (!ac || ac.state !== "running") return false;
     const vs = [1, 2, 3].map(i => name + "_" + i).filter(k => sfx[k]); let k = sfx[name] ? name : null;
@@ -1832,7 +1892,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
 
   // ---- ひきとりじょ・おろしば: 穴（がれきの山が育つ）・看板・光る輪 ----
-  const pitM = mat("pitM", 0.12, 0.11, 0.1, 0.95), pitWallM = mat("pitWallM", 0.62, 0.6, 0.55, 0.9), pileM = pbrTex("pileM", "concrete_debris", 3, [0.85, 0.8, 0.74]);
+  const pitM = mat("pitM", 0.42, 0.34, 0.26, 0.95), pitWallM = mat("pitWallM", 0.62, 0.6, 0.55, 0.9), pileM = pbrTex("pileM", "concrete_debris", 3, [0.85, 0.8, 0.74]);
   const ringM = new B.StandardMaterial("ringM", scene); ringM.emissiveColor = new B.Color3(1, 0.8, 0.15); ringM.disableLighting = true; ringM.alpha = 0.35; ringM.backFaceCulling = false;
   function signTex(name, t1, t2) {
     const dt2 = new B.DynamicTexture(name + "T", { width: 512, height: 160 }, scene, true), c = dt2.getContext();
@@ -1840,7 +1900,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     c.fillStyle = "#fff"; c.font = "bold 58px sans-serif"; c.textAlign = "center"; c.fillText(t1, 256, 78); c.font = "bold 34px sans-serif"; c.fillText(t2, 256, 130); dt2.update();
     const sm = new B.StandardMaterial(name + "M", scene); sm.diffuseTexture = dt2; sm.emissiveColor = new B.Color3(0.45, 0.45, 0.45); sm.backFaceCulling = false; return sm;
   }
-  const signM = signTex("sign", "ひきとりじょ", "がれき かいます ¥"), signM2 = signTex("sign2", "おろしば", "ここでも うれます ¥");
+  const signM = signTex("sign", "おろしば", "がれき かいます ¥"), signM2 = signTex("sign2", "おろしば", "ここでも うれます ¥");
   for (const d of drops) {
     const P = d.main ? 18 : 9, oz = d.main ? 3 : 0, H = P / 2;
     const p = B.MeshBuilder.CreateBox("pit", { width: P, height: 0.05, depth: P }, scene); p.position.set(d.x, 0.03, d.z + oz); p.material = pitM; p.receiveShadows = true;
@@ -2106,7 +2166,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       const tg = findTarget(); if (!tg) { arm.tg = null; return false; }
       arm.tg = tg; arm.ph = "up"; arm.t = 0; arm.from = curPose(); return true;
     }
-    if (arm.ph === "up") { const k = Math.min(1, arm.t / (T * 0.45)); lerpPose(arm.from, POSE_UP, 1 - Math.pow(1 - k, 2)); if (k >= 1) { arm.ph = "down"; arm.t = 0; arm.from = curPose(); arm.slam = slamPose(arm.tg); playS("exc_hydraulic", 0); } return true; }
+    if (arm.ph === "up") { const k = Math.min(1, arm.t / (T * 0.45)); lerpPose(arm.from, POSE_UP, 1 - Math.pow(1 - k, 2)); if (k >= 1) { arm.ph = "down"; arm.t = 0; arm.from = curPose(); arm.slam = slamPose(arm.tg); } return true; }
     if (arm.ph === "down") { const k = Math.min(1, arm.t / (T * 0.22)); lerpPose(arm.from, arm.slam, k * k); if (k >= 1) { impact(arm.tg); arm.ph = "back"; arm.t = 0; arm.from = curPose(); } return true; }
     if (arm.ph === "back") { const k = Math.min(1, arm.t / (T * 0.33)); lerpPose(arm.from, POSE_REST, k); if (k >= 1) { arm.ph = "idle"; arm.cool = 0; } return true; }
     return false;
@@ -2413,10 +2473,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (k >= 1) {
         flyers.splice(i, 1); if (o.val) { bed.load += o.val; bed.money += o.val; }
         o.done(); showBed();
-        if (playT - tickT > 0.15) { tickT = playT; playS("click", 0.08, 1.6 + Math.min(1, bed.load / cap) * 0.6); }
+        if (playT - tickT > 0.25) { tickT = playT; playS("click", 0.08, 1.6 + Math.min(1, bed.load / cap) * 0.6); }
       }
     }
-    if (bed.load >= cap && !fullWarned) { fullWarned = true; popup("にだい いっぱい！ ひきとりじょへ！", "mile"); playS("levelup", 0.3, 0.8); }
+    if (bed.load >= cap && !fullWarned) { fullWarned = true; popup("にだい いっぱい！ おろしばへ！", "mile"); playS("levelup", 0.3, 0.8); }
     if (bed.load < cap) fullWarned = false;
   }
 
@@ -2518,7 +2578,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     c.beginPath(); c.moveTo(0, -6); c.lineTo(4.5, 5); c.lineTo(-4.5, 5); c.closePath(); c.fill(); c.stroke(); c.restore();
   }
   // ひきとりじょへの矢印（荷台が 6 割を超えたら、ショベルの前に出る）
-  const arrowM = new B.StandardMaterial("arrowM", scene); arrowM.emissiveColor = new B.Color3(1, 0.85, 0.2); arrowM.disableLighting = true; arrowM.alpha = 0.85;
+  // 矢印は黄緑（黄色だとショベルのバケットと見分けられなかった・11-17 改善ループ 2）
+  const arrowM = new B.StandardMaterial("arrowM", scene); arrowM.emissiveColor = new B.Color3(0.35, 1, 0.3); arrowM.disableLighting = true; arrowM.alpha = 0.85;
   // 矢印の形: 先が +z を向く平たい矢（三角の円盤を回して作ったら、向きが合っていなかった 10-30 本人「矢印通り行っても永遠に着かない」）
   const arrow = new B.Mesh("arrow", scene);
   { const vd = new B.VertexData(); vd.positions = [0, 0, 1.8, -1.2, 0, 0.2, 1.2, 0, 0.2, -0.5, 0, 0.2, 0.5, 0, 0.2, -0.5, 0, -1.4, 0.5, 0, -1.4];
@@ -2530,11 +2591,13 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const cap = upV("cap"), k = Math.min(1, bed.load / cap);
     $("bedBar").style.width = (k * 100).toFixed(1) + "%"; $("bedBar").classList.toggle("full", k >= 1);
     const nd = nearDrop(), yd = Math.round(Math.hypot(nd.x - ex.pos.x, nd.z - ex.pos.z));
-    $("bedT").textContent = `にだい ${Math.round(bed.load)} / ${cap}` + (inYard() ? "" : `　🟨まで ${yd}m`);
+    // 荷台がいっぱいなのに何をすればいいか字で出ていなかった（11-17 改善ループ 1）
+    $("bedT").textContent = inYard() ? `にだい ${Math.round(bed.load)}/${cap}` : k >= 0.9 ? `いっぱい！ おろしばへ ${yd}m` : `にだい ${Math.round(bed.load)}/${cap}　おろしば ${yd}m`;
+    $("bedT").classList.toggle("full", k >= 0.9 && !inYard());
     if (!dump) $("money").textContent = fmtY(sv.money);
     const show = k >= 0.6 && !inYard();
     arrowP.setEnabled(show);
-    if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 6, 0.4, ex.pos.z + Math.cos(a) * 6); arrowP.rotation.y = a; arrowM.alpha = 0.55 + 0.35 * Math.sin(playT * 6); }
+    if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 11, 0.4, ex.pos.z + Math.cos(a) * 11); arrowP.rotation.y = a; arrowM.alpha = k >= 0.9 ? 0.95 : 0.55 + 0.35 * Math.sin(playT * 6); arrowP.scaling.setAll(k >= 0.9 ? 1.5 + 0.15 * Math.sin(playT * 8) : 1); }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
     $("city").textContent = `${TH.name} ${pct}% こわした　🧟 ${kills}`;
@@ -2543,7 +2606,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
 
   // ---- 建物の陰で ショベルが隠れる時は、手前（南）の高い塊を透かす ----
-  const faded = new Set(); let fadeT = 0;
+  let fadeT = 0, exOnTop = false, exMeshList = null;
+  const exMeshes = () => exMeshList || (exMeshList = [...root.getChildMeshes(), ...pistons.flatMap(p => [p.barrel, p.rod])]);
   // 画面に映っている地面の四角（カメラの四隅から地面へ線を下ろす）。ここ＋余白の外は描かない
   // 前はショベルから 66m 四方を全部描いていて、縦のスマホに映る広さの 4 倍あった（11-17 本人「ラグが大きい」）
   const vr = { x0: 0, x1: 0, z0: 0, z1: 0 }, _vm = B.Matrix.Identity(), _va = new B.Vector3(), _vb = new B.Vector3();
@@ -2579,9 +2643,11 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     }
     for (const q of props) { const far = outView(q.pos.x, q.pos.z, 3); if (far !== !!q.far && q.state !== "gone") { q.far = far; q.root.setEnabled(!far); } }   // 遠くの車・木・街灯も描かない（数千個あって重かった）
     for (const z of zombies) { const far = outView(z.pos.x, z.pos.z); if (far !== !!z.far) { z.far = far; z.root.setEnabled(!far); } }   // ゾンビ 1 体は部品 17 個
-    for (const m of faded) if (!now.has(m)) { m.visibility = 1; }
-    for (const m of now) m.visibility = 0.28;
-    faded.clear(); for (const m of now) faded.add(m);
+    // ショベルが建物の陰に入ったら、建物を薄くせず、ショベルを建物より手前に描く（すけて見える）
+    // 前は建物を半透明（0.28）にしていたが、階ごとの床が重なって真っ黒な箱になり、ショベルも見えなかった（11-17 改善ループ 3）
+    const occ = now.size > 0;
+    if (occ !== exOnTop) { exOnTop = occ; for (const m of exMeshes()) m.renderingGroupId = occ ? 1 : 0; }
+    G.exOnTop = exOnTop;
   }
 
   // ---- 始める画面 ----
@@ -2604,7 +2670,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     let dt = G.fixedDt || Math.min(engine.getDeltaTime() / 1000, 0.05);
     if (!(dt > 0.0001)) return;
     if (hitStop > 0) { hitStop -= dt; dt *= 0.08; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(dt); if (hitStop <= 0) plugin._useDeltaForWorldStep = true; }
-    playT += dt;
+    playT += dt; sndNow = playT;
     readInput();
     const mvK = PF("move", () => moveEx(dt));
     const swinging = PF("arm", () => updateArm(dt));
@@ -2619,12 +2685,12 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       for (const b of [...dirtyB]) if (b.sink && b.cells.size) {
         // 1 階の壁が減った割合か、削られた数（1 階の壁の 8 割ぶん）で崩れる。大きいビルを外から叩き続けても崩れるように
         const r = b.baseN / Math.max(1, b.base0), lost = b.n0 ? (b.n0 - b.cells.size) / Math.max(60, b.base0 * 0.8) : 0;
-        if (r < (b.sinkR || 0.45) || lost >= 1) sinkSet([...b.cells]);
+        if (r < (b.sinkR || 0.45) || lost >= 1) PF("c.sinkSet", () => sinkSet([...b.cells]));
         else if ((r < 0.75 || lost > 0.55) && !b.warned) { b.warned = true; popup("ぐらぐら…！ あと すこし！", "mid"); shake(0.4); }
       }
-      const fl = floatingCells();
-      if (fl.length > 900) sinkSet(fl);
-      else if (fl.length) { const c0 = fl[0].p.clone(), m = fl.length; collapse(fl); broke(m, c0, true); }
+      const fl = PF("c.float", floatingCells);
+      if (fl.length > 900) PF("c.sinkSet", () => sinkSet(fl));
+      else if (fl.length) PF("c.fall", () => { const c0 = fl[0].p.clone(), m = fl.length; collapse(fl); broke(m, c0, true); });
     } });
     PF("mesh", rebuildCellMesh);
     if (sinks.length) PF("sinks", () => updateSinks(dt));
