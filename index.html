@@ -24,7 +24,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 #bedBar{height:100%;width:0;background:linear-gradient(#ffcf3f,#f08c00);transition:width .15s}
 #bedBar.full{background:linear-gradient(#ff8a8a,#e03131);animation:blink .5s infinite alternate}
 @keyframes blink{to{opacity:.55}}
-#city{display:inline-block;font-size:15px;font-weight:bold;margin-top:3px;white-space:pre;background:rgba(10,12,16,.82);border-radius:7px;padding:2px 7px}#city.near{color:#ffd23f}
+#city{display:inline-block;font-size:15px;font-weight:bold;margin-top:3px;white-space:pre-wrap;max-width:calc(100vw - 150px);background:rgba(10,12,16,.82);border-radius:7px;padding:2px 7px}#city.near{color:#ffd23f}
 #map{position:absolute;right:calc(8px + env(safe-area-inset-right));top:calc(8px + env(safe-area-inset-top));width:120px;height:120px;border-radius:8px;border:1.5px solid var(--edge);pointer-events:none;opacity:.92}
 #bZoom{position:absolute;right:calc(8px + env(safe-area-inset-right));top:calc(136px + env(safe-area-inset-top));width:48px;height:44px;border-radius:10px;border:1.5px solid var(--edge);background:var(--panel);color:#fff;font-size:17px;font-weight:bold}
 /* スティック: 左側をさわった所に出る */

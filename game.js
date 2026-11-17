@@ -806,7 +806,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       const under = q.d - q.y0;                              // 地面より下へ入った深さ
       // 上の方から破片がバラーンと飛び散る（沈み始めから、今の屋上の高さで）
       const topY = q.y0 + q.H - q.d;
-      if (topY > 2 && (q.topT -= dt) <= 0) {
+      if (topY > 2 && (q.topT -= dt) <= 0) PF("k.top", () => {
         q.topT = 0.07; const col = KIND_COL[q.kind], cxm = (q.x0 + q.x1) / 2, czm = (q.z0 + q.z1) / 2;
         for (let j = 0; j < 2; j++) {
           const p = new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), topY - Math.random() * 2, q.z0 + Math.random() * (q.z1 - q.z0));
@@ -814,21 +814,21 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
           spawnDebris(p, new B.Vector3(0.6 + Math.random() * 0.8, 0.4 + Math.random() * 0.5, 0.6 + Math.random() * 0.8), col, out.addInPlaceFromFloats(0, 2 + Math.random() * 4, 0));
         }
         if (Math.random() < 0.4) dust(new B.Vector3(cxm, topY, czm), 20);
-      }
+      });
       if (under > 0) {
         const want = Math.min(q.total, Math.ceil(under / q.H * q.total));
         const col = KIND_COL[q.kind];
         let nMade = 0;
-        while (q.made < want && nMade++ < 4) {   // 1 コマ 4 個まで（沈みが速い時に 1 コマで数十個作って止まった・11-17 改善ループ 4）
+        if (q.made < want) PF("k.spawn", () => { while (q.made < want && nMade++ < 4) {   // 1 コマ 4 個まで（沈みが速い時に 1 コマで数十個作って止まった・11-17 改善ループ 4）
           q.made++;
           const p = new B.Vector3(q.x0 - 1 + Math.random() * (q.x1 - q.x0 + 2), 1 + Math.random() * 2.5, q.z0 - 1 + Math.random() * (q.z1 - q.z0 + 2));
           const out = new B.Vector3(p.x - (q.x0 + q.x1) / 2, 0, p.z - (q.z0 + q.z1) / 2).normalize().scale(1.5 + Math.random() * 2.5);
           spawnDebris(p, new B.Vector3(0.9 + Math.random() * 0.7, 0.55 + Math.random() * 0.5, 0.9 + Math.random() * 0.7), col, out.addInPlaceFromFloats(0, 1.5, 0));
-        }
-        if ((q.dT -= dt) <= 0) { q.dT = 0.14; dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.5, q.z0 + Math.random() * (q.z1 - q.z0)), 22); cloudAt(q, q.H > 20 ? (LITE ? 6 : 8) : 3); }
+        } });
+        if ((q.dT -= dt) <= 0) PF("k.cloud", () => { q.dT = 0.14; dust(new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.5, q.z0 + Math.random() * (q.z1 - q.z0)), 22); cloudAt(q, q.H > 20 ? (LITE ? 6 : 8) : 3); });
         if ((q.snd -= dt) <= 0) { q.snd = 0.5; crash(0.8); shake(0.3); }
       }
-      if (under > q.H + 0.5) { q.m.dispose(); sinks.splice(i, 1); flash(0.35); shake(0.5); playS("rubble_dump", 0.7); playS("impact", 0.5, 0.7); for (let j = 0; j < 4; j++) { const dp = new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.6, q.z0 + Math.random() * (q.z1 - q.z0)); setTimeout(() => dust(dp, 30), j * 110); } }
+      if (under > q.H + 0.5) { PF("k.end", () => q.m.dispose()); sinks.splice(i, 1); flash(0.35); shake(0.5); playS("rubble_dump", 0.7); playS("impact", 0.5, 0.7); for (let j = 0; j < 4; j++) { const dp = new B.Vector3(q.x0 + Math.random() * (q.x1 - q.x0), 0.6, q.z0 + Math.random() * (q.z1 - q.z0)); setTimeout(() => dust(dp, 30), j * 110); } }
     }
   }
   // 沈む時の大きな土けむり（粒は大きく・長く残る。1 つだけ作って使い回す）
@@ -1365,7 +1365,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (tier > comboTier) { comboTier = tier; chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
   }
   function popup(text, cls) {
-    const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text; if (cls === "tiny") el.style.setProperty("--dx", Math.round(Math.random() * 140 - 70) + "px");
+    const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text; if (cls && cls.startsWith("tiny")) { el.style.setProperty("--dx", Math.round(Math.random() * 140 - 70) + "px"); el.style.marginTop = Math.round(Math.random() * 50 - 25) + "px"; }
+    // 大きい字が同時に出たら、下へ 1 段ずつずらす（「+¥151」と別の字が重なって読めなかった・11-17 改善ループ 10）
+    else { let k = 0; for (const o of $("pops").children) if (!o.classList.contains("tiny")) k++; if (k) el.style.marginTop = Math.min(3, k) * 46 + "px"; }
     $("pops").appendChild(el); setTimeout(() => el.remove(), 1300);
   }
   function broke(n, p, big) {      // 格子が n 個こわれた（p はその辺り）
@@ -1375,7 +1377,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     shake(Math.min(0.6, (big ? 0.28 : 0.08) + n * (big ? 0.03 : 0.012)));
     if (big && n >= 6 && !G.fixedDt) hitStop = 0.1;   // 大きく崩れた瞬間だけ一瞬ため（ヒットストップ・10-24 改善ループ 軸5）
     sparks(p, big ? 14 : 8);
-    if (n >= 3 && playT - (broke.tT || -1) > 0.15) { broke.tT = playT; popup("+" + n, n >= 25 ? "tiny gold huge" : n >= 12 ? "tiny gold" : "tiny"); }
+    // 壊した数は 0.35 秒ぶんまとめて 1 つ出す（0.15 秒ごとに出すと +30・+19 が同じ所に重なって読めなかった・11-17 改善ループ 9）
+    broke.acc = (broke.acc || 0) + n;
+    if (broke.acc >= 3 && playT - (broke.tT || -1) > 0.35) { const a = broke.acc; broke.acc = 0; broke.tT = playT; popup("+" + a, a >= 25 ? "tiny gold huge" : a >= 12 ? "tiny gold" : "tiny"); }
     if (big && n >= 6) { flash(Math.min(0.45, 0.15 + n * 0.01), n >= 25); if (ac && ac.currentTime - glassT > 0.25) { glassT = ac.currentTime; playS("glass", 0.5, 1, 0.04); } }
     showCombo();
   }
@@ -2187,11 +2191,11 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       lerpPose(curPose(), POSE_REST, Math.min(1, dt * 3));
       if ((arm.cool -= dt) > 0) return false;
       arm.cool = 0.12;
-      const tg = findTarget(); if (!tg) { arm.tg = null; return false; }
+      const tg = PF("a.find", findTarget); if (!tg) { arm.tg = null; return false; }
       arm.tg = tg; arm.ph = "up"; arm.t = 0; arm.from = curPose(); return true;
     }
     if (arm.ph === "up") { const k = Math.min(1, arm.t / (T * 0.45)); lerpPose(arm.from, POSE_UP, 1 - Math.pow(1 - k, 2)); if (k >= 1) { arm.ph = "down"; arm.t = 0; arm.from = curPose(); arm.slam = slamPose(arm.tg); } return true; }
-    if (arm.ph === "down") { const k = Math.min(1, arm.t / (T * 0.22)); lerpPose(arm.from, arm.slam, k * k); if (k >= 1) { impact(arm.tg); arm.ph = "back"; arm.t = 0; arm.from = curPose(); } return true; }
+    if (arm.ph === "down") { const k = Math.min(1, arm.t / (T * 0.22)); lerpPose(arm.from, arm.slam, k * k); if (k >= 1) { PF("a.impact", () => impact(arm.tg)); arm.ph = "back"; arm.t = 0; arm.from = curPose(); } return true; }
     if (arm.ph === "back") { const k = Math.min(1, arm.t / (T * 0.33)); lerpPose(arm.from, POSE_REST, k); if (k >= 1) { arm.ph = "idle"; arm.cool = 0; } return true; }
     return false;
   }
@@ -2201,11 +2205,11 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (tg.kind === "zombie") { p = tg.ref.pos.add(new B.Vector3(0, 1, 0)); zombieHit(tg.ref, dir, 2); }
     if (tg.kind === "car") { p = tg.ref.pos.add(new B.Vector3(0, 0.8, 0)); carHit(tg.ref, dir, 1.2 * pw); }
     const wood = tg.kind === "cell" && woodNear(p);
-    const n = smash(p, R, dir, 70 + pw * 30, 3 + pw);
-    if (n) { broke(n, p, n >= 25); playS("bucket_hit", 0.8, 0.85 + Math.random() * 0.2); }
+    const n = PF("a.smash", () => smash(p, R, dir, 70 + pw * 30, 3 + pw));
+    if (n) { PF("a.broke", () => broke(n, p, n >= 25)); playS("bucket_hit", 0.8, 0.85 + Math.random() * 0.2); }
     if (wood && n && Math.random() < 0.12) { startFire(p.clone(), 14 + Math.random() * 10); popup("もえだした！", "mid"); }   // 木造の家は火が付くことがある
     if (!n) { dust(new B.Vector3(p.x, 0.3, p.z), 14); playS("bucket_hit", 0.4, 0.7); }   // else が火の if に付いていて、当たった時も毎回 2 回目のガンが鳴っていた（11-17）。空振り・ゾンビだけの時は画面を揺らさない（何もしていないのに揺れっぱなしになった 10-30）
-    hitAround(p, R + 1.2, dir, 1.2 * pw, tg.ref);
+    PF("a.around", () => hitAround(p, R + 1.2, dir, 1.2 * pw, tg.ref));
   }
 
   const WOODK = new Set(["wood", "beam", "wfloor"]);
@@ -2630,7 +2634,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     // 次の目標を字で出す（11-17 改善ループ 3「4 割で次の街という流れが画面から読めない・強化の入口が見えない」）
     const canUp = Object.keys(UPS).some(k => (sv.up[k] || 0) < UPS[k].vals.length - 1 && sv.money >= upPrice(k));
     $("city").classList.toggle("near", pct >= NEXT_PCT * 0.75 && pct < NEXT_PCT);   // あと少しで次の街: 黄色
-    $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}/${NEXT_PCT}% → つぎの まち`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
+    $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}/${NEXT_PCT}%→つぎのまち`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
     if (pct >= NEXT_PCT && $("bNext").style.display === "none") { $("bNext").style.display = ""; $("bNext").textContent = "つぎの まちへ ▶ " + nextTh.name; popup("🎉 つぎの まちへ いけるよ！", "mile"); }
     drawMap();
   }
@@ -2774,6 +2778,22 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   $("msg").style.display = "none";
   setZoom(1);
   engine.resize();
+  // 見える物選びの候補を「出ている物」だけにする（11-17 改善ループ 10）
+  // Babylon は毎コマ 3500 個全部に「準備できたか」を聞いてから「出ているか」を見ていて、1 コマの 2 割を使っていた（出ている物は 500 個ほど）
+  // 候補は 10 コマに 1 回と、物が増えた・消えた時に作り直す。出したばかりの物は最大 10 コマ遅れて映る（画面の外の余白の内なので見えない）
+  if (!Q.has("allcand")) {
+    const cand = { data: [], length: 0 }; let candDirty = true, candN = 0;
+    scene.onNewMeshAddedObservable.add(() => { candDirty = true; }); scene.onMeshRemovedObservable.add(() => { candDirty = true; });
+    G.candDirty = () => { candDirty = true; };
+    scene.getActiveMeshCandidates = () => {
+      if (candDirty || ++candN >= 10) {
+        candDirty = false; candN = 0; const d = cand.data; d.length = 0;
+        for (const m of scene.meshes) if (m.isEnabled()) d.push(m);
+        cand.length = d.length;
+      }
+      return cand;
+    };
+  }
   engine.runRenderLoop(() => scene.render());
   addEventListener("resize", () => engine.resize());
   $("startB").textContent = "さわって スタート";   // 用意ができるまでは「じゅんびちゅう…」（触っても始まらない時に見分ける）
