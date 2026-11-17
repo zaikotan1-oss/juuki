@@ -711,7 +711,11 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const pp = [], pn = [], pi = [], h2 = CELL / 2;
     let mx0 = 1e9, mx1 = -1e9, my0 = 1e9, my1 = -1e9, mz0 = 1e9, mz1 = -1e9;
     for (const c of list) { if (c.x < mx0) mx0 = c.x; if (c.x > mx1) mx1 = c.x; if (c.y < my0) my0 = c.y; if (c.y > my1) my1 = c.y; if (c.z < mz0) mz0 = c.z; if (c.z > mz1) mz1 = c.z; }
-    for (const w of winSet) {
+    const wins = [];   // この建物にかかる塊の窓だけ見る（前は街じゅうの窓を 1 回ずつ読んでいた）
+    for (let gx = Math.floor(mx0 / CH); gx <= Math.floor(mx1 / CH); gx++) for (let gy = Math.floor((my0 - 1) / CH); gy <= Math.floor((my1 + 1) / CH); gy++) for (let gz = Math.floor(mz0 / CH); gz <= Math.floor(mz1 / CH); gz++) {
+      const ch = chunks.get(key(gx, gy, gz)); if (ch) for (const w of ch.wins) if (winSet.has(w)) wins.push(w);
+    }
+    for (const w of wins) {
       let wp = winParse.get(w); if (!wp) { const [x, y, z, ax] = w.split(","); wp = [+x, +y, +z, ax]; winParse.set(w, wp); }   // 街じゅうの窓を毎回 文字から読み直していた（11-17）
       const [X, Y, Z, ax] = wp;
       if (X < mx0 || X > mx1 || Z < mz0 || Z > mz1 || Y < my0 - 1 || Y > my1 + 1) continue;   // この建物の範囲の外の窓は見ない
@@ -730,6 +734,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     m.material = bldM; m.receiveShadows = true; m.isPickable = false; shadow.addShadowCaster(m);
     if (pi.length) { const g = new B.Mesh("sinkPane", scene), pv = new B.VertexData(); pv.positions = pp; pv.normals = pn; pv.indices = pi; pv.applyToMesh(g, false); g.material = paneM; g.parent = m; g.isPickable = false; }
     lap("s.mesh");
+    if (list.length > 200) { rubbleMark((x0 + x1) / 2, (z0 + z1) / 2, Math.max(x1 - x0, z1 - z0) * 0.6 + 1); scorchDirty = 1; }   // 沈んだ所に壊した跡（元からの空き地と見分ける・11-17 改善ループ 6）
     const h = CELL / 2; m.setPivotPoint(new B.Vector3((x0 + x1) / 2, y0 - h, (z0 + z1) / 2));
     const kind = Object.entries(kinds).sort((a, b) => b[1] - a[1])[0][0];
     if (!G.fixedDt) hitStop = 0.16;   // 沈み始めの一瞬のため（10-24 改善ループ 軸5）
@@ -742,7 +747,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       cx = cxw + fdx * (x1 - x0 + CELL) / 2; cz = czw + fdz * (z1 - z0 + CELL) / 2; W = fdx ? z1 - z0 + CELL : x1 - x0 + CELL;
       m.setPivotPoint(new B.Vector3(cx, y0 - h, cz));
     }
-    sinks.push({ m, v: 0, d: 0, y0: y0 - h, H: y1 - y0 + CELL, x0: x0 - h, x1: x1 + h, z0: z0 - h, z1: z1 + h, total: Math.min(top ? 200 : 150, Math.max(6, Math.round(list.length / (top ? 40 : 90)))), made: 0,
+    sinks.push({ m, v: 0, d: 0, y0: y0 - h, H: y1 - y0 + CELL, x0: x0 - h, x1: x1 + h, z0: z0 - h, z1: z1 + h, total: Math.min((top ? 200 : 150) * (LITE ? 0.6 : 1), Math.max(6, Math.round(list.length / (top ? 40 : 90)))), made: 0,
       tx: (Math.random() - 0.5) * 0.14, tz: (Math.random() - 0.5) * 0.14, snd: 0, dT: 0, kind, top, ang: 0, av: 0, fdx, fdz, cr: 0, cx, cz, W, topT: 0 });
     crash(1); shake(1); flash(0.6, true); cloudAt({ x0, x1, z0, z1 }, list.length > 4000 ? 70 : 25); playS("boom", 0.6, 0.7, 0.35); playS("glass", 0.55, 0.9, 0.15); playS("glass", 0.45, 1.1, 0.3);   // 沈み始めに足元から雲を一気に吹き出す
     for (const k of [0.3, 0.6, 0.9, 1.2]) setTimeout(() => { shake(0.35); playS(k < 0.7 ? "impact" : "rubble_dump", 0.25, 0.8 + Math.random() * 0.2); }, k * 1000);   // 揺れの余韻
@@ -760,11 +765,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (!G.fixedDt) hitStop = 0.14;
       crash(1); shake(1); flash(0.55, true); playS("boom", 0.7, 0.75); playS("impact", 0.6, 0.7, 0.05); playS("rubble_dump", 0.6, 0.9, 0.2);
       popup("ズドーン!!", "big"); toppleHit(q);   // 倒れた先の建物・車・ゾンビも壊す（ドミノ）
-      for (let k = 0; k < q.total; k++) {
-        const t = Math.random(), side = (Math.random() - 0.5) * 3;
-        const p = new B.Vector3(q.cx + q.fdx * t * L - q.fdz * side, 0.6 + Math.random() * 1.2, q.cz + q.fdz * t * L + q.fdx * side);
-        spawnDebris(p, new B.Vector3(0.7 + Math.random() * 0.6, 0.45 + Math.random() * 0.4, 0.7 + Math.random() * 0.6), col, new B.Vector3((Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3));
-      }
+      q.pend = q.total;   // 倒れた線に沿った破片は、横たわっている間に 1 コマ 12 個ずつ出す（着いた 1 コマで 200 個作って 146ms 止まった・11-17 改善ループ 4）
       for (let k = 0; k <= 6; k++) { const t = k / 6, dp = new B.Vector3(q.cx + q.fdx * t * L, 0.6, q.cz + q.fdz * t * L); setTimeout(() => dust(dp, 34), k * 60); }
       const ex0 = Math.min(q.cx, q.cx + q.fdx * L), ex1 = Math.max(q.cx, q.cx + q.fdx * L), ez0 = Math.min(q.cz, q.cz + q.fdz * L), ez1 = Math.max(q.cz, q.cz + q.fdz * L);
       cloudAt({ x0: ex0 - 2, x1: ex1 + 2, z0: ez0 - 2, z1: ez1 + 2 }, 50);
@@ -772,6 +773,14 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     }
     // 倒れた後: 0.6 秒は横たわったまま、体の全長から破片が跳ね上がる（バターン）。そのあと地面へ沈めて消す
     q.t += dt;
+    if (q.pend > 0) {
+      const col = KIND_COL[q.kind], L = q.H, n = Math.min(12, q.pend); q.pend -= n;
+      for (let k = 0; k < n; k++) {
+        const t = Math.random(), side = (Math.random() - 0.5) * 3;
+        const p = new B.Vector3(q.cx + q.fdx * t * L - q.fdz * side, 0.6 + Math.random() * 1.2, q.cz + q.fdz * t * L + q.fdx * side);
+        spawnDebris(p, new B.Vector3(0.7 + Math.random() * 0.6, 0.45 + Math.random() * 0.4, 0.7 + Math.random() * 0.6), col, new B.Vector3((Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3));
+      }
+    }
     if (q.t < 0.6) {
       if ((q.dT -= dt) <= 0) {
         q.dT = 0.05; const col = KIND_COL[q.kind], side = new B.Vector3(-q.fdz, 0, q.fdx), Wd = q.W || 4;
@@ -808,7 +817,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (under > 0) {
         const want = Math.min(q.total, Math.ceil(under / q.H * q.total));
         const col = KIND_COL[q.kind];
-        while (q.made < want) {
+        let nMade = 0;
+        while (q.made < want && nMade++ < 4) {   // 1 コマ 4 個まで（沈みが速い時に 1 コマで数十個作って止まった・11-17 改善ループ 4）
           q.made++;
           const p = new B.Vector3(q.x0 - 1 + Math.random() * (q.x1 - q.x0 + 2), 1 + Math.random() * 2.5, q.z0 - 1 + Math.random() * (q.z1 - q.z0 + 2));
           const out = new B.Vector3(p.x - (q.x0 + q.x1) / 2, 0, p.z - (q.z0 + q.z1) / 2).normalize().scale(1.5 + Math.random() * 2.5);
@@ -857,7 +867,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     debrisSrc.updateVerticesData(B.VertexBuffer.PositionKind, ps);
     const ns = []; B.VertexData.ComputeNormals(ps, debrisSrc.getIndices(), ns); debrisSrc.updateVerticesData(B.VertexBuffer.NormalKind, ns);
   }
-  debrisSrc.material = pbrTex("debrisM", "concrete_debris", 0.35); debrisSrc.isVisible = false;
+  // 色は灰色のコンクリの写真＋がれきの凹凸。茶色のがれきの写真だと建物の色（赤れんが等）を掛けても全部同じ茶色になった（11-17 改善ループ 4）
+  debrisSrc.material = pbrTex("debrisM", "concrete_debris", 0.35, null, "dirty_concrete_soft_diff.jpg"); debrisSrc.isVisible = false;
   debrisSrc.registerInstancedBuffer("color", 4); debrisSrc.instancedBuffers.color = new B.Color4(1, 1, 1, 1);
   const debris = [];                       // {m, ag, held}
   const units = m => Math.max(1, Math.round(m.scaling.x * m.scaling.y * m.scaling.z / 0.45));
@@ -1709,7 +1720,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     g.addColorStop(0, "rgba(60,54,46,0.85)"); g.addColorStop(1, "rgba(60,54,46,0)"); gctx.fillStyle = g; gctx.fillRect(px - r * PPM, py - r * PPM, r * 2 * PPM, r * 2 * PPM);
     speckle(px - r * PPM * 0.7, py - r * PPM * 0.7, r * PPM * 1.4, r * PPM * 1.4, r * r * 8, ["#8b867c", "#5a554d", "#a39d92"]);
   }
-  let scorchDirty = 0;
+  let scorchDirty = 0, groundFlushT = 0;
+  // 跡を描いた地面の絵を GPU へ送り直す。前は印を立てるだけで送っておらず、遊んでいる間の焦げ跡が出ていなかった（11-17 改善ループ 6）
+  // 2048 四方を丸ごと送るので重い → 跡ができた時だけ、2.5 秒に 1 回まとめて
+  function groundTick(dt) { if ((groundFlushT -= dt) > 0 || !scorchDirty) return; groundFlushT = 2.5; scorchDirty = 0; groundTex.update(); }
   function scorch(x, z, r) {      // 爆発の焦げ跡（絵の送り直しは間引く）
     const [px, py] = W2P(x, z), g = gctx.createRadialGradient(px, py, 0, px, py, r * PPM);
     g.addColorStop(0, "rgba(15,12,10,0.8)"); g.addColorStop(0.6, "rgba(25,20,16,0.45)"); g.addColorStop(1, "rgba(25,20,16,0)"); gctx.fillStyle = g; gctx.fillRect(px - r * PPM, py - r * PPM, r * 2 * PPM, r * 2 * PPM);
@@ -1900,6 +1914,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     c.fillStyle = "#fff"; c.font = "bold 58px sans-serif"; c.textAlign = "center"; c.fillText(t1, 256, 78); c.font = "bold 34px sans-serif"; c.fillText(t2, 256, 130); dt2.update();
     const sm = new B.StandardMaterial(name + "M", scene); sm.diffuseTexture = dt2; sm.emissiveColor = new B.Color3(0.45, 0.45, 0.45); sm.backFaceCulling = false; return sm;
   }
+  const CONT_M = [[0.75, 0.2, 0.15], [0.15, 0.42, 0.7], [0.2, 0.55, 0.3], [0.85, 0.55, 0.12]].map((c, i) => mat("contM" + i, c[0], c[1], c[2], 0.6, 0.3)), palletM = mat("palletM", 0.62, 0.48, 0.3, 0.9);
   const signM = signTex("sign", "おろしば", "がれき かいます ¥"), signM2 = signTex("sign2", "おろしば", "ここでも うれます ¥");
   for (const d of drops) {
     const P = d.main ? 18 : 9, oz = d.main ? 3 : 0, H = P / 2;
@@ -1912,6 +1927,13 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     for (const sx of [-sw * 0.4, sw * 0.4]) { const pl = B.MeshBuilder.CreateCylinder("signPole", { diameter: 0.25, height: sy }, scene); pl.position.set(d.x + sx, sy / 2, sz + 0.2); pl.material = SRC.pole.material; shadow.addShadowCaster(pl); }
     const rr = d.h - 0.7, ring = B.MeshBuilder.CreateTube("yardRing", { path: [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, b]) => new B.Vector3(d.x + a * rr, 0.25, d.z + b * rr)), radius: 0.18, tessellation: 6 }, scene);
     ring.material = ringM; ring.isPickable = false;
+    // 囲いの中が一面の灰色でのっぺり見えた（11-17 改善ループ 5）→ 南の 2 つの角にコンテナと資材の山（当たりは無い・通っても平気）
+    const cr = d.h - 2.6;
+    for (const [sx, i] of [[-1, 0], [1, 1]]) {
+      const ci = (Math.abs(Math.round(d.x * 3 + d.z)) + i) % CONT_M.length, cx = d.x + sx * cr, cz = d.z - cr;
+      const ct = B.MeshBuilder.CreateBox("cont", { width: 2.4, height: 2.6, depth: d.main ? 6 : 4.5 }, scene); ct.material = CONT_M[ci]; ct.position.set(cx, 1.3, cz + (d.main ? 2 : 1.2)); ct.receiveShadows = true; shadow.addShadowCaster(ct); ct.isPickable = false; ct.freezeWorldMatrix();
+      for (let k = 0; k < 3; k++) { const pb = B.MeshBuilder.CreateBox("pallet", { width: 1.3, height: 0.6, depth: 1.3 }, scene); pb.material = palletM; pb.position.set(cx - sx * 2.2, 0.3 + (k === 2 ? 0.6 : 0), cz - 0.2 + (k === 1 ? 1.4 : 0)); pb.receiveShadows = true; shadow.addShadowCaster(pb); pb.isPickable = false; pb.freezeWorldMatrix(); }
+    }
   }
   const pileSize = () => { const k = Math.min(1, Math.sqrt(sv.delivered / 30000)); for (const d of drops) { const m = d.main ? 1 : 0.45; d.pile.scaling.set((4 + k * 12) * m, (0.6 + k * 7) * m, (4 + k * 12) * m); } };
   pileSize();
@@ -2558,7 +2580,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
         L.gone = true; sv.gone.push(L.id); saveDirty = true;
         const bonus = Math.round(L.cells0 * 0.15); sv.money += bonus;
         popup((L.lm ? "🏆 " + LM_NAME[L.kind] : "🏚 たてもの") + " こわしきった！ +" + fmtY(bonus), L.lm ? "mile" : "mid"); playS("levelup", L.lm ? 0.5 : 0.3); chime([0, 4, 7, 12]);
-        for (const b of L.blds) for (const c of [...b.cells]) { if (!c.segs) carvedToDebris(c, new B.Vector3(0, 0.5, 0)); else removeCell(c); }   // 残りかすは がれきに
+        // 残りかすは がれきに。全部を 1 コマでがれきにすると 17ms 引っかかったので、がれきは 24 個まで・残りはまとめて消す（11-17 改善ループ 6）
+        const rest = []; let nd = 0;
+        for (const b of L.blds) for (const c of [...b.cells]) { if (!c.segs && nd < 24) { nd++; carvedToDebris(c, new B.Vector3(0, 0.5, 0)); } else rest.push(c); }
+        if (rest.length) removeCells(rest);
         dirty = true;
       }
     }
@@ -2600,7 +2625,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 11, 0.4, ex.pos.z + Math.cos(a) * 11); arrowP.rotation.y = a; arrowM.alpha = k >= 0.9 ? 0.95 : 0.55 + 0.35 * Math.sin(playT * 6); arrowP.scaling.setAll(k >= 0.9 ? 1.5 + 0.15 * Math.sin(playT * 8) : 1); }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
-    $("city").textContent = `${TH.name} ${pct}% こわした　🧟 ${kills}`;
+    // 次の目標を字で出す（11-17 改善ループ 3「4 割で次の街という流れが画面から読めない・強化の入口が見えない」）
+    const canUp = Object.keys(UPS).some(k => (sv.up[k] || 0) < UPS[k].vals.length - 1 && sv.money >= upPrice(k));
+    $("city").classList.toggle("near", pct >= NEXT_PCT * 0.75 && pct < NEXT_PCT);   // あと少しで次の街: 黄色
+    $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}/${NEXT_PCT}% → つぎの まち`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
     if (pct >= NEXT_PCT && $("bNext").style.display === "none") { $("bNext").style.display = ""; $("bNext").textContent = "つぎの まちへ ▶ " + nextTh.name; popup("🎉 つぎの まちへ いけるよ！", "mile"); }
     drawMap();
   }
@@ -2631,21 +2659,27 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
     viewRect();
-    const tb = Math.tan(cam.beta), now = new Set();
+    const near = [];
     for (const ch of chunks.values()) {
       const m = ch.mesh;
       if (!ch.c0) { const bb0 = m.getBoundingInfo().boundingBox; if (bb0.maximumWorld.x > bb0.minimumWorld.x) ch.c0 = bb0.centerWorld.clone(); }
       if (ch.c0) { const far = outView(ch.c0.x, ch.c0.z, 12); if (far !== !!ch.far) { ch.far = far; if (far) { m.setEnabled(false); if (ch.pane) ch.pane.setEnabled(false); } else ch.dirty = true; } }   // 戻ってきたら作り直して出す
       if (ch.far || !m.isEnabled()) continue;
-      const bb = m.getBoundingInfo().boundingBox, cx = (bb.minimumWorld.x + bb.maximumWorld.x) / 2, top = bb.maximumWorld.y;
-      const dz = ex.pos.z - bb.maximumWorld.z, dx = Math.abs(cx - ex.pos.x) - (bb.maximumWorld.x - bb.minimumWorld.x) / 2;
-      if (dz > -1 && dz < 45 && dx < 6 && top > 2.5 + Math.max(0, dz) / tb) now.add(m);
+      near.push(m);
     }
     for (const q of props) { const far = outView(q.pos.x, q.pos.z, 3); if (far !== !!q.far && q.state !== "gone") { q.far = far; q.root.setEnabled(!far); } }   // 遠くの車・木・街灯も描かない（数千個あって重かった）
     for (const z of zombies) { const far = outView(z.pos.x, z.pos.z); if (far !== !!z.far) { z.far = far; z.root.setEnabled(!far); } }   // ゾンビ 1 体は部品 17 個
     // ショベルが建物の陰に入ったら、建物を薄くせず、ショベルを建物より手前に描く（すけて見える）
     // 前は建物を半透明（0.28）にしていたが、階ごとの床が重なって真っ黒な箱になり、ショベルも見えなかった（11-17 改善ループ 3）
-    const occ = now.size > 0;
+    // カメラからショベル（車体と運転席の高さ）へ線を引き、建物の面に当たれば陰。外枠で候補を絞ってから面で確かめる
+    // 前は「ショベルより南の塊」だけ見ていて、壁を壊して建物の中に入った時の真上の屋根を見落とした（11-17 改善ループ 6）
+    let occ = false;
+    for (const q of sinks) near.push(q.m);   // 沈む・倒れる途中の建物も陰になる（別の部品なので塊の一覧に入っていない）
+    for (const h of [1.2, 2.8]) {
+      const eye = cam.globalPosition, t = new B.Vector3(ex.pos.x, h, ex.pos.z), d = t.subtract(eye), L = d.length();
+      const ray = new B.Ray(eye, d.scaleInPlace(1 / L), L - 0.8), cand = near.filter(m => ray.intersectsBox(m.getBoundingInfo().boundingBox));
+      if (cand.length && scene.pickWithRay(ray, m => cand.includes(m), true)?.hit) { occ = true; break; }
+    }
     if (occ !== exOnTop) { exOnTop = occ; for (const m of exMeshes()) m.renderingGroupId = occ ? 1 : 0; }
     G.exOnTop = exOnTop;
   }
@@ -2695,7 +2729,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     PF("mesh", rebuildCellMesh);
     if (sinks.length) PF("sinks", () => updateSinks(dt));
     if (fading.length) updateFading(dt);
-    settleDebris(dt);
+    settleDebris(dt); PF("ground", () => groundTick(dt));
     PF("fires", () => { updateFires(dt); updateGeysers(dt); });
     PF("props", () => updateProps(dt)); PF("zombies", () => updateZombies(dt));
     PF("collect", () => { updateCollect(dt); updateYard(dt); });
