@@ -1273,11 +1273,14 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   // 音の入口でまとめて抑える（11-17 改善ループ 1: 場所ごとに間引いても、別々の所の音が重なって 1 秒に 20 回鳴っていた）
   // 同じ音は 0.09 秒あける・1 秒に 9 回を超えたら小さい音は鳴らさない（大きい音＝大事な音は通す）。sndNow は 90_tail が毎コマ playT を入れる
   let sndNow = 0; const sndLast = {}, sndWin = [];
+  const CRASH_FAM = { crash_small: 1, crash_big: 1, impact: 1, rubble_dump: 1 }; let famNow = -9;
   function playS(name, vol = 1, rate = 1, delay = 0) {
     const t = sndNow + delay;
     if (t - (sndLast[name] ?? -9) < 0.09 && vol < 0.7) return false;
     while (sndWin.length && t - sndWin[0] > 1) sndWin.shift();
     if (sndWin.length >= 9 && vol < 0.55) return false;
+    // 崩れる系の音（ガシャ・ドーン・ガラガラ）は 1 つの仲間として 0.3 秒に 1 回まで。同じコマで重ねる分（大きい崩れの重ね）は通す（11-17 改善ループ 11・爆発が続くと 1 秒 10 回を超えた）
+    if (CRASH_FAM[name]) { if (sndNow !== famNow && sndNow - famNow < 0.3 && vol < 0.6) return false; famNow = sndNow; }
     sndLast[name] = t; sndWin.push(t);
     if (G.snd) G.snd[name] = (G.snd[name] || 0) + 1;
     if (!ac || ac.state !== "running") return false;
@@ -2780,11 +2783,13 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   engine.resize();
   // 見える物選びの候補を「出ている物」だけにする（11-17 改善ループ 10）
   // Babylon は毎コマ 3500 個全部に「準備できたか」を聞いてから「出ているか」を見ていて、1 コマの 2 割を使っていた（出ている物は 500 個ほど）
-  // 候補は 10 コマに 1 回と、物が増えた・消えた時に作り直す。出したばかりの物は最大 10 コマ遅れて映る（画面の外の余白の内なので見えない）
+  // 候補は 10 コマに 1 回と、物が増えた・消えた・出した時に作り直す
   if (!Q.has("allcand")) {
     const cand = { data: [], length: 0 }; let candDirty = true, candN = 0;
     scene.onNewMeshAddedObservable.add(() => { candDirty = true; }); scene.onMeshRemovedObservable.add(() => { candDirty = true; });
     G.candDirty = () => { candDirty = true; };
+    // 出していなかった物を出した時（setEnabled(true)）も次のコマで作り直す（遅れて映るのを防ぐ・11-17 改善ループ 10 の採点）
+    const se = B.Node.prototype.setEnabled; B.Node.prototype.setEnabled = function (v) { if (v && !this.isEnabled(false)) candDirty = true; return se.call(this, v); };
     scene.getActiveMeshCandidates = () => {
       if (candDirty || ++candN >= 10) {
         candDirty = false; candN = 0; const d = cand.data; d.length = 0;
