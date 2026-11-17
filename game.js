@@ -15,6 +15,8 @@ const MAX_DEBRIS = 320;    // がれきの上限（超えたら古い物から�
 const CARVE_R = 0.9;
 const BUCKET = { W: 1.9, H: 1.05, L: 1.55 };
 const G = window.G = {};   // 確かめ用の口
+// 試験の時だけ、処理ごとの時間を G.prof に溜める（重いコマの中身を見るため・11-17）
+const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r = f(), d = performance.now() - t, q = G.prof[k] || (G.prof[k] = { sum: 0, max: 0 }); q.sum += d; if (d > q.max) q.max = d; return r; };
 
 (async function main() {
   // ======== エンジン・空・光・材質（juuki から） ========
@@ -136,7 +138,7 @@ const G = window.G = {};   // 確かめ用の口
     let ch = chunks.get(ck);
     if (!ch && make) {
       const mesh = new B.Mesh("bld", scene); mesh.material = cellMM; mesh.receiveShadows = true; shadow.addShadowCaster(mesh); mesh.setEnabled(false); mesh.freezeWorldMatrix();   // 塊は動かない（位置の計算を毎コマしない）
-      ch = { cells: new Set(), wins: [], mesh, body: null, shape: null, bars: [], frames: [], pp: [], pn: [], dirty: true };
+      ch = { cells: new Set(), wins: [], mesh, body: null, shape: null, bars: [], frames: [], pp: [], pn: [], dirty: true, wx: (Math.floor(x / CH) + 0.5) * CH * CELL, wz: (Math.floor(z / CH) + 0.5) * CH * CELL };   // wx/wz は origin からの塊の真ん中
       chunks.set(ck, ch); chunkGen++;
     }
     return ch;
@@ -588,10 +590,14 @@ const G = window.G = {};   // 確かめ用の口
     setPanes(ch);
   }
   // 壊れた塊だけ組み直す。鉄筋・窓枠・ガラスは全部の塊のをまとめて 1 回で描く
-  function rebuildCellMesh() {
+  function rebuildCellMesh(all) {
     if (rodDirty) rebuildRods();
-    let n = 0;
-    for (const ch of chunks.values()) if (ch.dirty && !ch.far) { ch.dirty = false; buildChunk(ch); n++; }   // 遠くの塊は近づいた時に作り直す
+    // 大きいビルが崩れると数十の塊を 1 コマで作り直して 100ms 止まった（11-17 本人「ラグ」）→ ショベルに近い順に 1 コマ 6ms まで。残りは次のコマ
+    const list = []; for (const ch of chunks.values()) if (ch.dirty && !ch.far) list.push(ch);   // 遠くの塊は近づいた時に作り直す
+    if (!list.length) return 0;
+    if (list.length > 1) { const ox = ex.pos.x - bld.origin.x, oz = ex.pos.z - bld.origin.z, d2 = c => (c.wx - ox) ** 2 + (c.wz - oz) ** 2; list.sort((a, b) => d2(a) - d2(b)); }
+    const t0 = performance.now(); let n = 0;
+    for (const ch of list) { if (n && !all && performance.now() - t0 > 6) break; ch.dirty = false; buildChunk(ch); n++; }
     if (n) { const bars = []; for (const ch of chunks.values()) if (ch.bars.length && ch.mesh.isEnabled()) for (const m of ch.bars) { if (bars.length >= 1200) break; bars.push(m); } setThin(rebar, bars); }
     return n;
   }
@@ -778,7 +784,7 @@ const G = window.G = {};   // 確かめ用の口
     cloud.manualEmitCount = Math.max(0, cloud.manualEmitCount) + n;
   }
   // 瓦礫を消す時は、ぱっと消さずに 0.8 秒で小さくする
-  function fadeOut(d) { physOff(d); fading.push({ m: d.m, t: 0, s: d.m.scaling.clone() }); }
+  function fadeOut(d) { physOff(d); d.m.unfreezeWorldMatrix(); fading.push({ m: d.m, t: 0, s: d.m.scaling.clone() }); }
   function updateFading(dt) {
     for (let i = fading.length - 1; i >= 0; i--) {
       const f = fading[i]; f.t += dt; const k = 1 - f.t / 0.8;
@@ -804,7 +810,7 @@ const G = window.G = {};   // 確かめ用の口
   const debris = [];                       // {m, ag, held}
   const units = m => Math.max(1, Math.round(m.scaling.x * m.scaling.y * m.scaling.z / 0.45));
   function physOn(d, vel) {
-    const s = d.m.scaling;
+    d.m.unfreezeWorldMatrix(); const s = d.m.scaling;
     d.ag = new B.PhysicsAggregate(d.m, B.PhysicsShapeType.BOX, { mass: Math.max(0.5, s.x * s.y * s.z * 40), friction: 0.85, restitution: 0.05 }, scene);
     if (vel) d.ag.body.setLinearVelocity(vel);
   }
@@ -823,6 +829,19 @@ const G = window.G = {};   // 確かめ用の口
       fadeOut(debris.splice(i, 1)[0]);
     }
     return d;
+  }
+  // 地面で止まったがれきは物理を外して置き物にする（320 個を毎コマ計算していてスマホでラグった・11-17）。爆発で押す時は physOn で戻す
+  // 屋根や瓦礫の山の上（高さ 1.2m 超）のは、下が消えると浮くので外さない
+  let settleT = 0;
+  function settleDebris(dt) {
+    if (Q.has("nosettle") || (settleT -= dt) > 0) return; settleT = 0.25;
+    for (const d of debris) {
+      if (d.held) continue;
+      const near = (d.m.position.x - ex.pos.x) ** 2 + (d.m.position.z - ex.pos.z) ** 2 < 25;   // ショベルの近くは押しのけられるように起こしておく
+      if (!d.ag) { if (near) physOn(d); continue; }
+      d.t += 0.25; if (near) continue;
+      if (d.t > 1.2 && d.m.position.y < 1.2 && d.ag.body.getLinearVelocity().lengthSquared() < 0.05) { physOff(d); d.m.computeWorldMatrix(true); d.m.freezeWorldMatrix(); }
+    }
   }
   function clearDebris() { for (const d of debris) { physOff(d); d.m.dispose(); } debris.length = 0; }
   function carvedToDebris(c, kick) {
@@ -1111,8 +1130,9 @@ const G = window.G = {};   // 確かめ用の口
   let crashT = 0, crashP = 0, glassT = 0;
   // 崩れる音: 低いドーン＋ザザッ（帯域ノイズ）＋ガラガラ（小石の当たる音を時間差で）。pw 0〜1
   function crash(pw) {
+    if (G.snd) { if (playT - (G.snd.ct || -9) >= 0.12 || pw >= (G.snd.cp || 0) + 0.15) { G.snd.ct = playT; G.snd.cp = pw; G.snd["崩れ"] = (G.snd["崩れ"] || 0) + 1; } }   // 試験で音が出ない時も回数を数える
     if (!ac || ac.state !== "running") return;
-    const t = ac.currentTime; if (t - crashT < 0.05 && pw < crashP + 0.15) { if (pw >= 0.3) playS("impact", 0.3, 1.3); return; } crashT = t; crashP = pw;   // 続けて鳴らさない。ただし前より大きい崩れは通す
+    const t = ac.currentTime; if (t - crashT < 0.12 && pw < crashP + 0.15) { if (pw >= 0.3) playS("impact", 0.3, 1.3); return; } crashT = t; crashP = pw;   // 続けて鳴らさない。ただし前より大きい崩れは通す
     if (hasS("crash_small") && hasS("crash_big")) {
       if (pw < 0.3) { playS("crash_small", 0.45 + pw * 1.5); if (pw >= 0.15) playS("rubble_dump", 0.2, 1.2, 0.12); return; }
       // 大きい崩れは重ねる: ドーン（低い衝撃）＋ガシャーン＋少し遅れてガラガラの尾（10-25 改善ループ 2「壊れる時の爽快感の音」）
@@ -1187,6 +1207,7 @@ const G = window.G = {};   // 確かめ用の口
   // 1 回鳴らす。name_1〜3 があれば、その中から選ぶ（同じ音が続かないように）
   const lastPick = {};
   function playS(name, vol = 1, rate = 1, delay = 0) {
+    if (G.snd) G.snd[name] = (G.snd[name] || 0) + 1;
     if (!ac || ac.state !== "running") return false;
     const vs = [1, 2, 3].map(i => name + "_" + i).filter(k => sfx[k]); let k = sfx[name] ? name : null;
     if (vs.length) { do { k = vs[Math.floor(Math.random() * vs.length)]; } while (vs.length > 1 && k === lastPick[name]); lastPick[name] = k; }
@@ -1986,11 +2007,15 @@ const G = window.G = {};   // 確かめ用の口
       for (const q of o.pts) n += q === o.front ? smash(new B.Vector3(q.x, 0.6 + Math.random() * 2.4, q.z), 0.8 + pw * 0.1, fwd(), 10, 3)
         : smash(new B.Vector3(q.x, 0.3 + Math.random() * 3.2, q.z), 0.55 + pw * 0.05, null, 2 + Math.floor(pw / 2), 2);
       const hit = o.front || o.pts[Math.floor(Math.random() * o.pts.length)] || ex.pos.add(fwd().scale(2.1));
-      playS("bucket_hit", 0.45, 0.75 + Math.random() * 0.3); sparks(new B.Vector3(hit.x, 1 + Math.random() * 2, hit.z), 8); shake(0.06);
-      if (n) broke(n, hit, false); else dust(new B.Vector3(hit.x, 1, hit.z), 6);
+      // 押し付けている間ずっと「ガン」が鳴ってうるさかった（11-17 本人「ガリガリずっと」）→ 壊れた時だけ・0.3 秒あけて鳴らす
+      // 崩れる音（broke）も 0.13 秒ごとに鳴っていたので、壊れた数を溜めて 0.3 秒に 1 回まとめて出す
+      grindN += n;
+      if (grindN && playT - grindSndT > 0.3) { grindSndT = playT; playS("bucket_hit", 0.35, 0.75 + Math.random() * 0.3); broke(grindN, hit, false); grindN = 0; }
+      sparks(new B.Vector3(hit.x, 1 + Math.random() * 2, hit.z), n ? 8 : 3);
+      if (!n) dust(new B.Vector3(hit.x, 1, hit.z), 6);
     }
   }
-  const _jit = new B.Vector3(); let ramK = 0;
+  const _jit = new B.Vector3(); let ramK = 0, grindSndT = -9, grindN = 0;
   function moveEx(dt) {
     const mag = Math.hypot(mv.x, mv.y), top = upV("spd");
     let want = 0;
@@ -2058,6 +2083,8 @@ const G = window.G = {};   // 確かめ用の口
   };
   function findTarget() {
     let best = null, bd = 1e9;
+    for (const d of debris) if (!d.held) { const far = outView(d.m.position.x, d.m.position.z, 1); if (far !== !!d.far) { d.far = far; d.m.setEnabled(!far); } }
+    for (const L of lots) if (L.proxy) L.proxy.setEnabled(!outView(L.cx, L.cz, 8));   // まだ建てていない土地の仮の箱
     for (const z of zombies) { if (z.state !== "walk") continue; const d = Math.hypot(z.pos.x - ex.pos.x, z.pos.z - ex.pos.z); if (d < 7.5 && d > 1.5 && d < bd) { bd = d; best = { p: z.pos.add(new B.Vector3(0, 1, 0)), kind: "zombie", ref: z }; } }
     if (best) return best;
     for (const c of props) { if (c.kind !== "car" || c.state === "fly" || c.state === "gone") continue; const d = Math.hypot(c.pos.x - ex.pos.x, c.pos.z - ex.pos.z); if (d < 7.5 && d < bd) { bd = d; best = { p: c.pos.add(new B.Vector3(0, 0.9, 0)), kind: "car", ref: c }; } }
@@ -2093,7 +2120,7 @@ const G = window.G = {};   // 確かめ用の口
     const n = smash(p, R, dir, 70 + pw * 30, 3 + pw);
     if (n) { broke(n, p, n >= 25); playS("bucket_hit", 0.8, 0.85 + Math.random() * 0.2); }
     if (wood && n && Math.random() < 0.12) { startFire(p.clone(), 14 + Math.random() * 10); popup("もえだした！", "mid"); }   // 木造の家は火が付くことがある
-    else { dust(new B.Vector3(p.x, 0.3, p.z), 14); playS("bucket_hit", 0.4, 0.7); }   // 空振り・ゾンビだけの時は画面を揺らさない（何もしていないのに揺れっぱなしになった 10-30）
+    if (!n) { dust(new B.Vector3(p.x, 0.3, p.z), 14); playS("bucket_hit", 0.4, 0.7); }   // else が火の if に付いていて、当たった時も毎回 2 回目のガンが鳴っていた（11-17）。空振り・ゾンビだけの時は画面を揺らさない（何もしていないのに揺れっぱなしになった 10-30）
     hitAround(p, R + 1.2, dir, 1.2 * pw, tg.ref);
   }
 
@@ -2130,7 +2157,7 @@ const G = window.G = {};   // 確かめ用の口
     const R = 2.4 + pw * 1.3;
     const n = smash(e, R, null, 400, 9 + pw * 3); if (n) broke(n, e, true);
     hitAround(e, R * 2.4, null, 3 * pw, null);
-    for (const d of debris) if (d.ag && !d.held) { const v = d.m.position.subtract(e); const L = v.length(); if (L < R * 2.5) { v.y = Math.abs(v.y) + 2; d.ag.body.setLinearVelocity(v.normalize().scale((R * 2.5 - L) * 3)); } }
+    for (const d of debris) if (!d.held) { const v = d.m.position.subtract(e); const L = v.length(); if (L < R * 2.5) { if (!d.ag) physOn(d); v.y = Math.abs(v.y) + 2; d.ag.body.setLinearVelocity(v.normalize().scale((R * 2.5 - L) * 3)); } }
     for (let k = 0; k < 2 + pw * 2; k++) startFire(e.add(new B.Vector3((Math.random() - 0.5) * R * 2, Math.random() * 2, (Math.random() - 0.5) * R * 2)), 9 + Math.random() * 8);
     // 近くのガスメーターも誘爆（少し遅れて）
     for (const c of cellsIn(e, R + 3)) if (c.gm && !c.gm.done) { c.gm.done = true; pendingBooms.push({ p: c.p.clone(), pw: c.gm.big ? 1.6 : 1, t: 0.12 + Math.random() * 0.25 }); }
@@ -2256,8 +2283,8 @@ const G = window.G = {};   // 確かめ用の口
       const q = props[i];
       if (q.state === "gone") continue;
       const dx = q.pos.x - ex.pos.x, dz = q.pos.z - ex.pos.z, dd = Math.hypot(dx, dz);
-      if ((q.state === "up" || q.state === "park" || q.state === "drive") && dd < exr + q.r * 0.6) propHit(q, new B.Vector3(dx, 0, dz).normalize(), 0.8 + speed / 6);   // 体当たり
-      if (q.state === "drive") driveCar(q, dt, dd);
+      if ((q.state === "up" || q.state === "park" || q.state === "drive") && dd < exr + q.r * 0.6) PF("p.hit", () => propHit(q, new B.Vector3(dx, 0, dz).normalize(), 0.8 + speed / 6));   // 体当たり
+      if (q.state === "drive") PF("p.drive", () => driveCar(q, dt, dd));
       else if (q.state === "fall") {
         q.t += dt; const k = Math.min(1, q.t / 0.55), ang = k * k * 1.45;
         q.root.rotation.x = ang * q.fdir.z; q.root.rotation.z = -ang * q.fdir.x;
@@ -2273,7 +2300,7 @@ const G = window.G = {};   // 確かめ用の口
         if (q.pos.y < 0) { q.pos.y = 0; if (Math.abs(q.vel.y) > 2.5) { playS("crash_small", 0.5, 0.9); dust(q.pos, 10); } q.vel.y = -q.vel.y * 0.3; q.vel.x *= 0.6; q.vel.z *= 0.6; q.av.scaleInPlace(0.5); if (Math.abs(q.vel.y) < 1.2) { q.vel.setAll(0); q.av.setAll(0); q.state = "down"; q.root.rotation.x = Math.round(q.root.rotation.x / Math.PI) * Math.PI; q.root.rotation.z = Math.round(q.root.rotation.z / Math.PI) * Math.PI; } }
         hitAround(q.pos, 1.8, q.vel.clone().normalize(), 0.8, q);   // 飛んだ車が別の車やゾンビに当たる
       }
-      if (q.fuse !== undefined && q.fuse > 0 && (q.fuse -= dt) <= 0) { q.fuse = -1; explode(q.pos.add(new B.Vector3(0, 0.8, 0)), 1.1); q.state = "fly"; q.vel.set((Math.random() - 0.5) * 3, 11, (Math.random() - 0.5) * 3); q.av.set(4, 2, 3); for (const m of q.parts) m.instancedBuffers.color = col4(0.08, 0.07, 0.07); }
+      if (q.fuse !== undefined && q.fuse > 0 && (q.fuse -= dt) <= 0) { q.fuse = -1; PF("p.explode", () => explode(q.pos.add(new B.Vector3(0, 0.8, 0)), 1.1)); q.state = "fly"; q.vel.set((Math.random() - 0.5) * 3, 11, (Math.random() - 0.5) * 3); q.av.set(4, 2, 3); for (const m of q.parts) m.instancedBuffers.color = col4(0.08, 0.07, 0.07); }
       // 倒れた物・つぶれた車は、近くに来たら荷台へ吸い込む
       if (q.state === "down" && !(q.fuse > 0) && dd < upV("suck") && bed.load < upV("cap")) { q.state = "collect"; flyToBed({ node: q.root, val: q.val, done: () => { q.root.dispose(); q.state = "gone"; props.splice(props.indexOf(q), 1); } }); }
     }
@@ -2373,7 +2400,7 @@ const G = window.G = {};   // 確かめ用の口
       for (const d of debris) {
         if (d.held) continue;
         const p = d.m.position; if (Math.abs(p.x - ex.pos.x) > r || Math.abs(p.z - ex.pos.z) > r || (p.x - ex.pos.x) ** 2 + (p.z - ex.pos.z) ** 2 > r * r || p.y > 6) continue;
-        d.held = true; physOff(d); bed.load += d.val; bed.money += d.val; d.counted = true;   // 先に数える（飛んでいる間に同じ物を 2 回数えない）
+        d.held = true; physOff(d); d.m.unfreezeWorldMatrix(); d.m.setEnabled(true); bed.load += d.val; bed.money += d.val; d.counted = true;   // 先に数える（飛んでいる間に同じ物を 2 回数えない）
         flyToBed({ node: d.m, val: 0, done: () => { d.m.dispose(); const i = debris.indexOf(d); if (i >= 0) debris.splice(i, 1); } });
         if (bed.load >= cap) break;
       }
@@ -2386,7 +2413,7 @@ const G = window.G = {};   // 確かめ用の口
       if (k >= 1) {
         flyers.splice(i, 1); if (o.val) { bed.load += o.val; bed.money += o.val; }
         o.done(); showBed();
-        if (playT - tickT > 0.06) { tickT = playT; playS("click", 0.12, 1.6 + Math.min(1, bed.load / cap) * 0.6); }
+        if (playT - tickT > 0.15) { tickT = playT; playS("click", 0.08, 1.6 + Math.min(1, bed.load / cap) * 0.6); }
       }
     }
     if (bed.load >= cap && !fullWarned) { fullWarned = true; popup("にだい いっぱい！ ひきとりじょへ！", "mile"); playS("levelup", 0.3, 0.8); }
@@ -2516,20 +2543,42 @@ const G = window.G = {};   // 確かめ用の口
   }
 
   // ---- 建物の陰で ショベルが隠れる時は、手前（南）の高い塊を透かす ----
-  const faded = new Set(); let fadeT = 0; const VIEW_R = 66;   // 一番引いた時に見える広さより少し外まで
+  const faded = new Set(); let fadeT = 0;
+  // 画面に映っている地面の四角（カメラの四隅から地面へ線を下ろす）。ここ＋余白の外は描かない
+  // 前はショベルから 66m 四方を全部描いていて、縦のスマホに映る広さの 4 倍あった（11-17 本人「ラグが大きい」）
+  const vr = { x0: 0, x1: 0, z0: 0, z1: 0 }, _vm = B.Matrix.Identity(), _va = new B.Vector3(), _vb = new B.Vector3();
+  function viewRect() {
+    const w = engine.getRenderWidth(), h = engine.getRenderHeight(), V = cam.getViewMatrix(), P = cam.getProjectionMatrix();
+    let x0 = ex.pos.x, x1 = ex.pos.x, z0 = ex.pos.z, z1 = ex.pos.z;
+    for (const [sx, sy] of [[0, 0], [w, 0], [0, h], [w, h]]) {
+      B.Vector3.UnprojectToRef(new B.Vector3(sx, sy, 0), w, h, _vm, V, P, _va); B.Vector3.UnprojectToRef(new B.Vector3(sx, sy, 1), w, h, _vm, V, P, _vb);
+      const d = _vb.subtract(_va).normalize();
+      // 地面に当たる所と、高さ 40m を通る所の両方を囲む（高い建物は枠の外からでも上の方が映り込む）
+      for (const y of [0, Math.min(40, _va.y)]) {
+        const t = d.y < -0.05 ? Math.min(160, (y - _va.y) / d.y) : 160, px = _va.x + d.x * t, pz = _va.z + d.z * t;
+        x0 = Math.min(x0, px); x1 = Math.max(x1, px); z0 = Math.min(z0, pz); z1 = Math.max(z1, pz);
+      }
+    }
+    const m = 6;
+    vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
+  }
+  G.vr = vr;
+  const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
+    viewRect();
     const tb = Math.tan(cam.beta), now = new Set();
     for (const ch of chunks.values()) {
       const m = ch.mesh;
       if (!ch.c0) { const bb0 = m.getBoundingInfo().boundingBox; if (bb0.maximumWorld.x > bb0.minimumWorld.x) ch.c0 = bb0.centerWorld.clone(); }
-      if (ch.c0) { const far = Math.abs(ch.c0.x - ex.pos.x) > VIEW_R || Math.abs(ch.c0.z - ex.pos.z) > VIEW_R; if (far !== !!ch.far) { ch.far = far; if (far) { m.setEnabled(false); if (ch.pane) ch.pane.setEnabled(false); } else ch.dirty = true; } }   // 戻ってきたら作り直して出す
+      if (ch.c0) { const far = outView(ch.c0.x, ch.c0.z, 12); if (far !== !!ch.far) { ch.far = far; if (far) { m.setEnabled(false); if (ch.pane) ch.pane.setEnabled(false); } else ch.dirty = true; } }   // 戻ってきたら作り直して出す
       if (ch.far || !m.isEnabled()) continue;
       const bb = m.getBoundingInfo().boundingBox, cx = (bb.minimumWorld.x + bb.maximumWorld.x) / 2, top = bb.maximumWorld.y;
       const dz = ex.pos.z - bb.maximumWorld.z, dx = Math.abs(cx - ex.pos.x) - (bb.maximumWorld.x - bb.minimumWorld.x) / 2;
       if (dz > -1 && dz < 45 && dx < 6 && top > 2.5 + Math.max(0, dz) / tb) now.add(m);
     }
-    for (const q of props) { const far = Math.abs(q.pos.x - ex.pos.x) > VIEW_R || Math.abs(q.pos.z - ex.pos.z) > VIEW_R; if (far !== !!q.far && q.state !== "gone") { q.far = far; q.root.setEnabled(!far); } }   // 遠くの車・木・街灯も描かない（数千個あって重かった）
+    for (const q of props) { const far = outView(q.pos.x, q.pos.z, 3); if (far !== !!q.far && q.state !== "gone") { q.far = far; q.root.setEnabled(!far); } }   // 遠くの車・木・街灯も描かない（数千個あって重かった）
+    for (const z of zombies) { const far = outView(z.pos.x, z.pos.z); if (far !== !!z.far) { z.far = far; z.root.setEnabled(!far); } }   // ゾンビ 1 体は部品 17 個
     for (const m of faded) if (!now.has(m)) { m.visibility = 1; }
     for (const m of now) m.visibility = 0.28;
     faded.clear(); for (const m of now) faded.add(m);
@@ -2548,7 +2597,7 @@ const G = window.G = {};   // 確かめ用の口
   ex.pos.set(yard.x, 0, yard.z - BLK / 2 - ROAD / 2); ex.heading = Math.PI;   // ひきとりじょの南の道から、南（低い家と公園）を向いて始める
   if (Q.has("x")) { ex.pos.x = Number(Q.get("x")); ex.pos.z = Number(Q.get("z") || 0); }
   activateNear(ex.pos, true);
-  rebuildCellMesh();
+  rebuildCellMesh(true);
   applyPose();
   let saveT = 0, partT = 0;
   scene.onBeforeRenderObservable.add(() => {
@@ -2557,15 +2606,15 @@ const G = window.G = {};   // 確かめ用の口
     if (hitStop > 0) { hitStop -= dt; dt *= 0.08; plugin._useDeltaForWorldStep = false; scene.getPhysicsEngine().setTimeStep(dt); if (hitStop <= 0) plugin._useDeltaForWorldStep = true; }
     playT += dt;
     readInput();
-    const mvK = moveEx(dt);
-    const swinging = updateArm(dt);
+    const mvK = PF("move", () => moveEx(dt));
+    const swinging = PF("arm", () => updateArm(dt));
     applyPose(); ramShake();
     for (const b of pendingBooms) b.t -= dt;
     for (let i = pendingBooms.length - 1; i >= 0; i--) if (pendingBooms[i].t <= 0) { const b = pendingBooms.splice(i, 1)[0]; explode(b.p, b.pw); }
     lightK = Math.max(0, lightK - dt * 3); boomLight.intensity = lightK * 60;
     updateChain(dt);
     // 削った後、少し置いてから「支えのない塊」を落とす（juuki と同じ）
-    if (dirty) { collapseTimer += dt; if (collapseTimer > 0.2) {
+    if (dirty) PF("collapse", () => { collapseTimer += dt; if (collapseTimer > 0.2) {
       dirty = false; collapseTimer = 0;
       for (const b of [...dirtyB]) if (b.sink && b.cells.size) {
         // 1 階の壁が減った割合か、削られた数（1 階の壁の 8 割ぶん）で崩れる。大きいビルを外から叩き続けても崩れるように
@@ -2576,15 +2625,16 @@ const G = window.G = {};   // 確かめ用の口
       const fl = floatingCells();
       if (fl.length > 900) sinkSet(fl);
       else if (fl.length) { const c0 = fl[0].p.clone(), m = fl.length; collapse(fl); broke(m, c0, true); }
-    } }
-    rebuildCellMesh();
-    if (sinks.length) updateSinks(dt);
+    } });
+    PF("mesh", rebuildCellMesh);
+    if (sinks.length) PF("sinks", () => updateSinks(dt));
     if (fading.length) updateFading(dt);
-    updateFires(dt); updateGeysers(dt);
-    updateProps(dt); updateZombies(dt);
-    updateCollect(dt); updateYard(dt);
-    checkGone(dt); updateCombo(dt); updateHud(dt); updateOcclusion(dt);
-    if ((partT -= dt) <= 0) { partT = 0.1; activateNear(ex.pos); }   // 近づいた土地を 1 つずつ建てる
+    settleDebris(dt);
+    PF("fires", () => { updateFires(dt); updateGeysers(dt); });
+    PF("props", () => updateProps(dt)); PF("zombies", () => updateZombies(dt));
+    PF("collect", () => { updateCollect(dt); updateYard(dt); });
+    PF("hud", () => { checkGone(dt); updateCombo(dt); updateHud(dt); }); PF("occl", () => updateOcclusion(dt));
+    if ((partT -= dt) <= 0) { partT = 0.1; PF("build", () => activateNear(ex.pos)); }   // 近づいた土地を 1 つずつ建てる
     // 鳴りっぱなしの音
     setLoop("exc_engine_loop", 0.22 + mvK * 0.15, 0.9 + mvK * 0.25, dt);
     setLoop("exc_tracks_loop", mvK * 0.35, 0.8 + mvK * 0.4, dt);
