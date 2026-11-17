@@ -1367,10 +1367,18 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const tier = combo >= 60 ? 3 : combo >= 25 ? 2 : combo >= 10 ? 1 : 0;
     if (tier > comboTier) { comboTier = tier; chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
   }
+  const popRows = new Map();
   function popup(text, cls) {
     const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text; if (cls && cls.startsWith("tiny")) { el.style.setProperty("--dx", Math.round(Math.random() * 140 - 70) + "px"); el.style.marginTop = Math.round(Math.random() * 50 - 25) + "px"; }
     // 大きい字が同時に出たら、下へ 1 段ずつずらす（「+¥151」と別の字が重なって読めなかった・11-17 改善ループ 10）
-    else { let k = 0; for (const o of $("pops").children) if (!o.classList.contains("tiny")) k++; if (k) el.style.marginTop = Math.min(3, k) * 46 + "px"; }
+    // 段は「空いている一番上の段」を使う。大きい字（big・huge）は 2 段ぶん取る。出ている間（1.3 秒）は段を空けない（強化を続けて買うと +¥ と重なった・11-17 改善ループ 11）
+    else {
+      const tall = /big|huge/.test(cls || ""), now = performance.now(), used = new Set();
+      for (const [r, until] of popRows) if (until > now) used.add(r); else popRows.delete(r);
+      let r = 0; while (used.has(r) || (tall && used.has(r + 1))) r++;
+      r = Math.min(r, 5); popRows.set(r, now + 1000); if (tall) popRows.set(r + 1, now + 1000);
+      el.style.top = r * 44 + (tall ? 8 : 0) + "px";
+    }
     $("pops").appendChild(el); setTimeout(() => el.remove(), 1300);
   }
   function broke(n, p, big) {      // 格子が n 個こわれた（p はその辺り）
