@@ -1431,7 +1431,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     // 段は「空いている一番上の段」を使う。大きい字（big・huge）は 2 段ぶん取る。出ている間（1.3 秒）は段を空けない（強化を続けて買うと +¥ と重なった・11-17 改善ループ 11）
     // 目標の知らせ（mile）は字の段を使わず、上の帯のすぐ下の決まった所に出す（ショベルの前の道を隠していた・11-24 改善ループ 37）
     // 高さは縦 812 で 214px・横 375 で 70px（縦は連続の札が帯の下に来るのでその下）（縦持ちは右上の地図より下・横持ちは地図が横にあるので上の方。字は上へ流れて消えるので少し余らせる・11-24 改善ループ 38）
-    else if (/mile/.test(cls || "")) { if (performance.now() - (popup.mileT || 0) < 1300) el.style.marginTop = "34px"; popup.mileT = performance.now(); el.style.top = "calc(clamp(56px, 33vh - 54px, 230px) - 30vh)"; }
+    else if (/mile/.test(cls || "")) { if (performance.now() - (popup.mileT || 0) < 1300) el.style.marginTop = "40px"; popup.mileT = performance.now(); el.style.top = "calc(clamp(56px, 33vh - 54px, 230px) - 30vh)"; }
     else {
       const tall = /big|huge/.test(cls || ""), now = performance.now(), used = new Set();
       for (const [r, until] of popRows) if (until > now) used.add(r); else popRows.delete(r);
