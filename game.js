@@ -276,7 +276,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const pos = [], nor = [], uv = [], col = [], idx = [];
     for (const r of rods) if (r.alive) pushRod(r, pos, nor, uv, col, idx);
     if (!idx.length) { rodMesh.setEnabled(false); return; }
-    const vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx; vd.applyToMesh(rodMesh, false); rodMesh.setEnabled(true);
+    const vd = new B.VertexData(); vd.positions = pos; vd.normals = nor; vd.uvs = uv; vd.colors = col; vd.indices = idx;
   }
   const gw = (gxv, gyv, gzv) => new B.Vector3(bld.origin.x + gxv * CELL, bld.origin.y + gyv * CELL, bld.origin.z + gzv * CELL);   // 格子の座標（小数）→ 世界の位置
   // 3D の線を格子で引き、見た目は角棒（a・b は格子の座標・小数でよい。kf は高さ y から種類を返す）
@@ -607,6 +607,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     setPanes(ch);
   }
   // 壊れた塊だけ組み直す。鉄筋・窓枠・ガラスは全部の塊のをまとめて 1 回で描く
+  // 試験用: 中身のある塊を全部作り直して、1 つあたりの時間を返す（塊作りを速くする時の物差し。下書きの配列を使い回しても中央 1.6→1.8ms で変わらず、時々の 30ms はどちらにも出た＝ごみ集め・PC の混み・11-24 改善ループ 38）
+  G.benchChunks = (rep = 3) => { const ts = []; for (let r = 0; r < rep; r++) for (const ch of chunks.values()) if (ch.cells.size > 200) { const t = performance.now(); buildChunk(ch); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return { n: ts.length, sum: +ts.reduce((a, b) => a + b, 0).toFixed(1), med: +ts[ts.length >> 1].toFixed(2), p90: +ts[Math.floor(ts.length * 0.9)].toFixed(2), max: +ts[ts.length - 1].toFixed(2) }; };
   function rebuildCellMesh(all) {
     if (rodDirty) PF("m.rods", rebuildRods);
     // 大きいビルが崩れると数十の塊を 1 コマで作り直して 100ms 止まった（11-17 本人「ラグ」）→ ショベルに近い順に 1 コマ 6ms まで。残りは次のコマ
@@ -1425,7 +1427,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     // 大きい字が同時に出たら、下へ 1 段ずつずらす（「+¥151」と別の字が重なって読めなかった・11-17 改善ループ 10）
     // 段は「空いている一番上の段」を使う。大きい字（big・huge）は 2 段ぶん取る。出ている間（1.3 秒）は段を空けない（強化を続けて買うと +¥ と重なった・11-17 改善ループ 11）
     // 目標の知らせ（mile）は字の段を使わず、上の帯のすぐ下の決まった所に出す（ショベルの前の道を隠していた・11-24 改善ループ 37）
-    else if (/mile/.test(cls || "")) { if (performance.now() - (popup.mileT || 0) < 1300) el.style.marginTop = "34px"; popup.mileT = performance.now(); el.style.top = "calc(168px - 30vh)"; }
+    // 高さは縦 812 で 178px・横 375 で 60px（縦持ちは右上の地図より下・横持ちは地図が横にあるので上の方。字は上へ流れて消えるので少し余らせる・11-24 改善ループ 38）
+    else if (/mile/.test(cls || "")) { if (performance.now() - (popup.mileT || 0) < 1300) el.style.marginTop = "34px"; popup.mileT = performance.now(); el.style.top = "calc(clamp(56px, 27vh - 41px, 200px) - 30vh)"; }
     else {
       const tall = /big|huge/.test(cls || ""), now = performance.now(), used = new Set();
       for (const [r, until] of popRows) if (until > now) used.add(r); else popRows.delete(r);
