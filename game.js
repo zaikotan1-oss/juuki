@@ -1349,7 +1349,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     ps.renderingGroupId = ch.renderingGroupId = 1; ps.start(); ch.start(); dustPool.push([ps, ch]);
   }
   // 当たった所の火花（黄白の小さな粒が 0.3 秒だけ飛ぶ。10-25 改善ループ 2）
-  let sparkPS = null, sparkT = 0;
+  let sparkPS = null, sparkT = -1;
   // 紙吹雪: 区画をこわしきった瞬間に真上から散らす（「やった」が見て分かる・11-24 改善ループ 20）。途中で作ると最初の 1 回がカクッとするので初めに作る
   // 色は 2 組（黄〜赤・水色〜緑）。1 組で黄と青を混ぜると間の灰色ばかりになった
   const confPS = [[[1, 0.9, 0.1], [1, 0.25, 0.45]], [[0.2, 0.75, 1], [0.35, 1, 0.45]]].map(([a, b], k) => {
@@ -2696,6 +2696,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     vd.indices = [0, 1, 2, 3, 5, 4, 4, 5, 6]; vd.normals = []; B.VertexData.ComputeNormals(vd.positions, vd.indices, vd.normals); vd.applyToMesh(arrow); }
   arrow.material = arrowM; arrowM.backFaceCulling = false; arrow.isPickable = false; arrow.renderingGroupId = 1;
   const arrowP = new B.TransformNode("arrowP", scene); arrow.parent = arrowP;
+  // 荷台がいっぱいの間、おろしばへ向かって地面に光る点の道が流れる（字や矢印を見なくても道をたどれば着く・11-24 改善ループ 30）
+  const pathDots = []; { const src = B.MeshBuilder.CreateDisc("pathDotSrc", { radius: 0.95, tessellation: 12 }, scene); src.rotation.x = Math.PI / 2; src.bakeCurrentTransformIntoVertices(); src.material = arrowM; src.isPickable = false; src.renderingGroupId = 1; src.isVisible = false;
+    for (let i = 0; i < 10; i++) { const d = src.createInstance("pathDot"); d.isPickable = false; d.setEnabled(false); pathDots.push(d); } }
   // 売っている間、コインが画面のまん中からお金の字へ飛んで入る（もらえた感じを目に見えるように・11-24 改善ループ 16）
   // 着く所はお金の字の左はし（数字の上に着くと桁が隠れた）で、着く時に消える（11-24 改善ループ 17）
   // 行き先は CSS の決まった位置で書き、動きも CSS（字の位置を測る・element.animate は画面の組み直しが起きて 1 コマ 32ms になった・11-24 改善ループ 18）
@@ -2722,6 +2725,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     // 荷台に少しでも入っていて遠い時は、小さく薄い矢印でおろしばの向きを出す（どこへ売りに行くか絵で分かるように・11-24 改善ループ 13）
     const faint = k < 0.6 && bed.load > 0 && yd > 20, show = (k >= 0.6 || faint) && !inYard();
     arrowP.setEnabled(show);
+    { const on = show && k >= 0.9, a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z), L = Math.min(yd - 4, 30);
+      for (let i = 0; i < pathDots.length; i++) { const r = 4 + ((i * 3 + playT * 6) % 30), v = on && r < L; if (pathDots[i].isEnabled() !== v) pathDots[i].setEnabled(v); if (v) { pathDots[i].position.set(ex.pos.x + Math.sin(a) * r, 0.12, ex.pos.z + Math.cos(a) * r); pathDots[i].scaling.setAll(1.1 - r / 60); } } }
     if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 11, 0.4, ex.pos.z + Math.cos(a) * 11); arrowP.rotation.y = a; arrowM.alpha = k >= 0.9 ? 0.95 : 0.55 + 0.35 * Math.sin(playT * 6); arrowP.scaling.setAll(k >= 0.9 ? 1.5 + 0.15 * Math.sin(playT * 8) : faint ? 0.6 : 1); if (faint) arrowM.alpha = 0.35; }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
@@ -2897,6 +2902,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     };
   }
   // 粒（火・煙・紙吹雪など）の絵の準備を始めに済ませる: 地面の下で 1 粒ずつ出す（初めて火が出たコマで描く時間が 36ms になった・11-24 改善ループ 22）
+  // ガラスと火花の粒は初めて使う時に作る作りなので、ここで 1 回呼んで作っておく（初めて車に当たったコマが 327ms になった・11-24 改善ループ 30）
+  if (!Q.has("nowarm")) { const t = scene.activeCamera.target, u = new B.Vector3(t.x, -6, t.z); glassBurst(u, 1); sparks(u, 1); }
   if (!Q.has("nowarm")) { const t = scene.activeCamera.target; for (const ps of scene.particleSystems) if (!ps.emitRate) { ps.emitter = new B.Vector3(t.x, -6, t.z); ps.manualEmitCount = 1; } }
   // がれきの絵も同じく（始まって 2 秒、初めて壊した時に描く時間が 49ms になった）。1 つ地面の下に置いて 1 秒で消す
   if (!Q.has("nowarm")) { const t = scene.activeCamera.target, w = debrisSrc.createInstance("warm"); w.position.set(t.x, -6, t.z); setTimeout(() => w.dispose(), 1500); }
