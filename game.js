@@ -2198,7 +2198,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   const _jit = new B.Vector3(); let ramK = 0, grindSndT = -9, grindN = 0;
   function moveEx(dt) {
-    const mag = Math.hypot(mv.x, mv.y), top = upV("spd");
+    // 荷台が 9 割を超えたら 1.3 倍の速さ（売りに行く往復が長く、何もしない時間になった・11-24 改善ループ 58）
+    const mag = Math.hypot(mv.x, mv.y), top = upV("spd") * (bed.load >= upV("cap") * 0.9 && !inYard() ? 1.3 : 1);
     let want = 0;
     const cur = overlap(ex.pos, ex.heading).n;
     if (mag > 0.12) {
