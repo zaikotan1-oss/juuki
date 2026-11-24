@@ -42,7 +42,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 .upBtn.can{background:linear-gradient(#3fa34d,#2b7a37);color:#fff;border-color:#b2f2bb}
 .upBtn.sel{outline:2px solid #ffd23f}
 .upBtn .ic{font-size:20px}.upBtn .nm{flex:1;font-size:14px;font-weight:bold;line-height:1.1}.upBtn small{display:block;font-size:12px;font-weight:normal;opacity:.85}.upBtn .pr{font-size:13px;font-weight:900;color:#ffd23f}
-#bNext{position:absolute;left:50%;top:calc(44px + env(safe-area-inset-top));transform:translateX(-50%);z-index:7;border:none;border-radius:999px;padding:9px 20px;min-height:46px;background:#4dabf7;color:#fff;font:inherit;font-size:16px;font-weight:900;box-shadow:0 4px 0 #0006;animation:blink .7s infinite alternate}
+#nextCover{position:fixed;inset:0;z-index:50;background:#0b0d12;color:#fff;display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:900;animation:ncv .35s ease-out}@keyframes ncv{from{opacity:0}to{opacity:1}}
+#bNext{position:absolute;left:50%;top:calc(44px + env(safe-area-inset-top));transform:translateX(-50%);z-index:7;border:none;border-radius:999px;padding:9px 20px;min-height:46px;background:#4dabf7;color:#fff;font:inherit;font-size:16px;font-weight:900;box-shadow:0 4px 0 #0006;white-space:nowrap;animation:blink .7s infinite alternate}
 /* 文字のポップ */
 #pops{position:absolute;left:50%;top:30%;width:0;height:0;pointer-events:none;z-index:6}
 .pop{position:absolute;left:0;top:0;transform:translate(-50%,0);white-space:nowrap;color:#fff;font-weight:900;font-size:21px;-webkit-text-stroke:1.5px #3a1d00;paint-order:stroke fill;letter-spacing:1px;text-shadow:0 3px 0 #000a;animation:popup 1.3s ease-out forwards}
@@ -62,6 +63,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 #rage{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .6s;background:radial-gradient(ellipse at 50% 50%,#ff8a0000 55%,#ff8a0030 75%,#ff6a0080 100%)}
 #flash.warm{background:radial-gradient(circle at 50% 45%,#fff3c8 0,#ffc26baa 40%,#ff8a0000 75%)}
 #combo{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(var(--cx,-50%));pointer-events:none;color:#fff;font-weight:900;font-size:13px;background:var(--panel);border:1.5px solid var(--edge);border-radius:999px;padding:3px 12px;text-shadow:0 1px 1px #000}
+/* 縦持ちは「つぎの まちへ」も上の真ん中だと荷台の字にかぶった → 下の真ん中（指の届く所）へ（11-24 改善ループ 44） */
+@media (max-width:600px){#bNext{top:auto;bottom:calc(150px + env(safe-area-inset-bottom))}}
 /* 縦持ち（幅 600px まで）は上の真ん中だと荷台の字にかぶった → 左上の帯の続きに並べる（11-24 改善ループ 41） */
 @media (max-width:600px){#combo{position:static;display:inline-block;margin-top:4px;--cx:0;transform-origin:left center}}
 #combo b{font-size:20px;color:#ffd23f;margin-right:3px}

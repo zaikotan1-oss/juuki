@@ -623,7 +623,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (n && !all && performance.now() - t0 + (rebuildCellMesh.last || 1) > 6) break;
       ch.dirty = false; const t1 = performance.now(); PF("m.chunk", () => buildChunk(ch)); const d = performance.now() - t1; rebuildCellMesh.last = Math.min(6, d); n++;
       if (d > 12) rebuildCellMesh.rest = true;
-      if (d > 30 && G.pfLog) G.pfLog.push(["chunkBig", +d.toFixed(1), Math.round(t1), ch.cells.size, ch.mesh.getTotalVertices()]);   // 大きい塊か GC かの切り分け用
+      if (d > 15 && G.pfLog) G.pfLog.push(["chunkBig", +d.toFixed(1), Math.round(t1), ch.cells.size, ch.mesh.getTotalVertices()]);   // 大きい塊か GC かの切り分け用
     }
     if (n) PF("m.bars", () => { const bars = []; for (const ch of chunks.values()) if (ch.bars.length && ch.mesh.isEnabled()) for (const m of ch.bars) { if (bars.length >= 1200) break; bars.push(m); } setThin(rebar, bars); });
     return n;
@@ -1843,7 +1843,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   // ---- 建物を建てる（ショベルが近づいた土地から順に） ----
   const KIND_VAL = { tin: 2, steelc: 3, tinroof: 2, brick: 2, twr_r: 3, twr_w: 3, g1: 2, g2: 2, g3: 2, g4: 2, tank: 3, brg: 3, lamp: 2, pipe: 3, gasm: 2 };   // 1 格子の値段（無い物は 1）
   Object.assign(KIND_VAL, { stone: 2, dome: 3, coast: 3 });
-  const CHAR_COL = [0.16, 0.14, 0.13];
+  // 焦げた格子の色。0.16 だと真上から「黒い板・黒い穴」に見えた（評価で 5 周続けて言われた）→ こげ茶寄りに明るく（11-24 改善ループ 45）
+  const CHAR_COL = [0.32, 0.26, 0.22];
   Object.assign(KIND_COL, { gasm: [1.0, 0.82, 0.12], pipe: [0.25, 0.5, 0.95], shopw: [0.88, 0.86, 0.8], awn: [0.85, 0.25, 0.2] });
   bld.orig = new Set();
   const meters = [];   // ガスメーター（黄色い箱）。格子が 1 つ削れたら爆発
@@ -2601,13 +2602,33 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   const dropAt = () => drops.find(d => Math.abs(ex.pos.x - d.x) < d.h && Math.abs(ex.pos.z - d.z) < d.h) || null;
   const inYard = () => !!dropAt();
   const nearDrop = () => { let best = drops[0], bd = 1e9; for (const d of drops) { const dd = Math.hypot(d.x - ex.pos.x, d.z - ex.pos.z); if (dd < bd) { bd = dd; best = d; } } return best; };
+  // いまだけ 2 ばい: 90 秒ごとに、いちばん近くない おろしば 1 つが 40 秒だけ 2 ばいで買う（遠くへ売りに行く理由・30 分遊んでも同じ往復にならないように・11-24 改善ループ 45）
+  // 目印は看板の上で弾む金色の「2ばい！」の札（1 枚を使い回す）
+  const bonus = { d: null, until: 0, next: 45 };
+  const bonusSign = (() => {
+    const t = new B.DynamicTexture("bonusT", { width: 256, height: 96 }, scene, true), c = t.getContext();
+    c.fillStyle = "#ffd23f"; c.beginPath(); c.roundRect(4, 4, 248, 88, 40); c.fill(); c.lineWidth = 8; c.strokeStyle = "#7a3a00"; c.stroke();
+    c.font = "900 58px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillStyle = "#7a3a00"; c.fillText("2ばい！", 128, 52); t.update(); t.hasAlpha = true;
+    const m = new B.StandardMaterial("bonusM", scene); m.diffuseTexture = t; m.emissiveTexture = t; m.disableLighting = true; m.useAlphaFromDiffuseTexture = true; m.backFaceCulling = false;
+    const pl = B.MeshBuilder.CreatePlane("bonusSign", { width: 7, height: 2.6 }, scene); pl.material = m; pl.rotation.x = 0.55; pl.isPickable = false; pl.renderingGroupId = 1; pl.setEnabled(false); return pl;
+  })();
+  function updateBonus() {
+    if (drops.length < 2) return;
+    if (bonus.d && playT > bonus.until) { bonus.d = null; bonusSign.setEnabled(false); }
+    if (!bonus.d && playT > bonus.next) {
+      const nd = nearDrop(), c = drops.filter(d => d !== nd); bonus.d = c[Math.floor(Math.random() * c.length)]; bonus.until = playT + 40; bonus.next = playT + 90;
+      bonusSign.setEnabled(true); popup("🌟 いまだけ 2ばい の おろしば が ある！", "mile"); playS("popup", 0.4);
+    }
+    if (bonus.d) { const d = bonus.d; bonusSign.position.set(d.x, (d.sy || 6) + 4 + Math.abs(Math.sin(playT * 4)) * 0.8, d.sign ? d.sign.position.z : d.z); }
+  }
   function updateYard(dt) {
+    updateBonus();
     const at = dropAt(), here = !!at;
     if (here && !inYardPrev) PF("y.shop", () => setShop(true));
     if (!here && inYardPrev) PF("y.close", () => setShop(false));
     inYardPrev = here;
     ringM.alpha = 0.25 + 0.2 * Math.sin(playT * 4) + (bed.load >= upV("cap") * 0.6 ? 0.25 : 0);
-    if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); }
+    if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); if (bonus.d === at) { dump.money *= 2; popup("🌟 2ばい！", "mile"); } }
     // 荷台が 9 割を超えたら、荷台が左右に小さくゆれる（「もう持てないよ」が字を読まずに分かる・11-24 改善ループ 26）
     // いっぱいの時は、いちばん近いおろしばの看板もぴょこぴょこ跳ねる（遠くからでも行き先が目に入る・11-24 改善ループ 28）
     { const full = bed.load >= upV("cap") * 0.9, nd = full ? nearDrop() : null; for (const d of drops) if (d.sign) { const b = d === nd ? Math.abs(Math.sin(playT * 5)) : 0; d.sign.position.y = d.sy + b * 1.1; d.sign.scaling.setAll(1 + b * 0.12); } }
@@ -2667,10 +2688,17 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   // 棒の右はしに次の街の絵（字を読まなくても「あの街へ行く」と分かる・11-24 改善ループ 19）
   $("cityMark").textContent = { city: "🏙", fun: "🎡", eu: "🏰", desert: "🐪" }[nextTh.id] || "▶";
   $("stageT").textContent = "ステージ " + (STAGE + 1) + "：" + TH.name;
+  // ブラウザの確認の窓（confirm）はゲームの流れが切れ、子どもが「キャンセル」を押した → ボタンを 2 回押すと進む形に（11-24 改善ループ 44）
+  // 進む時は画面を暗くして次の街の名前を大きく出してから開き直す（真っ白の間が「こわれた？」に見えないように）
+  let nextArm = 0;
   $("bNext").onclick = () => {
-    if (!confirm("つぎの まち（" + nextTh.name + "）へ いきますか？（お金と強化は そのまま）")) return;
+    const b = $("bNext");
+    if (performance.now() - nextArm > 3000) { nextArm = performance.now(); b.textContent = "もう 1かい おして！ ▶"; playS("click", 0.5); setTimeout(() => { if (performance.now() - nextArm >= 2900) b.textContent = "つぎの まちへ ▶ " + nextTh.name; }, 3000); return; }
     sv.money += bed.money; sv.stage = STAGE + 1; sv.gone = []; save();
-    const u = new URL(location.href); u.searchParams.delete("fresh"); u.searchParams.delete("stage"); location.href = u.toString();
+    const cv = document.createElement("div"); cv.id = "nextCover"; cv.textContent = { city: "🏙", fun: "🎡", eu: "🏰", desert: "🐪" }[nextTh.id] + " " + nextTh.name + " へ！"; document.body.appendChild(cv);
+    playS("firework", 0.4);
+    const u = new URL(location.href); u.searchParams.delete("fresh"); u.searchParams.delete("stage");
+    setTimeout(() => { location.href = u.toString(); }, 450);
   };
   $("shopClose").onclick = () => setShop(false);
 
@@ -2716,6 +2744,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     c.fillStyle = "#2d3034cc"; c.fillRect(0, 0, mapC.width, mapC.height);
     for (const L of lots) { const [x, y] = M(L.cx - L.w / 2, L.cz + L.d / 2); c.fillStyle = L.gone ? "#5a5148" : L.lm ? "#c9a55a" : L.kind === "park" ? "#5f7d40" : "#9a9890"; c.fillRect(x, y, L.w * MS, L.d * MS); }
     for (const d of drops) { const S = d.h * 2, [x, y] = M(d.x - d.h, d.z + d.h); c.fillStyle = "#f2c230"; c.fillRect(x, y, S * MS, S * MS); c.fillStyle = "#222"; c.font = "bold " + (d.main ? 10 : 7) + "px sans-serif"; c.textAlign = "center"; c.fillText("¥", x + S * MS / 2, y + S * MS / 2 + (d.main ? 4 : 3)); }
+    // 2 ばいの おろしばは、地図でも白と桃色に点滅する枠で囲む（遠くて看板が見えなくても場所が分かる・11-24 改善ループ 45）
+    if (bonus.d) { const d = bonus.d, S = d.h * 2, [x, y] = M(d.x - d.h, d.z + d.h); c.strokeStyle = Math.sin(playT * 8) > 0 ? "#fff" : "#ff5ad1"; c.lineWidth = 3; c.strokeRect(x - 2, y - 2, S * MS + 4, S * MS + 4); c.fillStyle = "#fff"; c.font = "bold 9px sans-serif"; c.textAlign = "center"; c.fillText("×2", x + S * MS / 2, y - 4); }
     c.fillStyle = "#ff8a2a"; for (const q of fires) { const [x, y] = M(q.p.x, q.p.z); c.fillRect(x - 1.5, y - 1.5, 3, 3); }
     c.fillStyle = "#7de05a"; for (const z of zombies) { const [x, y] = M(z.pos.x, z.pos.z); c.fillRect(x - 1, y - 1, 2, 2); }
     const [ex0, ey0] = M(ex.pos.x, ex.pos.z); c.save(); c.translate(ex0, ey0); c.rotate(ex.heading); c.fillStyle = "#ffdf3a"; c.strokeStyle = "#000"; c.lineWidth = 1.5;
@@ -2761,6 +2791,11 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     arrowP.setEnabled(show);
     { const on = show && k >= 0.9, a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z), L = Math.min(yd - 4, 30);
       for (let i = 0; i < pathDots.length; i++) { const r = 4 + ((i * 3 + playT * 6) % 30), v = on && r < L; if (pathDots[i].isEnabled() !== v) pathDots[i].setEnabled(v); if (v) { pathDots[i].position.set(ex.pos.x + Math.sin(a) * r, 0.12, ex.pos.z + Math.cos(a) * r); pathDots[i].scaling.setAll(1.1 - r / 60); } } }
+    // まだ何も壊していない間は、一番近い建物の区画へ黄色い矢印（始めの空き地で「何をすればいいの」にならないように・11-24 改善ループ 44）
+    const first = score === 0 && !show && !inYard();
+    if (first) { if (!updateHud.firstL) { let bd = 1e9; for (const L of lots) { if (L.gone || L.kind === "park" || L.kind === "parking") continue; const d = (L.cx - ex.pos.x) ** 2 + (L.cz - ex.pos.z) ** 2; if (d < bd) { bd = d; updateHud.firstL = L; } } }
+      const L = updateHud.firstL; if (L) { const a = Math.atan2(L.cx - ex.pos.x, L.cz - ex.pos.z); arrowP.setEnabled(true); arrowP.position.set(ex.pos.x + Math.sin(a) * 9, 0.4, ex.pos.z + Math.cos(a) * 9); arrowP.rotation.y = a; arrowP.scaling.setAll(1.2 + 0.2 * Math.sin(playT * 7)); arrowM.alpha = 0.9; } }
+    if (first !== !!updateHud.firstOn) { updateHud.firstOn = first; arrowM.emissiveColor.set(first ? 1 : 0.35, first ? 0.85 : 1, first ? 0.15 : 0.3); }
     if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 11, 0.4, ex.pos.z + Math.cos(a) * 11); arrowP.rotation.y = a; arrowM.alpha = k >= 0.9 ? 0.95 : 0.55 + 0.35 * Math.sin(playT * 6); arrowP.scaling.setAll(k >= 0.9 ? 1.5 + 0.15 * Math.sin(playT * 8) : faint ? 0.6 : 1); if (faint) arrowM.alpha = 0.35; }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
     if (kills !== zKill0) { zKill0 = kills; zKillT = playT; }
@@ -2799,7 +2834,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const m = 6;
     vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
   }
-  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag; G.popup = popup; G.kick = v => { camKick = v; };
+  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag; G.popup = popup; G.bonus = bonus; G.kick = v => { camKick = v; };
   const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
