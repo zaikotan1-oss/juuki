@@ -1315,7 +1315,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (sndWin.length >= 9 && vol < 0.55) return false;
     // 崩れる系の音（ガシャ・ドーン・ガラガラ）は 1 つの仲間として 0.3 秒に 1 回まで。同じコマで重ねる分（大きい崩れの重ね）は通す（11-17 改善ループ 11・爆発が続くと 1 秒 10 回を超えた）
     // 大きい音も別のコマなら 0.15 秒あける（爆発が続くと大きい崩れ音だけで 1 秒 2.4 回・全部で 11.6 回になった・11-24 改善ループ 15）
-    if (CRASH_FAM[name]) { if (sndNow !== famNow && sndNow - famNow < (vol < 0.6 ? 0.3 : 0.2)) return false; famNow = sndNow; }
+    // 大きい崩れ音どうしも 0.26 秒あける（車を続けて潰すと崩れ系が 1 秒 4.1 回になった・11-24 改善ループ 53）
+    // ガラスの音はどこから鳴っても 0.35 秒あける（車・窓・爆発が重なって 1 秒 1.9 回になった・11-24 改善ループ 53）
+    if (name === "glass") { if (t - (sndLast.glassG ?? -9) < 0.35) return false; sndLast.glassG = t; }
+    if (CRASH_FAM[name]) { if (sndNow !== famNow && sndNow - famNow < (vol < 0.6 ? 0.3 : 0.26)) return false; famNow = sndNow; }
     if (name === "glass" && t - (sndLast.glass ?? -9) < 0.25 && vol < 0.7) return false;
     sndLast[name] = t; sndWin.push(t);
     if (G.snd) G.snd[name] = (G.snd[name] || 0) + 1;
