@@ -598,9 +598,13 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (list.length > 1) { const ox = ex.pos.x - bld.origin.x, oz = ex.pos.z - bld.origin.z, d2 = c => (c.wx - ox) ** 2 + (c.wz - oz) ** 2; list.sort((a, b) => d2(a) - d2(b)); }
     // 前の塊にかかった時間を覚えておき、それが入らない時は次のコマへ回す（作り終えてから 6ms を見ていたので、重い塊 1 つで 23ms になった・11-24 改善ループ 16）
     const t0 = performance.now(); let n = 0;
+    // 重い塊（12ms 超）を作った次のコマは作らずに休む（重いコマが続かないように・11-24 改善ループ 27）
+    if (!all && rebuildCellMesh.rest) { rebuildCellMesh.rest = false; return 0; }
     for (const ch of list) {
       if (n && !all && performance.now() - t0 + (rebuildCellMesh.last || 1) > 6) break;
-      ch.dirty = false; const t1 = performance.now(); PF("m.chunk", () => buildChunk(ch)); rebuildCellMesh.last = Math.min(6, performance.now() - t1); n++;
+      ch.dirty = false; const t1 = performance.now(); PF("m.chunk", () => buildChunk(ch)); const d = performance.now() - t1; rebuildCellMesh.last = Math.min(6, d); n++;
+      if (d > 12) rebuildCellMesh.rest = true;
+      if (d > 30 && G.pfLog) G.pfLog.push(["chunkBig", +d.toFixed(1), Math.round(t1), ch.cells.size, ch.mesh.getTotalVertices()]);   // 大きい塊か GC かの切り分け用
     }
     if (n) PF("m.bars", () => { const bars = []; for (const ch of chunks.values()) if (ch.bars.length && ch.mesh.isEnabled()) for (const m of ch.bars) { if (bars.length >= 1200) break; bars.push(m); } setThin(rebar, bars); });
     return n;
@@ -1286,7 +1290,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (sndWin.length >= 9 && vol < 0.55) return false;
     // 崩れる系の音（ガシャ・ドーン・ガラガラ）は 1 つの仲間として 0.3 秒に 1 回まで。同じコマで重ねる分（大きい崩れの重ね）は通す（11-17 改善ループ 11・爆発が続くと 1 秒 10 回を超えた）
     // 大きい音も別のコマなら 0.15 秒あける（爆発が続くと大きい崩れ音だけで 1 秒 2.4 回・全部で 11.6 回になった・11-24 改善ループ 15）
-    if (CRASH_FAM[name]) { if (sndNow !== famNow && sndNow - famNow < (vol < 0.6 ? 0.3 : 0.15)) return false; famNow = sndNow; }
+    if (CRASH_FAM[name]) { if (sndNow !== famNow && sndNow - famNow < (vol < 0.6 ? 0.3 : 0.2)) return false; famNow = sndNow; }
     if (name === "glass" && t - (sndLast.glass ?? -9) < 0.25 && vol < 0.7) return false;
     sndLast[name] = t; sndWin.push(t);
     if (G.snd) G.snd[name] = (G.snd[name] || 0) + 1;
