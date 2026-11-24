@@ -1424,6 +1424,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     // 小さい「+N」は段の上の帯に、左右交互に出す（続けて出ても隣と重ならない。大きい字の上に重なって金額が読めなかった・11-24 改善ループ 14）
     // 大きい字が同時に出たら、下へ 1 段ずつずらす（「+¥151」と別の字が重なって読めなかった・11-17 改善ループ 10）
     // 段は「空いている一番上の段」を使う。大きい字（big・huge）は 2 段ぶん取る。出ている間（1.3 秒）は段を空けない（強化を続けて買うと +¥ と重なった・11-17 改善ループ 11）
+    // 目標の知らせ（mile）は字の段を使わず、上の帯のすぐ下の決まった所に出す（ショベルの前の道を隠していた・11-24 改善ループ 37）
+    else if (/mile/.test(cls || "")) { if (performance.now() - (popup.mileT || 0) < 1300) el.style.marginTop = "34px"; popup.mileT = performance.now(); el.style.top = "calc(168px - 30vh)"; }
     else {
       const tall = /big|huge/.test(cls || ""), now = performance.now(), used = new Set();
       for (const [r, until] of popRows) if (until > now) used.add(r); else popRows.delete(r);
@@ -2791,7 +2793,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const m = 6;
     vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
   }
-  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag; G.kick = v => { camKick = v; };
+  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag; G.popup = popup; G.kick = v => { camKick = v; };
   const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
