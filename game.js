@@ -1369,13 +1369,19 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   const popRows = new Map();
   function popup(text, cls) {
-    const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text; if (cls && cls.startsWith("tiny")) { el.style.setProperty("--dx", Math.round(Math.random() * 140 - 70) + "px"); el.style.marginTop = Math.round(Math.random() * 50 - 25) + "px"; }
+    const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text; if (cls && cls.startsWith("tiny")) { el.style.setProperty("--dx", Math.round(Math.random() * 140 - 70) + "px"); el.style.top = "-58px"; el.style.marginTop = Math.round(Math.random() * 16 - 8) + "px"; }
+    // 小さい「+N」は段の上の帯に出す（大きい字の上に重なって金額が読めなかった・11-24 改善ループ 14）
     // 大きい字が同時に出たら、下へ 1 段ずつずらす（「+¥151」と別の字が重なって読めなかった・11-17 改善ループ 10）
     // 段は「空いている一番上の段」を使う。大きい字（big・huge）は 2 段ぶん取る。出ている間（1.3 秒）は段を空けない（強化を続けて買うと +¥ と重なった・11-17 改善ループ 11）
     else {
       const tall = /big|huge/.test(cls || ""), now = performance.now(), used = new Set();
       for (const [r, until] of popRows) if (until > now) used.add(r); else popRows.delete(r);
       let r = 0; while (used.has(r) || (tall && used.has(r + 1))) r++;
+      // 段が埋まっている時は、音の字（ズドーン等）と小さな知らせは出さない。お金（huge）と目標（mile）だけは出す（11-24 改善ループ 14）
+      const must = /huge|mile/.test(cls || "");
+      if (r > 5 && !must) return;
+      if (/big/.test(cls || "") && !must && now - (popup.bigT || 0) < 500) return;
+      if (/big/.test(cls || "")) popup.bigT = now;
       r = Math.min(r, 5); popRows.set(r, now + 1000); if (tall) popRows.set(r + 1, now + 1000);
       el.style.top = r * 44 + (tall ? 8 : 0) + "px";
     }
@@ -2637,9 +2643,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     $("bedT").textContent = inYard() ? `にだい ${Math.round(bed.load)}/${cap}` : k >= 0.9 ? `いっぱい！ おろしばへ ${yd}m` : `にだい ${Math.round(bed.load)}/${cap}　おろしば ${yd}m`;
     $("bedT").classList.toggle("full", k >= 0.9 && !inYard());
     if (!dump) $("money").textContent = fmtY(sv.money);
-    const show = k >= 0.6 && !inYard();
+    // 荷台に少しでも入っていて遠い時は、小さく薄い矢印でおろしばの向きを出す（どこへ売りに行くか絵で分かるように・11-24 改善ループ 13）
+    const faint = k < 0.6 && bed.load > 0 && yd > 20, show = (k >= 0.6 || faint) && !inYard();
     arrowP.setEnabled(show);
-    if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 11, 0.4, ex.pos.z + Math.cos(a) * 11); arrowP.rotation.y = a; arrowM.alpha = k >= 0.9 ? 0.95 : 0.55 + 0.35 * Math.sin(playT * 6); arrowP.scaling.setAll(k >= 0.9 ? 1.5 + 0.15 * Math.sin(playT * 8) : 1); }
+    if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 11, 0.4, ex.pos.z + Math.cos(a) * 11); arrowP.rotation.y = a; arrowM.alpha = k >= 0.9 ? 0.95 : 0.55 + 0.35 * Math.sin(playT * 6); arrowP.scaling.setAll(k >= 0.9 ? 1.5 + 0.15 * Math.sin(playT * 8) : faint ? 0.6 : 1); if (faint) arrowM.alpha = 0.35; }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
     // 次の目標を字で出す（11-17 改善ループ 3「4 割で次の街という流れが画面から読めない・強化の入口が見えない」）
