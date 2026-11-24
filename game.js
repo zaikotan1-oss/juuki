@@ -1381,13 +1381,13 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   const reCss = el => { const a = el._ab = !el._ab; el.classList.toggle("anA", a); el.classList.toggle("anB", !a); };
   function flash(a, warm) { const f = $("flash"); if (f.classList.contains("warm") !== !!warm) f.classList.toggle("warm", !!warm); f.style.setProperty("--fa", a); reCss(f); }
   // コンボの札: 続けて壊している間「N こわし」を出し、10・25・60 を越えるたびに音が上がる
-  let comboTier = 0, maxCombo = 0;
+  let comboTier = 0, maxCombo = 0, camKick = 0;
   function showCombo() {
     const el = $("combo"); if (combo < 3) return;
     el.querySelector("b").textContent = combo; el.style.display = "";
     if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; reCss(el); }   // 毎コマ組み直すと重いので間引く
     const tier = combo >= 60 ? 3 : combo >= 25 ? 2 : combo >= 10 ? 1 : 0;
-    if (tier > comboTier) { comboTier = tier; chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
+    if (tier > comboTier) { comboTier = tier; if (tier >= 2) camKick = Math.max(camKick, tier === 3 ? 0.22 : 0.14); chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
   }
   const popRows = new Map();
   function popup(text, cls) {
@@ -2422,11 +2422,11 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
         q.t += dt; q.vel.y -= 16 * dt; q.pos.addInPlace(q.vel.scale(dt));
         q.root.rotation.addInPlace(q.av.scale(dt));
         if (cellsNear(q.pos.add(new B.Vector3(0, 0.8, 0)), 0.9, 0.9, q.pos.y + 1.4)) {   // 飛んだ車が建物に刺さる
-          const n = smash(q.pos.add(new B.Vector3(0, 1, 0)), 1.4, q.vel.clone().normalize(), 25, 3); if (n) broke(n, q.pos, n > 6);
+          const n = PF("p.fly", () => smash(q.pos.add(new B.Vector3(0, 1, 0)), 1.4, q.vel.clone().normalize(), 25, 3)); if (n) PF("p.flyb", () => broke(n, q.pos, n > 6));
           q.vel.x *= -0.3; q.vel.z *= -0.3;
         }
         if (q.pos.y < 0) { q.pos.y = 0; if (Math.abs(q.vel.y) > 2.5) { playS("crash_small", 0.5, 0.9); dust(q.pos, 10); } q.vel.y = -q.vel.y * 0.3; q.vel.x *= 0.6; q.vel.z *= 0.6; q.av.scaleInPlace(0.5); if (Math.abs(q.vel.y) < 1.2) { q.vel.setAll(0); q.av.setAll(0); q.state = "down"; q.root.rotation.x = Math.round(q.root.rotation.x / Math.PI) * Math.PI; q.root.rotation.z = Math.round(q.root.rotation.z / Math.PI) * Math.PI; } }
-        hitAround(q.pos, 1.8, q.vel.clone().normalize(), 0.8, q);   // 飛んだ車が別の車やゾンビに当たる
+        PF("p.around", () => hitAround(q.pos, 1.8, q.vel.clone().normalize(), 0.8, q));   // 飛んだ車が別の車やゾンビに当たる
       }
       if (q.fuse !== undefined && q.fuse > 0 && (q.fuse -= dt) <= 0) { q.fuse = -1; PF("p.explode", () => explode(q.pos.add(new B.Vector3(0, 0.8, 0)), 1.1)); q.state = "fly"; q.vel.set((Math.random() - 0.5) * 3, 11, (Math.random() - 0.5) * 3); q.av.set(4, 2, 3); for (const m of q.parts) m.instancedBuffers.color = col4(0.08, 0.07, 0.07); }
       // 倒れた物・つぶれた車は、近くに来たら荷台へ吸い込む
@@ -2839,7 +2839,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     camT.set(ex.pos.x + ahead.x, 1.5, ex.pos.z + ahead.z + 3);
     cam.target.x += (camT.x - cam.target.x) * Math.min(1, dt * 5); cam.target.z += (camT.z - cam.target.z) * Math.min(1, dt * 5); cam.target.y = camT.y;
     cam.target.x += (Math.random() - 0.5) * tr * 0.7; cam.target.z += (Math.random() - 0.5) * tr * 0.7;
-    cam.radius += (ZOOMS[zoomI] - cam.radius) * Math.min(1, dt * 4);
+    camKick = Math.max(0, camKick - dt * 0.05);   // 連続が大きいと少し引いて広く見せ、ゆっくり戻す（「すごい」が画面の大きさで伝わる・11-24 改善ループ 25）
+    cam.radius += (ZOOMS[zoomI] * (1 + camKick) - cam.radius) * Math.min(1, dt * (camKick > 0.1 ? 1.5 : 4));
     // 縦持ち（スマホ・10-31 本人「縦で作って」）: 横幅を基準に見る。真上寄りにして奥（描かない遠く）を映さない
     const port = engine.getRenderHeight() > engine.getRenderWidth();
     cam.fovMode = port ? B.Camera.FOVMODE_HORIZONTAL_FIXED : B.Camera.FOVMODE_VERTICAL_FIXED; cam.fov = port ? 0.66 : 0.75;

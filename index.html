@@ -50,7 +50,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 .pop.big{font-size:40px;color:#ffd23f;text-shadow:0 4px 0 #b84a00,0 0 18px #ff8a00aa;animation:popbig 1.5s ease-out forwards}
 .pop.huge{font-size:44px;color:#ffe066;text-shadow:0 4px 0 #2b8a3e,0 0 18px #69db7caa;animation:popbig 1.6s ease-out forwards}
 .pop.tiny{font-size:16px;-webkit-text-stroke:3px #000;text-shadow:0 2px 3px #000;animation:poptiny .7s ease-out forwards;left:var(--dx,0)} .pop.tiny.gold{font-size:20px;color:#ffd23f} .pop.tiny.gold.huge{font-size:26px}
-@keyframes popup{0%{opacity:0;transform:translate(-50%,20px) scale(.6)}15%{opacity:1;transform:translate(-50%,0) scale(1.15)}30%{transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-70px)}}
+@keyframes popup{0%{opacity:0;transform:translate(-50%,20px) scale(.6)}15%{opacity:1;transform:translate(-50%,0) scale(1.15)}30%{transform:translate(-50%,0) scale(1)}65%{opacity:1}100%{opacity:0;transform:translate(-50%,-70px)}}
 @keyframes popbig{0%{opacity:0;transform:translate(-50%,10px) scale(.4) rotate(-6deg)}12%{opacity:1;transform:translate(-50%,0) scale(1.35) rotate(3deg)}24%{transform:translate(-50%,0) scale(1) rotate(0)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-60px) scale(1)}}
 @keyframes poptiny{0%{opacity:0;transform:translate(-50%,10px) scale(.6)}20%{opacity:1;transform:translate(-50%,0) scale(1.1)}100%{opacity:0;transform:translate(-50%,-40px)}}
 #flash{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 45%,#fffbe8 0,#fff6d0aa 40%,#fff0 75%);opacity:0;z-index:5}
