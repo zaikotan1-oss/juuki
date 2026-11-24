@@ -2438,6 +2438,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     c.body.scaling.y *= 0.82; c.body.scaling.x *= 1.04;   // ぺしゃんこ
     const k = c.hp > 0 ? 0.7 : 0.25; for (const m of [c.body, c.parts[2]]) m.instancedBuffers.color = _carCol(c.cc, k);
     playS("crash_big", 0.6, 1.25); playS("glass", 0.6, 1.1, 0.03); glassBurst(c.pos.add(new B.Vector3(0, 1.4, 0)), 12); sparks(c.pos.add(new B.Vector3(0, 1, 0)), 14); shake(0.3);
+    // 車に当たった時も砂ぼこりとカメラの小さな押し（ガラスと火花だけだと、写真で壊れた感じが薄かった・11-24 改善ループ 49）
+    dust(c.pos.add(new B.Vector3(0, 0.6, 0)), 16); camKick = Math.max(camKick, 0.08);
     if (c.hp <= 0 && !c.fuse) { c.fuse = 0.7 + Math.random() * 0.8; startFire(c.pos.add(new B.Vector3(0, 1.2, 0)), 7, c); }   // 燃え出して、少しして爆発
   }
   function zombieHit(z, dir, pw) {
