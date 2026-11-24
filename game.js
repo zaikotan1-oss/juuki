@@ -161,6 +161,23 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   const blds = [], dirtyB = new Set(); let curB = null;
   function newB(H, sink) { curB = { cells: new Set(), baseY: H - 1, base0: 0, baseN: 0, sink, warned: false, lot: curLot }; blds.push(curB); if (curLot) curLot.blds.push(curB); return curB; }
   let curLot = null;   // 今 建てている区画（街の建物の記録。壊れ具合と保存に使う）
+  // 叩いた塊を 0.12 秒だけ白く光らせる（当たった印が子どもにもすぐ分かる・11-24 改善ループ 31）。塊のメッシュに上塗りを付けるだけ
+  const flashing = [], WHITE3 = new B.Color3(1, 0.97, 0.85);
+  function hitFlash(p) {
+    const cx = Math.floor((p.x - bld.origin.x) / CELL), cy = Math.floor((p.y - bld.origin.y) / CELL), cz = Math.floor((p.z - bld.origin.z) / CELL);
+    // 真上寄りのカメラからは屋根しか見えないので、叩いた所から上の塊も光らせる（低い所の塊だけでは屋根に隠れて見えなかった）
+    // 叩いた点は建物の面の少し手前にあるので、点から 1.5m 以内にかかる隣の塊も入れる
+    const S = CH * CELL, gx0 = Math.floor(cx / CH), gz0 = Math.floor(cz / CH), gy0 = Math.max(0, Math.floor(cy / CH));
+    for (let gx = gx0 - 1; gx <= gx0 + 1; gx++) for (let gz = gz0 - 1; gz <= gz0 + 1; gz++) {
+      const x0 = bld.origin.x + gx * S, z0 = bld.origin.z + gz * S;
+      if (p.x < x0 - 1.5 || p.x > x0 + S + 1.5 || p.z < z0 - 1.5 || p.z > z0 + S + 1.5) continue;
+      for (let gy = gy0; gy < gy0 + 4; gy++) {
+        const ch = chunks.get(key(gx, gy, gz)); if (!ch || !ch.mesh || !ch.mesh.isEnabled()) continue;
+        const m = ch.mesh; if (!m.renderOverlay) { m.renderOverlay = true; m.overlayColor = WHITE3; flashing.push(m); } m._flT = 0.15;
+      }
+    }
+  }
+  function updateFlashes(dt) { for (let i = flashing.length - 1; i >= 0; i--) { const m = flashing[i]; m._flT -= dt; m.overlayAlpha = Math.min(1, Math.max(0, m._flT / 0.15) * 1.8) * 0.7; if (m._flT <= 0) { m.renderOverlay = false; flashing.splice(i, 1); } } }
   function cellWorld(x, y, z) { return new B.Vector3(bld.origin.x + (x + 0.5) * CELL, bld.origin.y + (y + 0.5) * CELL, bld.origin.z + (z + 0.5) * CELL); }
   function addCell(x, y, z, kind) {
     const k = key(x, y, z), old = bld.cells.get(k); if (old) { old.kind = kind; return; }
@@ -2251,7 +2268,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (tg.kind === "car") { p = tg.ref.pos.add(new B.Vector3(0, 0.8, 0)); carHit(tg.ref, dir, 1.2 * pw); }
     const wood = tg.kind === "cell" && woodNear(p);
     const n = PF("a.smash", () => smash(p, R, dir, 70 + pw * 30, 3 + pw));
-    if (n) { PF("a.broke", () => broke(n, p, n >= 25)); playS("bucket_hit", 0.8, 0.85 + Math.min(0.4, combo * 0.004) + Math.random() * 0.12); }   // 続けて壊すほど少しずつ高く（もっと続けたくなる・11-24 改善ループ 19）
+    if (n) { hitFlash(p); PF("a.broke", () => broke(n, p, n >= 25)); playS("bucket_hit", 0.8, 0.85 + Math.min(0.4, combo * 0.004) + Math.random() * 0.12); }   // 続けて壊すほど少しずつ高く（もっと続けたくなる・11-24 改善ループ 19）
     if (wood && n && Math.random() < 0.12) { startFire(p.clone(), 14 + Math.random() * 10); popup("もえだした！", "mid"); }   // 木造の家は火が付くことがある
     if (!n) { dust(new B.Vector3(p.x, 0.3, p.z), 14); playS("bucket_hit", 0.4, 0.7); }   // else が火の if に付いていて、当たった時も毎回 2 回目のガンが鳴っていた（11-17）。空振り・ゾンビだけの時は画面を揺らさない（何もしていないのに揺れっぱなしになった 10-30）
     PF("a.around", () => hitAround(p, R + 1.2, dir, 1.2 * pw, tg.ref));
@@ -2838,6 +2855,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     } });
     PF("mesh", rebuildCellMesh);
     if (sinks.length) PF("sinks", () => updateSinks(dt));
+    if (flashing.length) updateFlashes(dt);
     if (fading.length) updateFading(dt);
     settleDebris(dt); PF("ground", () => groundTick(dt));
     PF("fires", () => { updateFires(dt); updateGeysers(dt); });
