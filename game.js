@@ -2569,7 +2569,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     inYardPrev = here;
     ringM.alpha = 0.25 + 0.2 * Math.sin(playT * 4) + (bed.load >= upV("cap") * 0.6 ? 0.25 : 0);
     if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); }
-    if (!dump) { bedTilt.rotation.x += (0 - bedTilt.rotation.x) * Math.min(1, dt * 5); return; }
+    // 荷台が 9 割を超えたら、荷台が左右に小さくゆれる（「もう持てないよ」が字を読まずに分かる・11-24 改善ループ 26）
+    if (!dump) { bedTilt.rotation.x += (0 - bedTilt.rotation.x) * Math.min(1, dt * 5); bedTilt.rotation.z = bed.load >= upV("cap") * 0.9 ? Math.sin(playT * 16) * 0.045 : 0; return; }
+    bedTilt.rotation.z = 0;
     dump.t += dt; const D = 1.6;
     bedTilt.rotation.x = -Math.min(1, dump.t / 0.35) * 0.9 * (dump.t < D ? 1 : Math.max(0, 1 - (dump.t - D) / 0.4));
     bed.load = dump.load * Math.max(0, 1 - dump.t / D); showBed();
@@ -2747,7 +2749,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const m = 6;
     vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
   }
-  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag;
+  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag; G.kick = v => { camKick = v; };
   const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
