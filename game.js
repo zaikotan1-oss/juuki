@@ -16,7 +16,7 @@ const CARVE_R = 0.9;
 const BUCKET = { W: 1.9, H: 1.05, L: 1.55 };
 const G = window.G = {};   // 確かめ用の口
 // 試験の時だけ、処理ごとの時間を G.prof に溜める（重いコマの中身を見るため・11-17）
-const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r = f(), d = performance.now() - t, q = G.prof[k] || (G.prof[k] = { sum: 0, max: 0 }); q.sum += d; if (d > q.max) q.max = d; return r; };
+const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r = f(), d = performance.now() - t, q = G.prof[k] || (G.prof[k] = { sum: 0, max: 0 }); q.sum += d; if (d > q.max) q.max = d; if (G.pfLog && d > 5) G.pfLog.push([k, +d.toFixed(1), Math.round(t)]); return r; };
 
 (async function main() {
   // ======== エンジン・空・光・材質（juuki から） ========
@@ -1365,14 +1365,16 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   let hitStop = 0, score = 0, combo = 0, comboT = 0, comboP = null, lastPctStep = 0, lastDustT = -1;
   // 画面の閃光（崩れた瞬間に白く光る。10-25 改善ループ 2「派手さ」）
   // 光らせ直しは animate で（offsetWidth を読むと、出ている字・コインの分まで画面の組み直しが起きて 1 コマ 20ms を超えた・11-24 改善ループ 17）
-  const reAnim = (el, kf, ms, ease = "ease-out") => { try { if (el._an) el._an.cancel(); el._an = el.animate(kf, { duration: ms, easing: ease }); } catch (e) {} };
-  function flash(a, warm) { const f = $("flash"); if (f.classList.contains("warm") !== !!warm) f.classList.toggle("warm", !!warm); reAnim(f, [{ opacity: a }, { opacity: 0 }], 250); }
+  // element.animate も、混んだコマで呼ぶとページ全体の見た目の計算をその場でさせて 30ms を超えた（11-24 改善ループ 18）
+  // → CSS の動き（同じ動きを A と B の 2 つの名前で持ち、交互に付け替えると最初から動き直す）にした
+  const reCss = el => { const a = el._ab = !el._ab; el.classList.toggle("anA", a); el.classList.toggle("anB", !a); };
+  function flash(a, warm) { const f = $("flash"); if (f.classList.contains("warm") !== !!warm) f.classList.toggle("warm", !!warm); f.style.setProperty("--fa", a); reCss(f); }
   // コンボの札: 続けて壊している間「N こわし」を出し、10・25・60 を越えるたびに音が上がる
   let comboTier = 0, maxCombo = 0;
   function showCombo() {
     const el = $("combo"); if (combo < 3) return;
     el.querySelector("b").textContent = combo; el.style.display = "";
-    if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; reAnim(el, [{ transform: "translateX(-50%) scale(1.25)" }, { transform: "translateX(-50%) scale(1)" }], 180); }   // 毎コマ組み直すと重いので間引く
+    if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; reCss(el); }   // 毎コマ組み直すと重いので間引く
     const tier = combo >= 60 ? 3 : combo >= 25 ? 2 : combo >= 10 ? 1 : 0;
     if (tier > comboTier) { comboTier = tier; chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
   }
@@ -1391,7 +1393,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (r > 3 && !must) return;   // 字は 4 段まで（5 行並ぶとショベルの周りが字だらけになった・11-24 改善ループ 16）
       if (/big/.test(cls || "") && !must && now - (popup.bigT || 0) < 500) return;
       if (/big/.test(cls || "")) popup.bigT = now;
-      r = Math.min(r, 5); popRows.set(r, now + 1000); if (tall) popRows.set(r + 1, now + 1000);
+      r = Math.min(r, 5); const life = tall ? 1500 : 1300; popRows.set(r, now + life); if (tall) popRows.set(r + 1, now + life);   // 字が出ている間（1.3〜1.5 秒）は段を取っておく（1 秒だと次の字が上に重なった・11-24 改善ループ 18）
       el.style.top = r * 44 + (tall ? 8 : 0) + "px";
     }
     $("pops").appendChild(el); setTimeout(() => el.remove(), 1300);
@@ -2597,6 +2599,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const price = upPrice(k); if (sv.money < price) { playS("click", 0.3, 0.6); return; }
     const t0 = lookTier(); sv.money -= price; sv.up[k] = lv + 1; save(); showBed(); applyLook();
     playS("levelup", 0.5); playS("coin", 0.4); flash(0.3, true); popup(u.icon + " " + u.name + " Lv" + (lv + 2) + "！", "mile");
+    upPopT = 0.35; sparks(ex.pos.add(new B.Vector3(0, 2, 0)), 18);   // 買った瞬間にショベルがぽんと大きくなる（強くなったのが見て分かる・11-24 改善ループ 18）
     if (lookTier() > t0) { setTimeout(() => popup(["", "🚨 かいてんとう つけた！", "🔩 てっぱん と とげ！", "🛡 うんてんせき を まもる こうし！", "🔥 まっか の さいきょう ショベル！"][lookTier()], "mile"), 900); playS("boom", 0.4, 1.2, 0.5); }
     $("money").textContent = fmtY(sv.money); renderShop();
   }
@@ -2653,17 +2656,21 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   arrow.material = arrowM; arrowM.backFaceCulling = false; arrow.isPickable = false; arrow.renderingGroupId = 1;
   const arrowP = new B.TransformNode("arrowP", scene); arrow.parent = arrowP;
   // 売っている間、コインが画面のまん中からお金の字へ飛んで入る（もらえた感じを目に見えるように・11-24 改善ループ 16）
-  // お金の字の位置は 1 回だけ測る（毎回測ると画面の組み直しが起きて 1 コマ 38ms になった）。向きが変わったら測り直す
-  addEventListener("resize", () => { coinFly.r = null; setTimeout(() => { coinFly.r = $("money").getBoundingClientRect(); }, 300); }); setTimeout(() => { coinFly.r = $("money").getBoundingClientRect(); }, 500);
   // 着く所はお金の字の左はし（数字の上に着くと桁が隠れた）で、着く時に消える（11-24 改善ループ 17）
+  // 行き先は CSS の決まった位置で書き、動きも CSS（字の位置を測る・element.animate は画面の組み直しが起きて 1 コマ 32ms になった・11-24 改善ループ 18）
+  // コインは始めに 8 枚作って使い回す（最初の 1 枚を出す時だけ 37ms かかった＝初めての字と見た目の準備。起動の時に済ませる）
+  const coinPool = [], coinBox = document.createElement("div"); coinBox.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;pointer-events:none;z-index:9"; document.body.appendChild(coinBox);
+  for (let i = 0; i < 8; i++) { const el = document.createElement("div"); el.className = "coinfly"; el.textContent = "¥"; el.style.display = "none"; coinBox.appendChild(el); coinPool.push(el); }
+  { const w = coinPool[0]; w.style.display = ""; w.style.setProperty("--x0", "-60px"); w.style.setProperty("--y0", "-60px"); setTimeout(() => { w.style.display = "none"; }, 600); }
+  let coinI = 0;
   function coinFly() {
-    const el = document.createElement("div"), m = coinFly.r || (coinFly.r = $("money").getBoundingClientRect()), x0 = innerWidth / 2 + (Math.random() - 0.5) * 60, y0 = innerHeight * 0.5;
-    el.className = "coinfly"; el.textContent = "¥"; el.style.left = x0 + "px"; el.style.top = y0 + "px"; document.body.appendChild(el);
-    requestAnimationFrame(() => { el.style.transform = `translate(${m.left - 2 - x0}px, ${m.top + m.height / 2 - y0}px) scale(0.5)`; el.style.opacity = "0"; });
-    setTimeout(() => { el.remove(); reAnim($("money"), [{ transform: "scale(1.25)" }, { transform: "scale(1)" }], 250); }, 520);
+    const el = coinPool[coinI++ % coinPool.length];   // 画面の幅（innerWidth）も読まない。読むと組み直しが起きた
+    el.style.setProperty("--x0", `calc(50vw + ${Math.round((Math.random() - 0.5) * 60)}px)`); el.style.setProperty("--y0", "50vh"); el.style.display = ""; reCss(el);
+    clearTimeout(el._t); el._t = setTimeout(() => { el.style.display = "none"; reCss($("money")); }, 520);
   }
-  let hudT = 0;
+  let hudT = 0, upPopT = 0;
   function updateHud(dt) {
+    if (upPopT > 0) { upPopT = Math.max(0, upPopT - dt); root.scaling.setAll(1 + 0.18 * Math.sin(Math.PI * (1 - upPopT / 0.35))); }
     const cap = upV("cap"), k = Math.min(1, bed.load / cap);
     $("bedBar").style.width = (k * 100).toFixed(1) + "%"; $("bedBar").classList.toggle("full", k >= 1);
     const nd = nearDrop(), yd = Math.round(Math.hypot(nd.x - ex.pos.x, nd.z - ex.pos.z));
@@ -2679,7 +2686,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
     // 次の目標を字で出す（11-17 改善ループ 3「4 割で次の街という流れが画面から読めない・強化の入口が見えない」）
     const canUp = Object.keys(UPS).some(k => (sv.up[k] || 0) < UPS[k].vals.length - 1 && sv.money >= upPrice(k));
-    $("city").classList.toggle("near", pct >= NEXT_PCT * 0.75 && pct < NEXT_PCT);   // あと少しで次の街: 黄色
+    $("city").classList.toggle("near", pct >= NEXT_PCT * 0.75 && pct < NEXT_PCT);
+    // 次の街までの棒（字の数だけだと、いま何割か一目で分からなかった・11-24 改善ループ 18）。右はしの白い線が つぎのまち
+    $("cityBar").style.width = Math.min(100, pct / NEXT_PCT * 100).toFixed(0) + "%"; $("cityBar").classList.toggle("near", pct >= NEXT_PCT * 0.75);   // あと少しで次の街: 黄色
     $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}/${NEXT_PCT}%→つぎのまち`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
     if (pct >= NEXT_PCT && $("bNext").style.display === "none") { $("bNext").style.display = ""; $("bNext").textContent = "つぎの まちへ ▶ " + nextTh.name; popup("🎉 つぎの まちへ いけるよ！", "mile"); }
     drawMap();
@@ -2706,7 +2715,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const m = 6;
     vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
   }
-  G.vr = vr;
+  G.vr = vr; G.coinFly = coinFly;
   const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
