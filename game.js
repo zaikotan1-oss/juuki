@@ -596,8 +596,12 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const list = []; for (const ch of chunks.values()) if (ch.dirty && !ch.far) list.push(ch);   // 遠くの塊は近づいた時に作り直す
     if (!list.length) return 0;
     if (list.length > 1) { const ox = ex.pos.x - bld.origin.x, oz = ex.pos.z - bld.origin.z, d2 = c => (c.wx - ox) ** 2 + (c.wz - oz) ** 2; list.sort((a, b) => d2(a) - d2(b)); }
+    // 前の塊にかかった時間を覚えておき、それが入らない時は次のコマへ回す（作り終えてから 6ms を見ていたので、重い塊 1 つで 23ms になった・11-24 改善ループ 16）
     const t0 = performance.now(); let n = 0;
-    for (const ch of list) { if (n && !all && performance.now() - t0 > 6) break; ch.dirty = false; PF("m.chunk", () => buildChunk(ch)); n++; }
+    for (const ch of list) {
+      if (n && !all && performance.now() - t0 + (rebuildCellMesh.last || 1) > 6) break;
+      ch.dirty = false; const t1 = performance.now(); PF("m.chunk", () => buildChunk(ch)); rebuildCellMesh.last = Math.min(6, performance.now() - t1); n++;
+    }
     if (n) PF("m.bars", () => { const bars = []; for (const ch of chunks.values()) if (ch.bars.length && ch.mesh.isEnabled()) for (const m of ch.bars) { if (bars.length >= 1200) break; bars.push(m); } setThin(rebar, bars); });
     return n;
   }
@@ -765,7 +769,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       const col = KIND_COL[q.kind], L = q.H;
       if (!G.fixedDt) hitStop = 0.14;
       crash(1); shake(1); flash(0.55, true); playS("boom", 0.7, 0.75); playS("impact", 0.6, 0.7, 0.05); playS("rubble_dump", 0.6, 0.9, 0.2);
-      popup("ズドーン!!", "big"); toppleHit(q);   // 倒れた先の建物・車・ゾンビも壊す（ドミノ）
+      popup("ズドーン!!", "big"); PF("k.hit", () => toppleHit(q));   // 倒れた先の建物・車・ゾンビも壊す（ドミノ）
       q.pend = q.total;   // 倒れた線に沿った破片は、横たわっている間に 1 コマ 12 個ずつ出す（着いた 1 コマで 200 個作って 146ms 止まった・11-17 改善ループ 4）
       for (let k = 0; k <= 6; k++) { const t = k / 6, dp = new B.Vector3(q.cx + q.fdx * t * L, 0.6, q.cz + q.fdz * t * L); setTimeout(() => dust(dp, 34), k * 60); }
       const ex0 = Math.min(q.cx, q.cx + q.fdx * L), ex1 = Math.max(q.cx, q.cx + q.fdx * L), ez0 = Math.min(q.cz, q.cz + q.fdz * L), ez1 = Math.max(q.cz, q.cz + q.fdz * L);
@@ -774,13 +778,14 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     }
     // 倒れた後: 0.6 秒は横たわったまま、体の全長から破片が跳ね上がる（バターン）。そのあと地面へ沈めて消す
     q.t += dt;
+    if (q.th) PF("k.hit", () => toppleStep(q));
     if (q.pend > 0) {
       const col = KIND_COL[q.kind], L = q.H, n = Math.min(12, q.pend); q.pend -= n;
-      for (let k = 0; k < n; k++) {
+      PF("k.pend", () => { for (let k = 0; k < n; k++) {
         const t = Math.random(), side = (Math.random() - 0.5) * 3;
         const p = new B.Vector3(q.cx + q.fdx * t * L - q.fdz * side, 0.6 + Math.random() * 1.2, q.cz + q.fdz * t * L + q.fdx * side);
         spawnDebris(p, new B.Vector3(0.7 + Math.random() * 0.6, 0.45 + Math.random() * 0.4, 0.7 + Math.random() * 0.6), col, new B.Vector3((Math.random() - 0.5) * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 3));
-      }
+      } });
     }
     if (q.t < 0.6) {
       if ((q.dT -= dt) <= 0) {
@@ -1280,7 +1285,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     while (sndWin.length && t - sndWin[0] > 1) sndWin.shift();
     if (sndWin.length >= 9 && vol < 0.55) return false;
     // 崩れる系の音（ガシャ・ドーン・ガラガラ）は 1 つの仲間として 0.3 秒に 1 回まで。同じコマで重ねる分（大きい崩れの重ね）は通す（11-17 改善ループ 11・爆発が続くと 1 秒 10 回を超えた）
-    if (CRASH_FAM[name]) { if (sndNow !== famNow && sndNow - famNow < 0.3 && vol < 0.6) return false; famNow = sndNow; }
+    // 大きい音も別のコマなら 0.15 秒あける（爆発が続くと大きい崩れ音だけで 1 秒 2.4 回・全部で 11.6 回になった・11-24 改善ループ 15）
+    if (CRASH_FAM[name]) { if (sndNow !== famNow && sndNow - famNow < (vol < 0.6 ? 0.3 : 0.15)) return false; famNow = sndNow; }
+    if (name === "glass" && t - (sndLast.glass ?? -9) < 0.25 && vol < 0.7) return false;
     sndLast[name] = t; sndWin.push(t);
     if (G.snd) G.snd[name] = (G.snd[name] || 0) + 1;
     if (!ac || ac.state !== "running") return false;
@@ -1369,8 +1376,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   const popRows = new Map();
   function popup(text, cls) {
-    const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text; if (cls && cls.startsWith("tiny")) { el.style.setProperty("--dx", Math.round(Math.random() * 140 - 70) + "px"); el.style.top = "-58px"; el.style.marginTop = Math.round(Math.random() * 16 - 8) + "px"; }
-    // 小さい「+N」は段の上の帯に出す（大きい字の上に重なって金額が読めなかった・11-24 改善ループ 14）
+    const el = document.createElement("div"); el.className = "pop " + (cls || ""); el.textContent = text; if (cls && cls.startsWith("tiny")) { popup.tS = -(popup.tS || 1); el.style.setProperty("--dx", Math.round(popup.tS * (30 + Math.random() * 45)) + "px"); el.style.top = "-58px"; el.style.marginTop = Math.round(Math.random() * 16 - 8) + "px"; }
+    // 小さい「+N」は段の上の帯に、左右交互に出す（続けて出ても隣と重ならない。大きい字の上に重なって金額が読めなかった・11-24 改善ループ 14）
     // 大きい字が同時に出たら、下へ 1 段ずつずらす（「+¥151」と別の字が重なって読めなかった・11-17 改善ループ 10）
     // 段は「空いている一番上の段」を使う。大きい字（big・huge）は 2 段ぶん取る。出ている間（1.3 秒）は段を空けない（強化を続けて買うと +¥ と重なった・11-17 改善ループ 11）
     else {
@@ -1379,7 +1386,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       let r = 0; while (used.has(r) || (tall && used.has(r + 1))) r++;
       // 段が埋まっている時は、音の字（ズドーン等）と小さな知らせは出さない。お金（huge）と目標（mile）だけは出す（11-24 改善ループ 14）
       const must = /huge|mile/.test(cls || "");
-      if (r > 5 && !must) return;
+      if (r > 3 && !must) return;   // 字は 4 段まで（5 行並ぶとショベルの周りが字だらけになった・11-24 改善ループ 16）
       if (/big/.test(cls || "") && !must && now - (popup.bigT || 0) < 500) return;
       if (/big/.test(cls || "")) popup.bigT = now;
       r = Math.min(r, 5); popRows.set(r, now + 1000); if (tall) popRows.set(r + 1, now + 1000);
@@ -2483,15 +2490,21 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   // 倒れた塔の先にある物も壊す（ドミノ）
   function toppleHit(q) {
     // 倒れた建物が横たわる所（長さ＝高さ・幅＝建物の幅・厚み＝幅くらい）をまとめて壊す。そこの建物は崩れて、また倒れることもある（ドミノ）
-    const L = q.H, W = Math.max(3, q.W || 3), side = new B.Vector3(-q.fdz, 0, q.fdx), dir = new B.Vector3(q.fdx, -0.4, q.fdz);
-    let n = 0;
-    for (let k = 1.5; k <= L + 1; k += 1.6) for (let s = -W / 2; s <= W / 2 + 0.01; s += 2.2) for (const y of [1.2, 3.4, 5.6, 7.8, 10, 12.2, 14.4].filter(y => y < Math.min(W, 16) + 1)) {
-      if (n > 2400) break;
-      n += smash(new B.Vector3(q.cx + q.fdx * k + side.x * s, y, q.cz + q.fdz * k + side.z * s), 1.6, dir, 70, 6);
-    }
+    // 壊す所を並べておき、1 コマ 4ms ずつ壊す（着いた 1 コマで全部壊して 72ms 止まった・11-24 改善ループ 16）。続きは updateTopple が toppleStep を呼ぶ
+    const L = q.H, W = Math.max(3, q.W || 3), side = new B.Vector3(-q.fdz, 0, q.fdx), pts = [];
+    for (let k = 1.5; k <= L + 1; k += 1.6) for (let s = -W / 2; s <= W / 2 + 0.01; s += 2.2) for (const y of [1.2, 3.4, 5.6, 7.8, 10, 12.2, 14.4].filter(y => y < Math.min(W, 16) + 1)) pts.push(new B.Vector3(q.cx + q.fdx * k + side.x * s, y, q.cz + q.fdz * k + side.z * s));
+    q.th = { pts, i: 0, n: 0, dir: new B.Vector3(q.fdx, -0.4, q.fdz) };
+    popup("バターーン!!", "big");
+    toppleStep(q);
+  }
+  function toppleStep(q) {
+    const h = q.th; if (!h) return;
+    const t0 = performance.now();
+    while (h.i < h.pts.length && h.n <= 2400) { h.n += smash(h.pts[h.i++], 1.6, h.dir, 70, 6); if (performance.now() - t0 > 4) return; }
+    q.th = null;
+    const L = q.H, W = Math.max(3, q.W || 3), n = h.n;
     for (let k = 2; k <= L; k += 2) hitAround(new B.Vector3(q.cx + q.fdx * k, 1, q.cz + q.fdz * k), W / 2 + 1.5, new B.Vector3(q.fdx, 0, q.fdz), 3, null);
     if (n) { broke(n, new B.Vector3(q.cx + q.fdx * L * 0.6, 1, q.cz + q.fdz * L * 0.6), true); popup(n > 300 ? "ドミノ だおし！！ " + n : "まきぞえ！ " + n, "mile"); shake(1); }
-    popup("バターーン!!", "big");
   }
 
   // ---- 荷台へ吸い込む ----
@@ -2549,7 +2562,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       flyers.push({ node: m, from: m.position.clone(), t: 0, dur: 0.5, s0: m.scaling.clone(), val: 0, toP: tg, done: () => { m.dispose(); dust(tg, 6); } });
     }
     const shown = Math.round(dump.money * Math.min(1, dump.t / D));
-    if (shown > dump.shown) { if (Math.floor(shown / Math.max(1, dump.money / 12)) !== Math.floor(dump.shown / Math.max(1, dump.money / 12))) playS("coin", 0.25, 1.2 + Math.random() * 0.3); dump.shown = shown; $("money").textContent = fmtY(sv.money + shown); }
+    if (shown > dump.shown) { if (Math.floor(shown / Math.max(1, dump.money / 12)) !== Math.floor(dump.shown / Math.max(1, dump.money / 12))) playS("coin", 0.25, 1.2 + Math.random() * 0.3), coinFly(); dump.shown = shown; $("money").textContent = fmtY(sv.money + shown); }
     if (dump.t >= D + 0.4) {
       sv.money += dump.money; sv.delivered += dump.load; bed.load = 0; bed.money = 0; showBed(); pileSize(); save();
       popup("+" + fmtY(dump.money), "huge"); playS("coin", 0.6); playS("firework", 0.35, 1, 0.1); if (dump.money >= 500) playS("levelup", 0.4);
@@ -2634,6 +2647,15 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     vd.indices = [0, 1, 2, 3, 5, 4, 4, 5, 6]; vd.normals = []; B.VertexData.ComputeNormals(vd.positions, vd.indices, vd.normals); vd.applyToMesh(arrow); }
   arrow.material = arrowM; arrowM.backFaceCulling = false; arrow.isPickable = false; arrow.renderingGroupId = 1;
   const arrowP = new B.TransformNode("arrowP", scene); arrow.parent = arrowP;
+  // 売っている間、コインが画面のまん中からお金の字へ飛んで入る（もらえた感じを目に見えるように・11-24 改善ループ 16）
+  // お金の字の位置は 1 回だけ測る（毎回測ると画面の組み直しが起きて 1 コマ 38ms になった）。向きが変わったら測り直す
+  addEventListener("resize", () => { coinFly.r = null; setTimeout(() => { coinFly.r = $("money").getBoundingClientRect(); }, 300); }); setTimeout(() => { coinFly.r = $("money").getBoundingClientRect(); }, 500);
+  function coinFly() {
+    const el = document.createElement("div"), m = coinFly.r || (coinFly.r = $("money").getBoundingClientRect()), x0 = innerWidth / 2 + (Math.random() - 0.5) * 60, y0 = innerHeight * 0.5;
+    el.className = "coinfly"; el.textContent = "¥"; el.style.left = x0 + "px"; el.style.top = y0 + "px"; document.body.appendChild(el);
+    requestAnimationFrame(() => { el.style.transform = `translate(${m.left + 20 - x0}px, ${m.top + m.height / 2 - y0}px) scale(0.6)`; el.style.opacity = "0.9"; });
+    setTimeout(() => { el.remove(); const mo = $("money"); mo.classList.remove("got"); void mo.offsetWidth; mo.classList.add("got"); }, 520);
+  }
   let hudT = 0;
   function updateHud(dt) {
     const cap = upV("cap"), k = Math.min(1, bed.load / cap);
@@ -2756,7 +2778,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     settleDebris(dt); PF("ground", () => groundTick(dt));
     PF("fires", () => { updateFires(dt); updateGeysers(dt); });
     PF("props", () => updateProps(dt)); PF("zombies", () => updateZombies(dt));
-    PF("collect", () => { updateCollect(dt); updateYard(dt); });
+    PF("collect", () => updateCollect(dt)); PF("yard", () => updateYard(dt));
     PF("hud", () => { checkGone(dt); updateCombo(dt); updateHud(dt); }); PF("occl", () => updateOcclusion(dt));
     if ((partT -= dt) <= 0) { partT = 0.1; PF("build", () => activateNear(ex.pos)); }   // 近づいた土地を 1 つずつ建てる
     // 鳴りっぱなしの音
