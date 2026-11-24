@@ -1344,6 +1344,17 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   // 当たった所の火花（黄白の小さな粒が 0.3 秒だけ飛ぶ。10-25 改善ループ 2）
   let sparkPS = null, sparkT = 0;
+  // 紙吹雪: 区画をこわしきった瞬間に真上から散らす（「やった」が見て分かる・11-24 改善ループ 20）。途中で作ると最初の 1 回がカクッとするので初めに作る
+  // 色は 2 組（黄〜赤・水色〜緑）。1 組で黄と青を混ぜると間の灰色ばかりになった
+  const confPS = [[[1, 0.9, 0.1], [1, 0.25, 0.45]], [[0.2, 0.75, 1], [0.35, 1, 0.45]]].map(([a, b], k) => {
+    const t = new B.DynamicTexture("confT" + k, 8, scene, false), c = t.getContext(); c.fillStyle = "#fff"; c.fillRect(0, 0, 8, 8); t.update();
+    const ps = new B.ParticleSystem("confetti" + k, LITE ? 50 : 90, scene); ps.particleTexture = t; ps.emitter = new B.Vector3(0, -50, 0);
+    ps.color1 = new B.Color4(a[0], a[1], a[2], 1); ps.color2 = new B.Color4(b[0], b[1], b[2], 1); ps.colorDead = new B.Color4(b[0], b[1], b[2], 0);
+    ps.minSize = 0.35; ps.maxSize = 0.6; ps.minScaleX = 0.6; ps.maxScaleX = 1; ps.minLifeTime = 1.6; ps.maxLifeTime = 2.6; ps.emitRate = 0; ps.manualEmitCount = 0;
+    ps.minEmitBox = new B.Vector3(-3, 0, -3); ps.maxEmitBox = new B.Vector3(3, 1, 3); ps.direction1 = new B.Vector3(-3, 6, -3); ps.direction2 = new B.Vector3(3, 10, 3); ps.minEmitPower = 1; ps.maxEmitPower = 2;
+    ps.gravity = new B.Vector3(0, -6, 0); ps.minAngularSpeed = -6; ps.maxAngularSpeed = 6; ps.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ps.renderingGroupId = 1; ps.start(); return ps;
+  });
+  function confetti(x, y, z) { for (const ps of confPS) { ps.emitter = new B.Vector3(x, y, z); ps.manualEmitCount = LITE ? 40 : 65; } }
   function sparks(p, n) {
     if (playT - sparkT < 0.07) return; sparkT = playT;
     if (!sparkPS) {
@@ -2126,7 +2137,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       // 押し付けている間ずっと「ガン」が鳴ってうるさかった（11-17 本人「ガリガリずっと」）→ 壊れた時だけ・0.3 秒あけて鳴らす
       // 崩れる音（broke）も 0.13 秒ごとに鳴っていたので、壊れた数を溜めて 0.3 秒に 1 回まとめて出す
       grindN += n;
-      if (grindN && playT - grindSndT > 0.3) { grindSndT = playT; playS("bucket_hit", 0.35, 0.75 + Math.random() * 0.3); broke(grindN, hit, false); grindN = 0; }
+      if (grindN && playT - grindSndT > 0.3) { grindSndT = playT; playS("bucket_hit", 0.35, 0.75 + Math.min(0.4, combo * 0.004) + Math.random() * 0.2); broke(grindN, hit, false); grindN = 0; }
       sparks(new B.Vector3(hit.x, 1 + Math.random() * 2, hit.z), n ? 8 : 3);
       if (!n) dust(new B.Vector3(hit.x, 1, hit.z), 6);
     }
@@ -2234,7 +2245,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (tg.kind === "car") { p = tg.ref.pos.add(new B.Vector3(0, 0.8, 0)); carHit(tg.ref, dir, 1.2 * pw); }
     const wood = tg.kind === "cell" && woodNear(p);
     const n = PF("a.smash", () => smash(p, R, dir, 70 + pw * 30, 3 + pw));
-    if (n) { PF("a.broke", () => broke(n, p, n >= 25)); playS("bucket_hit", 0.8, 0.85 + Math.random() * 0.2); }
+    if (n) { PF("a.broke", () => broke(n, p, n >= 25)); playS("bucket_hit", 0.8, 0.85 + Math.min(0.4, combo * 0.004) + Math.random() * 0.12); }   // 続けて壊すほど少しずつ高く（もっと続けたくなる・11-24 改善ループ 19）
     if (wood && n && Math.random() < 0.12) { startFire(p.clone(), 14 + Math.random() * 10); popup("もえだした！", "mid"); }   // 木造の家は火が付くことがある
     if (!n) { dust(new B.Vector3(p.x, 0.3, p.z), 14); playS("bucket_hit", 0.4, 0.7); }   // else が火の if に付いていて、当たった時も毎回 2 回目のガンが鳴っていた（11-17）。空振り・ゾンビだけの時は画面を揺らさない（何もしていないのに揺れっぱなしになった 10-30）
     PF("a.around", () => hitAround(p, R + 1.2, dir, 1.2 * pw, tg.ref));
@@ -2605,6 +2616,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   // つぎの まちへ: 4 割こわしたら出る。荷台の分は売ったことにして、次のテーマの街を建てる（ページを開き直す）
   const NEXT_PCT = 40, nextTh = THEMES[(STAGE + 1) % THEMES.length];
+  // 棒の右はしに次の街の絵（字を読まなくても「あの街へ行く」と分かる・11-24 改善ループ 19）
+  $("cityMark").textContent = { city: "🏙", fun: "🎡", eu: "🏰", desert: "🐪" }[nextTh.id] || "▶";
   $("stageT").textContent = "ステージ " + (STAGE + 1) + "：" + TH.name;
   $("bNext").onclick = () => {
     if (!confirm("つぎの まち（" + nextTh.name + "）へ いきますか？（お金と強化は そのまま）")) return;
@@ -2620,9 +2633,11 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     for (const L of lots) {
       if (!L.made || L.gone || !L.cells0) continue;
       let n = 0; for (const b of L.blds) n += b.cells.size;
+      L.left = n;   // 進み具合の棒で使う（壊しかけの区画も少しずつ数える）
       if (n < L.cells0 * 0.1) {
         L.gone = true; sv.gone.push(L.id); saveDirty = true;
         const bonus = Math.round(L.cells0 * 0.15); sv.money += bonus;
+        confetti(L.cx, 8, L.cz);
         popup((L.lm ? "🏆 " + LM_NAME[L.kind] : "🏚 たてもの") + " こわしきった！ +" + fmtY(bonus), L.lm ? "mile" : "mid"); playS("levelup", L.lm ? 0.5 : 0.3); chime([0, 4, 7, 12]);
         // 残りかすは がれきに。全部を 1 コマでがれきにすると 17ms 引っかかったので、がれきは 24 個まで・残りはまとめて消す（11-17 改善ループ 6）
         const rest = []; let nd = 0;
@@ -2688,7 +2703,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const canUp = Object.keys(UPS).some(k => (sv.up[k] || 0) < UPS[k].vals.length - 1 && sv.money >= upPrice(k));
     $("city").classList.toggle("near", pct >= NEXT_PCT * 0.75 && pct < NEXT_PCT);
     // 次の街までの棒（字の数だけだと、いま何割か一目で分からなかった・11-24 改善ループ 18）。右はしの白い線が つぎのまち
-    $("cityBar").style.width = Math.min(100, pct / NEXT_PCT * 100).toFixed(0) + "%"; $("cityBar").classList.toggle("near", pct >= NEXT_PCT * 0.75);   // あと少しで次の街: 黄色
+    // 棒は壊しかけの区画も数える（こわしきった区画だけだと 45 秒遊んでも棒がほとんど伸びなかった・11-24 改善ループ 19）。こわしきった数が届くまでは 97% で止める
+    let part = 0; for (const L of lots) part += L.gone ? 1 : L.made && L.cells0 && L.left !== undefined ? Math.min(1, (1 - L.left / L.cells0) / 0.9) : 0;
+    const barK = pct >= NEXT_PCT ? 1 : Math.min(0.97, Math.max(pct / NEXT_PCT, part / lots.length * 100 / NEXT_PCT));
+    $("cityBar").style.width = (barK * 100).toFixed(1) + "%"; $("cityBar").classList.toggle("near", pct >= NEXT_PCT * 0.75);   // あと少しで次の街: 黄色
     $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}/${NEXT_PCT}%→つぎのまち`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
     if (pct >= NEXT_PCT && $("bNext").style.display === "none") { $("bNext").style.display = ""; $("bNext").textContent = "つぎの まちへ ▶ " + nextTh.name; popup("🎉 つぎの まちへ いけるよ！", "mile"); }
     drawMap();
@@ -2715,7 +2733,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const m = 6;
     vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
   }
-  G.vr = vr; G.coinFly = coinFly;
+  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti;
   const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
