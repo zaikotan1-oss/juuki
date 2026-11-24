@@ -515,8 +515,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     lineCells([cx - 0.5, 37, cz - 0.5], [cx - 0.5, 54, cz - 0.5], () => "brg");   // 相輪
     for (const y of [41, 44, 47, 50]) discCells(cx, cz, y, y + 1, 1.6, "brg");
   }
+  // 瓦屋根の紺は 0.3/0.33/0.42 だと写真の素材と掛かって真上から真っ黒な板に見えた（評価で「黒い板」と何度も言われた正体・G.kindAt で確かめた・11-24 改善ループ 50）→ 明るい青みの灰に
   const KIND_COL = { wall: [1, 0.98, 0.94], slab: [0.78, 0.78, 0.78], pillar: [0.9, 0.88, 0.85],   // 写真素材に掛ける色（壁・床・柱で少し変える）
-    wood: [0.78, 0.55, 0.34], beam: [0.5, 0.33, 0.2], wfloor: [0.62, 0.48, 0.36], roof: [0.3, 0.33, 0.42],      // 木造の家（茶色の板壁・こげ茶の柱・紺の瓦）
+    wood: [0.78, 0.55, 0.34], beam: [0.5, 0.33, 0.2], wfloor: [0.62, 0.48, 0.36], roof: [0.42, 0.47, 0.62],      // 木造の家（茶色の板壁・こげ茶の柱・紺の瓦）
     block: [0.86, 0.84, 0.76], tin: [0.62, 0.72, 0.8], steelc: [0.5, 0.55, 0.6], tinroof: [0.66, 0.36, 0.3],     // ブロック塀・トタンの倉庫（水色の壁・赤さびの屋根）
     prefab: [0.95, 0.92, 0.75],                                                                                    // プレハブ小屋（クリーム色）
     twr_r: [0.86, 0.22, 0.16], twr_w: [0.95, 0.95, 0.93], fire: [0.8, 0.13, 0.1], firew: [0.96, 0.95, 0.92],      // 鉄塔（赤白）・消防署（赤と白）
@@ -608,6 +609,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   // 壊れた塊だけ組み直す。鉄筋・窓枠・ガラスは全部の塊のをまとめて 1 回で描く
   // 試験用: 中身のある塊を全部作り直して、1 つあたりの時間を返す（塊作りを速くする時の物差し。下書きの配列を使い回しても中央 1.6→1.8ms で変わらず、時々の 30ms はどちらにも出た＝ごみ集め・PC の混み・11-24 改善ループ 38）
+  // 試験用: 画面の点に写っている格子の種類（写真の「黒い物」の正体探し・11-24 改善ループ 50）
+  G.kindAt = (sx, sy) => { const r = scene.pick(sx, sy); if (!r || !r.hit) return null; const q = r.pickedPoint, n = r.getNormal(true) || new B.Vector3(0, 1, 0); const f = v => Math.floor(v / CELL); const x = f(q.x - n.x * 0.05 - bld.origin.x), y = f(q.y - n.y * 0.05 - bld.origin.y), z = f(q.z - n.z * 0.05 - bld.origin.z), c = bld.cells.get(key(x, y, z)); return { mesh: r.pickedMesh.name, mat: r.pickedMesh.material && r.pickedMesh.material.name, kind: c && c.kind, burnt: c && c.burnt, y: +q.y.toFixed(1) }; };
   G.benchChunks = (rep = 3) => { const ts = []; for (let r = 0; r < rep; r++) for (const ch of chunks.values()) if (ch.cells.size > 200) { const t = performance.now(); buildChunk(ch); ts.push(performance.now() - t); } ts.sort((a, b) => a - b); return { n: ts.length, sum: +ts.reduce((a, b) => a + b, 0).toFixed(1), med: +ts[ts.length >> 1].toFixed(2), p90: +ts[Math.floor(ts.length * 0.9)].toFixed(2), max: +ts[ts.length - 1].toFixed(2) }; };
   function rebuildCellMesh(all) {
     if (rodDirty) PF("m.rods", rebuildRods);
@@ -1785,12 +1788,16 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     for (let i = 0; i < NBK; i++) for (let j = 0; j < NBK; j++) {
       const b = blockC(i, j); let [bx, by] = W2P(b.x - BLK / 2, b.z + BLK / 2);
       c.fillStyle = "#a9a7a0"; c.fillRect(bx, by, BLK * PPM, BLK * PPM);   // 歩道
+      // 歩道のタイルの目地（2m ごと）。灰色 1 枚だと写真 4 枚とも同じ地面に見えた（11-24 改善ループ 50）
+      c.fillStyle = "#86847d"; for (let t = 2; t < BLK; t += 2) { c.fillRect(bx + t * PPM, by, 1.6, BLK * PPM); c.fillRect(bx, by + t * PPM, BLK * PPM, 1.6); }
       c.fillStyle = "#8c8a84"; c.fillRect(bx, by, BLK * PPM, 0.3 * PPM); c.fillRect(bx, by + (BLK - 0.3) * PPM, BLK * PPM, 0.3 * PPM); c.fillRect(bx, by, 0.3 * PPM, BLK * PPM); c.fillRect(bx + (BLK - 0.3) * PPM, by, 0.3 * PPM, BLK * PPM);   // 縁石
     }
     for (const L of lots) {
       const [lx, ly] = W2P(L.cx - L.w / 2, L.cz + L.d / 2);
       c.fillStyle = L.ground; c.fillRect(lx, ly, L.w * PPM, L.d * PPM);
       speckle(lx, ly, L.w * PPM, L.d * PPM, L.w * L.d * 3, L.ground === "#5f7d40" ? ["#557238", "#6a8a48", "#4d6a32"] : ["#7d7b75", "#94928b", "#6f6d68"]);
+      // 空き地・駐車場などのコンクリは 4m ごとに薄い継ぎ目（芝生には引かない）
+      if (L.ground !== "#5f7d40" && L.ground !== TH.parkG) { c.fillStyle = "rgba(0,0,0,0.22)"; for (let t = 4; t < L.w; t += 4) c.fillRect(lx + t * PPM, ly, 2, L.d * PPM); for (let t = 4; t < L.d; t += 4) c.fillRect(lx, ly + t * PPM, L.w * PPM, 2); }
       if (sv.gone.includes(L.id)) rubbleMark(L.cx, L.cz, Math.min(L.w, L.d) * 0.45);
     }
     // ひきとりじょ・おろしば: 黄色と黒のしまの縁＋コンクリの床
