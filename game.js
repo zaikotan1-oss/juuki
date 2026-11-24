@@ -1405,12 +1405,17 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   function flash(a, warm) { const f = $("flash"); if (f.classList.contains("warm") !== !!warm) f.classList.toggle("warm", !!warm); f.style.setProperty("--fa", a); reCss(f); }
   // コンボの札: 続けて壊している間「N こわし」を出し、10・25・60 を越えるたびに音が上がる
   let comboTier = 0, maxCombo = 0, camKick = 0;
+  // 連続の段が上がった瞬間、ショベルの足元から橙の輪がふくらんで消える（「いま上がった！」の手応え・11-24 改善ループ 34）。輪は 1 枚を使い回す
+  const tierRingMat = (() => { const m = new B.StandardMaterial("tierRingM", scene); m.emissiveColor = new B.Color3(1, 0.55, 0.15); m.disableLighting = true; m.alpha = 0; return m; })();
+  const tierRing = B.MeshBuilder.CreateTorus("tierRing", { diameter: 2, thickness: 0.35, tessellation: 32 }, scene); tierRing.material = tierRingMat; tierRing.isPickable = false; tierRing.renderingGroupId = 1; tierRing.setEnabled(false);
+  let ringT = 0;
+  function updateRing(dt) { if (ringT <= 0) return; ringT -= dt; const k = 1 - Math.max(0, ringT) / 0.45; tierRing.position.set(ex.pos.x, 0.4, ex.pos.z); tierRing.scaling.set(1 + k * 9, 1, 1 + k * 9); tierRingMat.alpha = 0.8 * (1 - k); if (ringT <= 0) tierRing.setEnabled(false); }
   function showCombo() {
     const el = $("combo"); if (combo < 3) return;
     el.querySelector("b").textContent = combo; el.style.display = "";
     if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; reCss(el); }   // 毎コマ組み直すと重いので間引く
     const tier = combo >= 60 ? 3 : combo >= 25 ? 2 : combo >= 10 ? 1 : 0;
-    if (tier > comboTier) { comboTier = tier; $("rage").style.opacity = [0, 0.35, 0.6, 0.9][tier];   // 連続が大きいほど画面のふちが暖かい色に（「ノってきた」・11-24 改善ループ 33）
+    if (tier > comboTier) { comboTier = tier; ringT = 0.45; tierRing.setEnabled(true); $("rage").style.opacity = [0, 0.35, 0.6, 0.9][tier];   // 連続が大きいほど画面のふちが暖かい色に（「ノってきた」・11-24 改善ループ 33）
       if (tier >= 2) camKick = Math.max(camKick, tier === 3 ? 0.22 : 0.14); chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
   }
   const popRows = new Map();
@@ -2857,6 +2862,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     PF("mesh", rebuildCellMesh);
     if (sinks.length) PF("sinks", () => updateSinks(dt));
     if (flashing.length) updateFlashes(dt);
+    updateRing(dt);
     if (fading.length) updateFading(dt);
     settleDebris(dt); PF("ground", () => groundTick(dt));
     PF("fires", () => { updateFires(dt); updateGeysers(dt); });

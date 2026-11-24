@@ -58,11 +58,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 #combo.anA{animation:cbA .18s ease-out} #combo.anB{animation:cbB .18s ease-out} @keyframes cbA{0%{transform:translateX(-50%) scale(1.25)}100%{transform:translateX(-50%) scale(1)}} @keyframes cbB{0%{transform:translateX(-50%) scale(1.25)}100%{transform:translateX(-50%) scale(1)}}
 #money.anA{animation:mgA .25s ease-out} #money.anB{animation:mgB .25s ease-out} @keyframes mgA{0%{transform:scale(1.25)}100%{transform:scale(1)}} @keyframes mgB{0%{transform:scale(1.25)}100%{transform:scale(1)}}
 .coinfly,.coinfly.anA{animation:coinA .5s cubic-bezier(.5,-0.3,.7,1) forwards} .coinfly.anB{animation:coinB .5s cubic-bezier(.5,-0.3,.7,1) forwards} @keyframes coinA{0%{left:var(--x0);top:var(--y0);transform:scale(1);opacity:1}80%{opacity:1}100%{left:calc(10px + env(safe-area-inset-left));top:calc(24px + env(safe-area-inset-top));transform:scale(.5);opacity:0}} @keyframes coinB{0%{left:var(--x0);top:var(--y0);transform:scale(1);opacity:1}80%{opacity:1}100%{left:calc(10px + env(safe-area-inset-left));top:calc(24px + env(safe-area-inset-top));transform:scale(.5);opacity:0}}
-#rage{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .6s;background:radial-gradient(ellipse at 50% 50%,#ff8a0000 55%,#ff8a0030 75%,#ff5a00a0 100%)}
+#rage{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .6s;background:radial-gradient(ellipse at 50% 50%,#ff8a0000 55%,#ff8a0030 75%,#ff6a0080 100%)}
 #flash.warm{background:radial-gradient(circle at 50% 45%,#fff3c8 0,#ffc26baa 40%,#ff8a0000 75%)}
 #combo{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%);pointer-events:none;color:#fff;font-weight:900;font-size:13px;background:var(--panel);border:1.5px solid var(--edge);border-radius:999px;padding:3px 12px;text-shadow:0 1px 1px #000}
 #combo b{font-size:20px;color:#ffd23f;margin-right:3px}
-#combo[data-tier="2"] b{color:#ff9f43} #combo[data-tier="3"]{background:linear-gradient(#ff8a3d,#c2410c)} #combo[data-tier="3"] b{color:#fff}
+#combo[data-tier="1"] b{font-size:22px} #combo[data-tier="2"] b{color:#ff9f43;font-size:24px} #combo[data-tier="3"] b{font-size:27px} #combo[data-tier="3"]{background:linear-gradient(#ff8a3d,#c2410c)} #combo[data-tier="3"] b{color:#fff}
 #combo.bump{animation:cbump .18s ease-out}
 @keyframes cbump{0%{transform:translateX(-50%) scale(1.25)}100%{transform:translateX(-50%) scale(1)}}
 /* はじめの画面 */
