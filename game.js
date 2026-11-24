@@ -715,7 +715,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   const winParse = new Map();
   function winOf(w) { let wp = winParse.get(w); if (!wp) { const [x, y, z, ax, sg] = w.split(","); wp = [+x, +y, +z, ax, sg]; winParse.set(w, wp); } return wp; }
   function sinkSet(list) {
-    const set = new Set(list), pos = [], nor = [], uv = [], col = [], idx = [], coarse = list.length > (G.coarseN ?? 1500);
+    const set = new Set(list), pos = [], nor = [], uv = [], col = [], idx = [], coarse = list.length > (G.coarseN ?? 700);
     let tq = performance.now(); const lap = k => { if (G.prof) { const n = performance.now(), q = G.prof[k] || (G.prof[k] = { sum: 0, max: 0 }); q.sum += n - tq; q.max = Math.max(q.max, n - tq); tq = n; } };
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, y0 = 1e9, y1 = -1e9; const kinds = {};
     for (const c of list) {
@@ -725,6 +725,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (c.hid || coarse) continue;
       for (const f of FACE) { const n = bld.cells.get(key(c.x + f.n[0], c.y + f.n[1], c.z + f.n[2])); if (n && set.has(n) && !n.hid) continue; pushFace(c, f, k, vary, TEXM, f.n[1] < 0 ? 0.7 : 1, pos, nor, uv, col, idx); }
     }
+    // 粗く組むのは 700 格子から（1500 からだと 700〜1500 の建物で面組みが 13〜17ms かかった・11-24 改善ループ 55）
     // 大きい建物は 2×2×2 の格子を 1m の箱にまとめて組む（面の数が 4〜8 分の 1。沈む時は粉の雲に包まれるので粗さは目立たない）
     // 格子ごとに組むと 1 棟 9000 格子で 21ms・混んだ PC で 130ms 止まった（11-17 改善ループ 2）
     if (coarse) {
