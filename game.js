@@ -1956,8 +1956,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   function signTex(name, t1, t2) {
     const dt2 = new B.DynamicTexture(name + "T", { width: 512, height: 160 }, scene, true), c = dt2.getContext();
     c.fillStyle = "#1a5f2a"; c.fillRect(0, 0, 512, 160); c.strokeStyle = "#fff"; c.lineWidth = 8; c.strokeRect(6, 6, 500, 148);
-    c.fillStyle = "#fff"; c.font = "bold 58px sans-serif"; c.textAlign = "center"; c.fillText(t1, 256, 78); c.font = "bold 34px sans-serif"; c.fillText(t2, 256, 130); dt2.update();
-    const sm = new B.StandardMaterial(name + "M", scene); sm.diffuseTexture = dt2; sm.emissiveColor = new B.Color3(0.45, 0.45, 0.45); sm.backFaceCulling = false; return sm;
+    c.textAlign = "center"; c.lineJoin = "round"; c.strokeStyle = "#062b10"; c.fillStyle = "#fff"; c.lineWidth = 9; c.font = "bold 58px sans-serif"; c.strokeText(t1, 256, 78); c.fillText(t1, 256, 78); c.lineWidth = 6; c.font = "bold 34px sans-serif"; c.strokeText(t2, 256, 130); c.fillText(t2, 256, 130); dt2.update();
+    const sm = new B.StandardMaterial(name + "M", scene); sm.emissiveTexture = dt2; sm.disableLighting = true; sm.backFaceCulling = false; return sm;   // 光を当てない（日に当たって白飛びし「○ろしば」に見えた・11-24 改善ループ 24）
   }
   const CONT_M = [[0.75, 0.2, 0.15], [0.15, 0.42, 0.7], [0.2, 0.55, 0.3], [0.85, 0.55, 0.12]].map((c, i) => mat("contM" + i, c[0], c[1], c[2], 0.6, 0.3)), palletM = mat("palletM", 0.62, 0.48, 0.3, 0.9);
   const signM = signTex("sign", "おろしば", "がれき かいます ¥"), signM2 = signTex("sign2", "おろしば", "ここでも うれます ¥");
@@ -1967,7 +1967,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     for (const [w, dd, x, z] of [[P + 0.6, 0.5, 0, H], [P + 0.6, 0.5, 0, -H], [0.5, P, H, 0], [0.5, P, -H, 0]]) { const wl = B.MeshBuilder.CreateBox("pitWall", { width: w, height: 1.2, depth: dd }, scene); wl.position.set(d.x + x, 0.6, d.z + oz + z); wl.material = pitWallM; shadow.addShadowCaster(wl); wl.receiveShadows = true; }
     d.pile = B.MeshBuilder.CreateSphere("pile", { diameter: 1, segments: 10 }, scene);
     d.pile.material = pileM; d.pile.position.set(d.x, -0.1, d.z + oz); d.pile.receiveShadows = true; shadow.addShadowCaster(d.pile);
-    const sw = d.main ? 10 : 6.5, sy = d.main ? 5.2 : 4, sz = d.z + (d.main ? 16 : d.h - 0.6);   // 北の端（入る所をふさがない）
+    const sw = d.main ? 10 : 6.5, sy = d.main ? 7 : 5.4, sz = d.z + (d.main ? 16 : d.h - 0.6);   // 北の端（入る所をふさがない）。高さは走る車に隠れない所（5.2 だと車の後ろで「るしば」に見えた・11-24 改善ループ 23）
     const sg = B.MeshBuilder.CreatePlane("sign", { width: sw, height: sw * 0.31 }, scene); sg.material = d.main ? signM : signM2; sg.position.set(d.x, sy, sz); sg.rotation.x = 0.55;
     for (const sx of [-sw * 0.4, sw * 0.4]) { const pl = B.MeshBuilder.CreateCylinder("signPole", { diameter: 0.25, height: sy }, scene); pl.position.set(d.x + sx, sy / 2, sz + 0.2); pl.material = SRC.pole.material; shadow.addShadowCaster(pl); }
     const rr = d.h - 0.7, ring = B.MeshBuilder.CreateTube("yardRing", { path: [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, b]) => new B.Vector3(d.x + a * rr, 0.25, d.z + b * rr)), radius: 0.18, tessellation: 6 }, scene);
@@ -2448,8 +2448,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (l.s > HALF + 10) l.s = -HALF - 10; if (l.s < -HALF - 10) l.s = HALF + 10;
     placeLane(c);
   }
+  let zSpawnT = 0;
   function updateZombies(dt) {
-    while (zombies.filter(z => z.state === "walk").length < ZMAX) if (!spawnZombieNear(ex.pos)) break;
+    // ゾンビは 0.15 秒に 1 体ずつ出す（始まりに 20 体を 1 コマで作って 40ms を超えた・11-24 改善ループ 23）
+    if ((zSpawnT -= dt) <= 0) { zSpawnT = 0.15; let nw = 0; for (const z of zombies) if (z.state === "walk") nw++; if (nw < ZMAX) spawnZombieNear(ex.pos); }
     for (let i = zombies.length - 1; i >= 0; i--) {
       const z = zombies[i];
       if (z.state === "walk") {
