@@ -960,8 +960,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       const mn = new B.Vector3(1e9, 1e9, 1e9), mx = new B.Vector3(-1e9, -1e9, -1e9);
       for (const c of list) { mn.minimizeInPlace(c.p); mx.maximizeInPlace(c.p); }
       const size = mx.subtract(mn).addInPlaceFromFloats(CELL, CELL, CELL).scaleInPlace(0.94);
-      // 暗い材料（瓦屋根・こげ茶の柱など）の崩れた板は、真上から見ると地面の黒い穴に見えた → 土の色へ 35% 寄せる（11-24 改善ループ 40）
-      const k0 = KIND_COL[list[0].kind], k = k0[0] + k0[1] + k0[2] < 1.4 ? [k0[0] * 0.65 + 0.24, k0[1] * 0.65 + 0.2, k0[2] * 0.65 + 0.16] : k0;
+      // 暗い材料（瓦屋根・こげ茶の柱など）の崩れた板は、真上から見ると地面の黒い穴に見えた → 土の色へ半分寄せる（11-24 改善ループ 40・41 で 35%→50%、鉄骨の灰やれんがも入れた）
+      const k0 = KIND_COL[list[0].kind], k = k0[0] + k0[1] + k0[2] < 1.8 ? [k0[0] * 0.5 + 0.3, k0[1] * 0.5 + 0.25, k0[2] * 0.5 + 0.2] : k0;
       for (const c of list) special(c);
       const ctr = mn.add(mx).scaleInPlace(0.5); spawnDebris(ctr, size, k, null, list.length * (KIND_VAL[list[0].kind] || 1)); if (groups.size <= 8 || Math.random() < 0.4) dust(ctr, 25);
       for (const c of list) removeCell(c);
@@ -1430,8 +1430,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     // 大きい字が同時に出たら、下へ 1 段ずつずらす（「+¥151」と別の字が重なって読めなかった・11-17 改善ループ 10）
     // 段は「空いている一番上の段」を使う。大きい字（big・huge）は 2 段ぶん取る。出ている間（1.3 秒）は段を空けない（強化を続けて買うと +¥ と重なった・11-17 改善ループ 11）
     // 目標の知らせ（mile）は字の段を使わず、上の帯のすぐ下の決まった所に出す（ショベルの前の道を隠していた・11-24 改善ループ 37）
-    // 高さは縦 812 で 178px・横 375 で 60px（縦持ちは右上の地図より下・横持ちは地図が横にあるので上の方。字は上へ流れて消えるので少し余らせる・11-24 改善ループ 38）
-    else if (/mile/.test(cls || "")) { if (performance.now() - (popup.mileT || 0) < 1300) el.style.marginTop = "34px"; popup.mileT = performance.now(); el.style.top = "calc(clamp(56px, 27vh - 41px, 200px) - 30vh)"; }
+    // 高さは縦 812 で 214px・横 375 で 70px（縦は連続の札が帯の下に来るのでその下）（縦持ちは右上の地図より下・横持ちは地図が横にあるので上の方。字は上へ流れて消えるので少し余らせる・11-24 改善ループ 38）
+    else if (/mile/.test(cls || "")) { if (performance.now() - (popup.mileT || 0) < 1300) el.style.marginTop = "34px"; popup.mileT = performance.now(); el.style.top = "calc(clamp(56px, 33vh - 54px, 230px) - 30vh)"; }
     else {
       const tall = /big|huge/.test(cls || ""), now = performance.now(), used = new Set();
       for (const [r, until] of popRows) if (until > now) used.add(r); else popRows.delete(r);

@@ -56,12 +56,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 #combo.ending b{color:#ff4d4d!important;animation:cend .2s steps(2) infinite} @keyframes cend{50%{opacity:.35}}
 #flash{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at 50% 45%,#fffbe8 0,#fff6d0aa 40%,#fff0 75%);opacity:0;z-index:5}
 #flash.anA{animation:flA .25s ease-out} #flash.anB{animation:flB .25s ease-out} @keyframes flA{from{opacity:var(--fa,.5)}to{opacity:0}} @keyframes flB{from{opacity:var(--fa,.5)}to{opacity:0}}
-#combo.anA{animation:cbA .18s ease-out} #combo.anB{animation:cbB .18s ease-out} @keyframes cbA{0%{transform:translateX(-50%) scale(1.25)}100%{transform:translateX(-50%) scale(1)}} @keyframes cbB{0%{transform:translateX(-50%) scale(1.25)}100%{transform:translateX(-50%) scale(1)}}
+#combo.anA{animation:cbA .18s ease-out} #combo.anB{animation:cbB .18s ease-out} @keyframes cbA{0%{transform:translateX(var(--cx,-50%)) scale(1.25)}100%{transform:translateX(var(--cx,-50%)) scale(1)}} @keyframes cbB{0%{transform:translateX(var(--cx,-50%)) scale(1.25)}100%{transform:translateX(var(--cx,-50%)) scale(1)}}
 #money.anA{animation:mgA .25s ease-out} #money.anB{animation:mgB .25s ease-out} @keyframes mgA{0%{transform:scale(1.25)}100%{transform:scale(1)}} @keyframes mgB{0%{transform:scale(1.25)}100%{transform:scale(1)}}
 .coinfly,.coinfly.anA{animation:coinA .5s cubic-bezier(.5,-0.3,.7,1) forwards} .coinfly.anB{animation:coinB .5s cubic-bezier(.5,-0.3,.7,1) forwards} @keyframes coinA{0%{left:var(--x0);top:var(--y0);transform:scale(1);opacity:1}80%{opacity:1}100%{left:calc(10px + env(safe-area-inset-left));top:calc(24px + env(safe-area-inset-top));transform:scale(.5);opacity:0}} @keyframes coinB{0%{left:var(--x0);top:var(--y0);transform:scale(1);opacity:1}80%{opacity:1}100%{left:calc(10px + env(safe-area-inset-left));top:calc(24px + env(safe-area-inset-top));transform:scale(.5);opacity:0}}
 #rage{position:absolute;inset:0;pointer-events:none;z-index:4;opacity:0;transition:opacity .6s;background:radial-gradient(ellipse at 50% 50%,#ff8a0000 55%,#ff8a0030 75%,#ff6a0080 100%)}
 #flash.warm{background:radial-gradient(circle at 50% 45%,#fff3c8 0,#ffc26baa 40%,#ff8a0000 75%)}
-#combo{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%);pointer-events:none;color:#fff;font-weight:900;font-size:13px;background:var(--panel);border:1.5px solid var(--edge);border-radius:999px;padding:3px 12px;text-shadow:0 1px 1px #000}
+#combo{position:fixed;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(var(--cx,-50%));pointer-events:none;color:#fff;font-weight:900;font-size:13px;background:var(--panel);border:1.5px solid var(--edge);border-radius:999px;padding:3px 12px;text-shadow:0 1px 1px #000}
+/* 縦持ち（幅 600px まで）は上の真ん中だと荷台の字にかぶった → 左上の帯の続きに並べる（11-24 改善ループ 41） */
+@media (max-width:600px){#combo{position:static;display:inline-block;margin-top:4px;--cx:0;transform-origin:left center}}
 #combo b{font-size:20px;color:#ffd23f;margin-right:3px}
 #combo[data-tier="1"] b{font-size:22px} #combo[data-tier="2"] b{color:#ff9f43;font-size:24px} #combo[data-tier="3"] b{font-size:27px} #combo[data-tier="3"]{background:linear-gradient(#ff8a3d,#c2410c)} #combo[data-tier="3"] b{color:#fff}
 #combo.bump{animation:cbump .18s ease-out}
@@ -77,14 +79,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 </head>
 <body>
 <canvas id="cv"></canvas>
-<div id="hud"><div id="money">¥0</div><div id="bedBox"><div id="bedT">にだい 0</div><div class="gbar"><div id="bedBar"></div></div></div><div id="city"></div><div id="cityG" class="gbar"><div id="cityBar"></div><i id="cityMark"></i></div></div>
+<div id="hud"><div id="money">¥0</div><div id="bedBox"><div id="bedT">にだい 0</div><div class="gbar"><div id="bedBar"></div></div></div><div id="city"></div><div id="cityG" class="gbar"><div id="cityBar"></div><i id="cityMark"></i></div><div id="combo" style="display:none"><b>0</b>れんぞく</div></div>
 <canvas id="map" width="240" height="240"></canvas>
 <button id="bZoom">🔍</button>
 <button id="bNext" style="display:none">つぎの まちへ ▶</button>
 <div id="joyHint">ここを<br>さわって<br>うごかす</div>
 <div id="joy" style="display:none"><div id="joyK"></div></div>
 <div id="shop" style="display:none"><h3>🏗 きょうか<button id="shopClose">✕</button></h3><div id="shopList"></div></div>
-<div id="combo" style="display:none"><b>0</b>れんぞく</div>
 <div id="pops"></div>
 <div id="rage"></div><div id="flash"></div>
 <div id="start"><div><small id="stageT"></small><h1>まち こわし</h1><p>ショベルを うごかして まちを こわそう<br>がれきは うしろの にだいに すいこむ<br>いっぱいになったら 🟨ひきとりじょ で お金に！</p><b id="startB">じゅんびちゅう…</b></div></div>
