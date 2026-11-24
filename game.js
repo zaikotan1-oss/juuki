@@ -1453,7 +1453,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   function updateCombo(dt) {
     if (comboT <= 0) return;
-    comboT -= dt; if (comboT > 0) return;
+    comboT -= dt;
+    { const end = comboT > 0 && comboT < 0.4 && combo >= 10; if (end !== !!updateCombo.end) { updateCombo.end = end; $("combo").classList.toggle("ending", end); } }   // 切れそうな最後の 0.4 秒は数字が赤く点滅（続けて壊したくなる・11-24 改善ループ 35）
+    if (comboT > 0) return;
     $("combo").style.display = "none"; comboTier = 0; $("combo").dataset.tier = 0; $("rage").style.opacity = 0;
     if (combo >= 6) popup((combo >= 60 ? "ドドーン!! " : combo >= 25 ? "ガラガラ！ " : "ゴロッ ") + "+" + combo, combo >= 60 ? "big" : combo >= 25 ? "mid" : "");
     if (combo > maxCombo && combo >= 25 && maxCombo >= 10) { popup("さいこう れんぞく！", "mile"); playS("popup", 0.5); }
