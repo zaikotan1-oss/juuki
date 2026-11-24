@@ -960,7 +960,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       const mn = new B.Vector3(1e9, 1e9, 1e9), mx = new B.Vector3(-1e9, -1e9, -1e9);
       for (const c of list) { mn.minimizeInPlace(c.p); mx.maximizeInPlace(c.p); }
       const size = mx.subtract(mn).addInPlaceFromFloats(CELL, CELL, CELL).scaleInPlace(0.94);
-      const k = KIND_COL[list[0].kind];
+      // 暗い材料（瓦屋根・こげ茶の柱など）の崩れた板は、真上から見ると地面の黒い穴に見えた → 土の色へ 35% 寄せる（11-24 改善ループ 40）
+      const k0 = KIND_COL[list[0].kind], k = k0[0] + k0[1] + k0[2] < 1.4 ? [k0[0] * 0.65 + 0.24, k0[1] * 0.65 + 0.2, k0[2] * 0.65 + 0.16] : k0;
       for (const c of list) special(c);
       const ctr = mn.add(mx).scaleInPlace(0.5); spawnDebris(ctr, size, k, null, list.length * (KIND_VAL[list[0].kind] || 1)); if (groups.size <= 8 || Math.random() < 0.4) dust(ctr, 25);
       for (const c of list) removeCell(c);
@@ -1355,7 +1356,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     ps.minEmitBox = new B.Vector3(-0.5, -0.4, -0.5); ps.maxEmitBox = new B.Vector3(0.5, 0.4, 0.5);
     ps.color1 = new B.Color4(0.6, 0.55, 0.48, 0.3); ps.color2 = new B.Color4(0.5, 0.46, 0.4, 0.22); ps.colorDead = new B.Color4(0.56, 0.52, 0.46, 0);   // 濃いと運転席から当たりが見えない（10-12 評価 r1）。colorDead を行の後ろのコメントに入れてしまい、既定の黒へ変わって黒い煙になっていた
     ps.addSizeGradient(0, 0.6, 1.1); ps.addSizeGradient(1, 1.8, 3.0);
-    ps.minLifeTime = 0.7; ps.maxLifeTime = 1.5; ps.emitRate = 0; ps.manualEmitCount = 0;
+    // 粉は少し長く残す（写真に壊している途中が写りにくかった・11-24 改善ループ 40）
+    ps.minLifeTime = 0.9; ps.maxLifeTime = 2.0; ps.emitRate = 0; ps.manualEmitCount = 0;
     ps.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ps.gravity = new B.Vector3(0, 0.2, 0);
     ps.direction1 = new B.Vector3(-1, 0.2, -1); ps.direction2 = new B.Vector3(1, 1.0, 1); ps.minEmitPower = 0.3; ps.maxEmitPower = 1.4;
     ps.minAngularSpeed = -0.5; ps.maxAngularSpeed = 0.5; ps.minInitialRotation = 0; ps.maxInitialRotation = 6.28;
