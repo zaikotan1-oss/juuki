@@ -917,7 +917,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     m.scaling.set(s.x * jx, s.y * jy, s.z * jz);
     m.position.copyFrom(p);
     m.rotationQuaternion = B.Quaternion.FromEulerAngles((Math.random() - 0.5) * 0.3, Math.random() * 3, (Math.random() - 0.5) * 0.3);
-    m.instancedBuffers.color = new B.Color4(col[0] * jc, col[1] * jc, col[2] * (jc + (Math.random() - 0.5) * 0.06), 1);
+    // がれきは元の色を 3 割だけ灰色に寄せる（観覧車のゴンドラの桃色・水色が道の上で鮮やかすぎて浮いた・11-24 改善ループ 54）
+    const gy = (col[0] + col[1] + col[2]) / 3, ds = v => v * 0.7 + gy * 0.3;
+    m.instancedBuffers.color = new B.Color4(ds(col[0]) * jc, ds(col[1]) * jc, ds(col[2]) * (jc + (Math.random() - 0.5) * 0.06), 1);
     const d = { m, ag: null, held: false, val: val || Math.max(1, Math.round(s.x * s.y * s.z / 0.11)), t: 0 };   // val: 荷台に入る量＝ひきとりの値段（格子の数くらい）
     physOn(d, vel);
     debris.push(d);
@@ -1454,7 +1456,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   }
   function broke(n, p, big) {      // 格子が n 個こわれた（p はその辺り）
     combo += n; comboT = combo >= 10 ? 1.3 : 0.9; comboP = p; score += n;
-    if (big || playT - lastDustT > 0.08) { lastDustT = playT; dust(p, (big ? 40 : 18) + n * (big ? 8 : 6)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
+    // 小さく欠けた時の粉を 18→26 に（叩き始めの写真で壊している途中に見えなかった・11-24 改善ループ 54）
+    if (big || playT - lastDustT > 0.08) { lastDustT = playT; dust(p, (big ? 40 : 26) + n * (big ? 8 : 6)); }   // 押し当てている間に毎コマ出すと画面が粉塵で埋まった
     crash(Math.min(1, (big ? 0.35 : 0.05) + n * (big ? 0.06 : 0.03)));
     shake(Math.min(0.6, (big ? 0.28 : 0.08) + n * (big ? 0.03 : 0.012)));
     if (big && n >= 6 && !G.fixedDt) hitStop = 0.1;   // 大きく崩れた瞬間だけ一瞬ため（ヒットストップ・10-24 改善ループ 軸5）
