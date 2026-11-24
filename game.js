@@ -1413,7 +1413,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       r = Math.min(r, 5); const life = tall ? 1500 : 1300; popRows.set(r, now + life); if (tall) popRows.set(r + 1, now + life);   // 字が出ている間（1.3〜1.5 秒）は段を取っておく（1 秒だと次の字が上に重なった・11-24 改善ループ 18）
       el.style.top = r * 44 + (tall ? 8 : 0) + "px";
     }
-    $("pops").appendChild(el); setTimeout(() => el.remove(), 1300);
+    $("pops").appendChild(el); setTimeout(() => el.remove(), 1300); return el;
   }
   function broke(n, p, big) {      // 格子が n 個こわれた（p はその辺り）
     combo += n; comboT = combo >= 10 ? 1.3 : 0.9; comboP = p; score += n;
@@ -1974,7 +1974,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     d.pile = B.MeshBuilder.CreateSphere("pile", { diameter: 1, segments: 10 }, scene);
     d.pile.material = pileM; d.pile.position.set(d.x, -0.1, d.z + oz); d.pile.receiveShadows = true; shadow.addShadowCaster(d.pile);
     const sw = d.main ? 10 : 6.5, sy = d.main ? 7 : 5.4, sz = d.z + (d.main ? 16 : d.h - 0.6);   // 北の端（入る所をふさがない）。高さは走る車に隠れない所（5.2 だと車の後ろで「るしば」に見えた・11-24 改善ループ 23）
-    const sg = B.MeshBuilder.CreatePlane("sign", { width: sw, height: sw * 0.31 }, scene); sg.material = d.main ? signM : signM2; sg.position.set(d.x, sy, sz); sg.rotation.x = 0.55; d.sign = sg;
+    const sg = B.MeshBuilder.CreatePlane("sign", { width: sw, height: sw * 0.31 }, scene); sg.material = d.main ? signM : signM2; sg.position.set(d.x, sy, sz); sg.rotation.x = 0.55; d.sign = sg; d.sy = sy;
     for (const sx of [-sw * 0.4, sw * 0.4]) { const pl = B.MeshBuilder.CreateCylinder("signPole", { diameter: 0.25, height: sy }, scene); pl.position.set(d.x + sx, sy / 2, sz + 0.2); pl.material = SRC.pole.material; shadow.addShadowCaster(pl); }
     const rr = d.h - 0.7, ring = B.MeshBuilder.CreateTube("yardRing", { path: [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, b]) => new B.Vector3(d.x + a * rr, 0.25, d.z + b * rr)), radius: 0.18, tessellation: 6 }, scene);
     ring.material = ringM; ring.isPickable = false;
@@ -2577,7 +2577,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); }
     // 荷台が 9 割を超えたら、荷台が左右に小さくゆれる（「もう持てないよ」が字を読まずに分かる・11-24 改善ループ 26）
     // いっぱいの時は、いちばん近いおろしばの看板もぴょこぴょこ跳ねる（遠くからでも行き先が目に入る・11-24 改善ループ 28）
-    { const full = bed.load >= upV("cap") * 0.9, nd = full ? nearDrop() : null; for (const d of drops) if (d.sign) { const k = d === nd ? 1 + Math.abs(Math.sin(playT * 5)) * 0.18 : 1; if (d.sign.scaling.x !== k) d.sign.scaling.setAll(k); } }
+    { const full = bed.load >= upV("cap") * 0.9, nd = full ? nearDrop() : null; for (const d of drops) if (d.sign) { const b = d === nd ? Math.abs(Math.sin(playT * 5)) : 0; d.sign.position.y = d.sy + b * 1.1; d.sign.scaling.setAll(1 + b * 0.12); } }
     if (!dump) { bedTilt.rotation.x += (0 - bedTilt.rotation.x) * Math.min(1, dt * 5); bedTilt.rotation.z = bed.load >= upV("cap") * 0.9 ? Math.sin(playT * 16) * 0.045 : 0; return; }
     bedTilt.rotation.z = 0;
     dump.t += dt; const D = 1.6;
@@ -2621,7 +2621,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const u = UPS[k], lv = sv.up[k] || 0; if (lv >= u.vals.length - 1) return;
     const price = upPrice(k); if (sv.money < price) { playS("click", 0.3, 0.6); return; }
     const t0 = lookTier(); sv.money -= price; sv.up[k] = lv + 1; save(); showBed(); applyLook();
-    playS("levelup", 0.5); playS("coin", 0.4); flash(0.3, true); popup(u.icon + " " + u.name + " Lv" + (lv + 2) + "！", "mile");
+    playS("levelup", 0.5); playS("coin", 0.4); flash(0.3, true); { const now = performance.now(), part = u.icon + "Lv" + (lv + 2);   // 続けて買った時は 1 行にまとめる（4 つ買うと 4 行で画面の 3 割を覆った・11-24 改善ループ 29）
+      if (buy.el && buy.el.isConnected && now - buy.t < 1100) { buy.parts.push(part); buy.el.textContent = buy.parts.join(" ") + "！"; } else { buy.parts = [part]; buy.el = popup(u.icon + " " + u.name + " Lv" + (lv + 2) + "！", "mile"); }
+      buy.t = now; }
     upPopT = 0.35; sparks(ex.pos.add(new B.Vector3(0, 2, 0)), 18);   // 買った瞬間にショベルがぽんと大きくなる（強くなったのが見て分かる・11-24 改善ループ 18）
     if (lookTier() > t0) { setTimeout(() => popup(["", "🚨 かいてんとう つけた！", "🔩 てっぱん と とげ！", "🛡 うんてんせき を まもる こうし！", "🔥 まっか の さいきょう ショベル！"][lookTier()], "mile"), 900); playS("boom", 0.4, 1.2, 0.5); }
     $("money").textContent = fmtY(sv.money); renderShop();
