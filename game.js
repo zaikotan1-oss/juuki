@@ -2509,7 +2509,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
         if (d < 2.2 && speed > 1.5) zombieHit(z, new B.Vector3(-dx, 0, -dz).normalize(), speed / 4);   // ひく
       } else if (z.state === "fly") {
         z.t += dt; z.vel.y -= 14 * dt; z.pos.addInPlace(z.vel.scale(dt)); z.root.rotation.addInPlace(z.av.scale(dt));
-        if (z.pos.y < 0 || z.t > 1.1) { poof(z.pos.add(new B.Vector3(0, 0.8, 0))); z.root.dispose(); zombies.splice(i, 1); kills++; sv.money += 5; saveDirty = true; popup("ゾンビ +¥5", "tiny gold"); }
+        // ゾンビは ¥5 だとお金の足しにならず狙う理由が無かった → ¥25（強化 1 段目の 4 分の 1・11-24 改善ループ 47）
+        if (z.pos.y < 0 || z.t > 1.1) { poof(z.pos.add(new B.Vector3(0, 0.8, 0))); z.root.dispose(); zombies.splice(i, 1); kills++; sv.money += 25; saveDirty = true; popup("🧟 +¥25", "tiny gold"); }
       }
     }
   }
@@ -2628,7 +2629,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     if (!here && inYardPrev) PF("y.close", () => setShop(false));
     inYardPrev = here;
     ringM.alpha = 0.25 + 0.2 * Math.sin(playT * 4) + (bed.load >= upV("cap") * 0.6 ? 0.25 : 0);
-    if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); if (bonus.d === at) { dump.money *= 2; popup("🌟 2ばい！", "mile"); } }
+    // 売値は街が進むほど 1 割ずつ上がる（2 つ目の街で 1.1 倍・往復は同じでも増えた実感が出るように・11-24 改善ループ 47）
+    if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: Math.round(bed.money * (1 + Math.min(STAGE, 10) * 0.1)), load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); if (bonus.d === at) { dump.money *= 2; popup("🌟 2ばい！", "mile"); } }
     // 荷台が 9 割を超えたら、荷台が左右に小さくゆれる（「もう持てないよ」が字を読まずに分かる・11-24 改善ループ 26）
     // いっぱいの時は、いちばん近いおろしばの看板もぴょこぴょこ跳ねる（遠くからでも行き先が目に入る・11-24 改善ループ 28）
     { const full = bed.load >= upV("cap") * 0.9, nd = full ? nearDrop() : null; for (const d of drops) if (d.sign) { const b = d === nd ? Math.abs(Math.sin(playT * 5)) : 0; d.sign.position.y = d.sy + b * 1.1; d.sign.scaling.setAll(1 + b * 0.12); } }
