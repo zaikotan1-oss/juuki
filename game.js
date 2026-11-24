@@ -2627,6 +2627,18 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   $("shopClose").onclick = () => setShop(false);
 
   // ---- こわしきった土地: 1 割より減ったら「こわしきった！」＋ほうび ----
+  // こわしきった区画に赤い旗を立てる（どこが終わったか遠くからも分かる・11-24 改善ループ 21）。棒と旗を 1 つずつ作り、区画ごとに写しを置く
+  const flagSrc = (() => {
+    const mk = (n, c) => { const m = new B.StandardMaterial(n, scene); m.emissiveColor = c; m.disableLighting = true; return m; };
+    const pole = B.MeshBuilder.CreateCylinder("flagPole", { height: 5, diameter: 0.22, tessellation: 6 }, scene); pole.material = mk("flagPoleM", new B.Color3(0.85, 0.85, 0.85));
+    const cloth = new B.Mesh("flagCloth", scene), vd = new B.VertexData(); vd.positions = [0, 2.4, 0, 0, 0.6, 0, 3, 1.5, 0]; vd.indices = [0, 1, 2]; vd.normals = [0, 0, 1, 0, 0, 1, 0, 0, 1]; vd.applyToMesh(cloth);
+    cloth.material = mk("flagClothM", new B.Color3(1, 0.2, 0.2)); cloth.material.backFaceCulling = false;
+    for (const m of [pole, cloth]) { m.isVisible = false; m.isPickable = false; m.renderingGroupId = 1; }   // 地面の重ね貼りより後に描く（組 0 だと地面に塗られて見えなかった）
+    return [pole, cloth];
+  })();
+  // 真上寄りのカメラから見えるよう、布はカメラの方を向けて手前へ 0.5 傾ける（縦のままだと細い線にしか見えなかった）
+  function putFlag(L) { for (const s of flagSrc) { const f = s.createInstance("flag"); f.position.set(L.cx, 2.5, L.cz); f.rotation.x = 0.6; f.isPickable = false; } }
+  for (const L of lots) if (L.gone) putFlag(L);
   let goneT = 0;
   function checkGone(dt) {
     if ((goneT -= dt) > 0) return; goneT = 0.8;
@@ -2637,7 +2649,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (n < L.cells0 * 0.1) {
         L.gone = true; sv.gone.push(L.id); saveDirty = true;
         const bonus = Math.round(L.cells0 * 0.15); sv.money += bonus;
-        confetti(L.cx, 8, L.cz);
+        confetti((L.cx + ex.pos.x) / 2, 8, (L.cz + ex.pos.z) / 2); putFlag(L);   // 紙吹雪は区画の中心とショベルの中ほどから（大きい区画だと中心が画面の外になって見えなかった）
         popup((L.lm ? "🏆 " + LM_NAME[L.kind] : "🏚 たてもの") + " こわしきった！ +" + fmtY(bonus), L.lm ? "mile" : "mid"); playS("levelup", L.lm ? 0.5 : 0.3); chime([0, 4, 7, 12]);
         // 残りかすは がれきに。全部を 1 コマでがれきにすると 17ms 引っかかったので、がれきは 24 個まで・残りはまとめて消す（11-17 改善ループ 6）
         const rest = []; let nd = 0;
@@ -2707,7 +2719,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     let part = 0; for (const L of lots) part += L.gone ? 1 : L.made && L.cells0 && L.left !== undefined ? Math.min(1, (1 - L.left / L.cells0) / 0.9) : 0;
     const barK = pct >= NEXT_PCT ? 1 : Math.min(0.97, Math.max(pct / NEXT_PCT, part / lots.length * 100 / NEXT_PCT));
     $("cityBar").style.width = (barK * 100).toFixed(1) + "%"; $("cityBar").classList.toggle("near", pct >= NEXT_PCT * 0.75);   // あと少しで次の街: 黄色
-    $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}/${NEXT_PCT}%→つぎのまち`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
+    $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}%　あと${NEXT_PCT - pct}%`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
     if (pct >= NEXT_PCT && $("bNext").style.display === "none") { $("bNext").style.display = ""; $("bNext").textContent = "つぎの まちへ ▶ " + nextTh.name; popup("🎉 つぎの まちへ いけるよ！", "mile"); }
     drawMap();
   }
@@ -2733,7 +2745,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const m = 6;
     vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
   }
-  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti;
+  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag;
   const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
