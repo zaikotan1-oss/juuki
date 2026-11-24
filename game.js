@@ -890,10 +890,12 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   function physOff(d) { if (d.ag) { d.ag.dispose(); d.ag = null; } }
   function spawnDebris(p, s, col, vel, val) {
     const m = debrisSrc.createInstance("d");
-    m.scaling.set(s.x, s.y, s.z);
+    // 大きさと色を少しずつばらす（同じ形・同じ色の丸い破片が一面に並んで単調だった・11-24 改善ループ 28）。値段は元の大きさで決める
+    const jx = 0.75 + Math.random() * 0.5, jy = 0.75 + Math.random() * 0.5, jz = 0.75 + Math.random() * 0.5, jc = 0.88 + Math.random() * 0.2;
+    m.scaling.set(s.x * jx, s.y * jy, s.z * jz);
     m.position.copyFrom(p);
     m.rotationQuaternion = B.Quaternion.FromEulerAngles((Math.random() - 0.5) * 0.3, Math.random() * 3, (Math.random() - 0.5) * 0.3);
-    m.instancedBuffers.color = new B.Color4(col[0], col[1], col[2], 1);
+    m.instancedBuffers.color = new B.Color4(col[0] * jc, col[1] * jc, col[2] * (jc + (Math.random() - 0.5) * 0.06), 1);
     const d = { m, ag: null, held: false, val: val || Math.max(1, Math.round(s.x * s.y * s.z / 0.11)), t: 0 };   // val: 荷台に入る量＝ひきとりの値段（格子の数くらい）
     physOn(d, vel);
     debris.push(d);
@@ -1972,7 +1974,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     d.pile = B.MeshBuilder.CreateSphere("pile", { diameter: 1, segments: 10 }, scene);
     d.pile.material = pileM; d.pile.position.set(d.x, -0.1, d.z + oz); d.pile.receiveShadows = true; shadow.addShadowCaster(d.pile);
     const sw = d.main ? 10 : 6.5, sy = d.main ? 7 : 5.4, sz = d.z + (d.main ? 16 : d.h - 0.6);   // 北の端（入る所をふさがない）。高さは走る車に隠れない所（5.2 だと車の後ろで「るしば」に見えた・11-24 改善ループ 23）
-    const sg = B.MeshBuilder.CreatePlane("sign", { width: sw, height: sw * 0.31 }, scene); sg.material = d.main ? signM : signM2; sg.position.set(d.x, sy, sz); sg.rotation.x = 0.55;
+    const sg = B.MeshBuilder.CreatePlane("sign", { width: sw, height: sw * 0.31 }, scene); sg.material = d.main ? signM : signM2; sg.position.set(d.x, sy, sz); sg.rotation.x = 0.55; d.sign = sg;
     for (const sx of [-sw * 0.4, sw * 0.4]) { const pl = B.MeshBuilder.CreateCylinder("signPole", { diameter: 0.25, height: sy }, scene); pl.position.set(d.x + sx, sy / 2, sz + 0.2); pl.material = SRC.pole.material; shadow.addShadowCaster(pl); }
     const rr = d.h - 0.7, ring = B.MeshBuilder.CreateTube("yardRing", { path: [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, b]) => new B.Vector3(d.x + a * rr, 0.25, d.z + b * rr)), radius: 0.18, tessellation: 6 }, scene);
     ring.material = ringM; ring.isPickable = false;
@@ -2574,6 +2576,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     ringM.alpha = 0.25 + 0.2 * Math.sin(playT * 4) + (bed.load >= upV("cap") * 0.6 ? 0.25 : 0);
     if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); }
     // 荷台が 9 割を超えたら、荷台が左右に小さくゆれる（「もう持てないよ」が字を読まずに分かる・11-24 改善ループ 26）
+    // いっぱいの時は、いちばん近いおろしばの看板もぴょこぴょこ跳ねる（遠くからでも行き先が目に入る・11-24 改善ループ 28）
+    { const full = bed.load >= upV("cap") * 0.9, nd = full ? nearDrop() : null; for (const d of drops) if (d.sign) { const k = d === nd ? 1 + Math.abs(Math.sin(playT * 5)) * 0.18 : 1; if (d.sign.scaling.x !== k) d.sign.scaling.setAll(k); } }
     if (!dump) { bedTilt.rotation.x += (0 - bedTilt.rotation.x) * Math.min(1, dt * 5); bedTilt.rotation.z = bed.load >= upV("cap") * 0.9 ? Math.sin(playT * 16) * 0.045 : 0; return; }
     bedTilt.rotation.z = 0;
     dump.t += dt; const D = 1.6;
