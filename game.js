@@ -2223,6 +2223,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       speed = Math.min(speed, 1.2);
       grind(o, dt);
     }
+    // 1.3 倍で走っている間は、後ろに土ぼこりを残す（速くなったのが目で分かるように・11-24 改善ループ 60）
+    if (top > upV("spd") && speed > upV("spd") * 0.8 && playT - (moveEx.dT || 0) > 0.12) { moveEx.dT = playT; dust(ex.pos.subtract(fwd().scale(2.5)).addInPlaceFromFloats(0, 0.3, 0), 5); }
     const lim = HALF + 30; ex.pos.x = B.Scalar.Clamp(ex.pos.x, -lim, lim); ex.pos.z = B.Scalar.Clamp(ex.pos.z, -lim, lim);
     return speed / top;
   }
