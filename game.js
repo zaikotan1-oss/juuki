@@ -1362,9 +1362,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const ch = new B.ParticleSystem("chips" + i, LITE ? 60 : 120, scene);
     ch.particleTexture = dustTex; ch.emitter = ps.emitter; ch.minEmitBox = ps.minEmitBox; ch.maxEmitBox = ps.maxEmitBox;
     ch.color1 = new B.Color4(0.32, 0.3, 0.27, 1); ch.color2 = new B.Color4(0.55, 0.38, 0.28, 1); ch.colorDead = new B.Color4(0.3, 0.28, 0.25, 0.6);   // 灰のコンクリ＋茶のレンガ
-    ch.minSize = 0.1; ch.maxSize = 0.26; ch.minLifeTime = 0.5; ch.maxLifeTime = 1.0; ch.emitRate = 0; ch.manualEmitCount = 0;
+    // かけらは真上の遠いカメラからだと 0.1〜0.26m では点にしか見えなかった → 0.18〜0.42m・少し長く飛ばす（壊している途中が写真で分かるように・11-24 改善ループ 39）
+    ch.minSize = 0.18; ch.maxSize = 0.42; ch.minLifeTime = 0.6; ch.maxLifeTime = 1.2; ch.emitRate = 0; ch.manualEmitCount = 0;
     ch.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; ch.gravity = new B.Vector3(0, -9.8, 0);
-    ch.direction1 = new B.Vector3(-1.5, 1, -1.5); ch.direction2 = new B.Vector3(1.5, 3, 1.5); ch.minEmitPower = 1; ch.maxEmitPower = 3;
+    ch.direction1 = new B.Vector3(-1.5, 1, -1.5); ch.direction2 = new B.Vector3(1.5, 3, 1.5); ch.minEmitPower = 1.5; ch.maxEmitPower = 3.5;
     ps.renderingGroupId = ch.renderingGroupId = 1; ps.start(); ch.start(); dustPool.push([ps, ch]);
   }
   // 当たった所の火花（黄白の小さな粒が 0.3 秒だけ飛ぶ。10-25 改善ループ 2）
