@@ -2736,7 +2736,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       L.left = n;   // 進み具合の棒で使う（壊しかけの区画も少しずつ数える）
       if (n < L.cells0 * 0.1) {
         L.gone = true; sv.gone.push(L.id); saveDirty = true;
-        const bonus = Math.round(L.cells0 * 0.15); sv.money += bonus;
+        // 名所（観覧車・お城など）は ほうび 3 ばい＋光・紙吹雪 2 回・花火の音（普通の建物と同じで、大物を倒した手応えが無かった・11-24 改善ループ 52）
+        const bonus = Math.round(L.cells0 * (L.lm ? 0.45 : 0.15)); sv.money += bonus;
+        if (L.lm) { flash(0.4, true); camKick = Math.max(camKick, 0.2); playS("firework", 0.5); setTimeout(() => { confetti(ex.pos.x, 9, ex.pos.z); playS("firework", 0.4, 1.15); }, 450); }
         confetti((L.cx + ex.pos.x) / 2, 8, (L.cz + ex.pos.z) / 2); putFlag(L);   // 紙吹雪は区画の中心とショベルの中ほどから（大きい区画だと中心が画面の外になって見えなかった）
         popup((L.lm ? "🏆 " + LM_NAME[L.kind] : "🏚 たてもの") + " こわしきった！ +" + fmtY(bonus), L.lm ? "mile" : "mid"); playS("levelup", L.lm ? 0.5 : 0.3); chime([0, 4, 7, 12]);
         // 残りかすは がれきに。全部を 1 コマでがれきにすると 17ms 引っかかったので、がれきは 24 個まで・残りはまとめて消す（11-17 改善ループ 6）
@@ -2846,7 +2848,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     const m = 6;
     vr.x0 = x0 - m; vr.x1 = x1 + m; vr.z0 = z0 - m; vr.z1 = z1 + m;
   }
-  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag; G.popup = popup; G.bonus = bonus; G.kick = v => { camKick = v; };
+  G.vr = vr; G.coinFly = coinFly; G.confetti = confetti; G.putFlag = putFlag; G.popup = popup; G.bonus = bonus; G.lots = lots; G.kick = v => { camKick = v; };
   const outView = (x, z, r = 0) => x + r < vr.x0 || x - r > vr.x1 || z + r < vr.z0 || z - r > vr.z1;
   function updateOcclusion(dt) {
     if ((fadeT -= dt) > 0) return; fadeT = 0.15;
