@@ -2650,7 +2650,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       if (buy.el && buy.el.isConnected && now - buy.t < 1100) { buy.parts.push(part); buy.el.textContent = buy.parts.join(" ") + "！"; } else { buy.parts = [part]; buy.el = popup(u.icon + " " + u.name + " Lv" + (lv + 2) + "！", "mile"); }
       buy.t = now; }
     upPopT = 0.35; sparks(ex.pos.add(new B.Vector3(0, 2, 0)), 18);   // 買った瞬間にショベルがぽんと大きくなる（強くなったのが見て分かる・11-24 改善ループ 18）
-    if (lookTier() > t0) { setTimeout(() => popup(["", "🚨 かいてんとう つけた！", "🔩 てっぱん と とげ！", "🛡 うんてんせき を まもる こうし！", "🔥 まっか の さいきょう ショベル！"][lookTier()], "mile"), 900); playS("boom", 0.4, 1.2, 0.5); }
+    // 強化の行（1.3 秒）が消えてから見た目の段の知らせを出す（重なって読みにくかった・11-24 改善ループ 36）
+    if (lookTier() > t0) { setTimeout(() => popup(["", "🚨 かいてんとう つけた！", "🔩 てっぱん と とげ！", "🛡 うんてんせき を まもる こうし！", "🔥 まっか の さいきょう ショベル！"][lookTier()], "mile"), 1500); playS("boom", 0.4, 1.2, 0.5); }
     $("money").textContent = fmtY(sv.money); renderShop();
   }
   // つぎの まちへ: 4 割こわしたら出る。荷台の分は売ったことにして、次のテーマの街を建てる（ページを開き直す）
@@ -2737,7 +2738,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     el.style.setProperty("--x0", `calc(50vw + ${Math.round((Math.random() - 0.5) * 60)}px)`); el.style.setProperty("--y0", "50vh"); el.style.display = ""; reCss(el);
     clearTimeout(el._t); el._t = setTimeout(() => { el.style.display = "none"; reCss($("money")); }, 520);
   }
-  let hudT = 0, upPopT = 0;
+  let hudT = 0, upPopT = 0, zKillT = -9, zKill0 = 0;   // ゾンビの数は倒した直後の 2.5 秒だけ出す（上の帯に物が多すぎた・11-24 改善ループ 36）
   function updateHud(dt) {
     if (upPopT > 0) { upPopT = Math.max(0, upPopT - dt); root.scaling.setAll(1 + 0.18 * Math.sin(Math.PI * (1 - upPopT / 0.35))); }
     const cap = upV("cap"), k = Math.min(1, bed.load / cap);
@@ -2754,6 +2755,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       for (let i = 0; i < pathDots.length; i++) { const r = 4 + ((i * 3 + playT * 6) % 30), v = on && r < L; if (pathDots[i].isEnabled() !== v) pathDots[i].setEnabled(v); if (v) { pathDots[i].position.set(ex.pos.x + Math.sin(a) * r, 0.12, ex.pos.z + Math.cos(a) * r); pathDots[i].scaling.setAll(1.1 - r / 60); } } }
     if (show) { const a = Math.atan2(nd.x - ex.pos.x, nd.z - ex.pos.z); arrowP.position.set(ex.pos.x + Math.sin(a) * 11, 0.4, ex.pos.z + Math.cos(a) * 11); arrowP.rotation.y = a; arrowM.alpha = k >= 0.9 ? 0.95 : 0.55 + 0.35 * Math.sin(playT * 6); arrowP.scaling.setAll(k >= 0.9 ? 1.5 + 0.15 * Math.sin(playT * 8) : faint ? 0.6 : 1); if (faint) arrowM.alpha = 0.35; }
     if ((hudT -= dt) > 0) return; hudT = 0.25;
+    if (kills !== zKill0) { zKill0 = kills; zKillT = playT; }
     const pct = Math.round(lots.filter(L => L.gone).length / lots.length * 100);
     // 次の目標を字で出す（11-17 改善ループ 3「4 割で次の街という流れが画面から読めない・強化の入口が見えない」）
     const canUp = Object.keys(UPS).some(k => (sv.up[k] || 0) < UPS[k].vals.length - 1 && sv.money >= upPrice(k));
@@ -2763,7 +2765,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     let part = 0; for (const L of lots) part += L.gone ? 1 : L.made && L.cells0 && L.left !== undefined ? Math.min(1, (1 - L.left / L.cells0) / 0.9) : 0;
     const barK = pct >= NEXT_PCT ? 1 : Math.min(0.97, Math.max(pct / NEXT_PCT, part / lots.length * 100 / NEXT_PCT));
     $("cityBar").style.width = (barK * 100).toFixed(1) + "%"; $("cityBar").classList.toggle("near", pct >= NEXT_PCT * 0.75);   // あと少しで次の街: 黄色
-    $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}%　あと${NEXT_PCT - pct}%`) + ` 🧟${kills}` + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
+    $("city").textContent = (pct >= NEXT_PCT ? `${TH.name} ${pct}% こわした` : `${TH.name} ${pct}%　あと${NEXT_PCT - pct}%`) + (playT - zKillT < 2.5 ? ` 🧟${kills}` : "") + (canUp && !inYard() ? "\n💪 おろしばで きょうか できる" : "");
     if (pct >= NEXT_PCT && $("bNext").style.display === "none") { $("bNext").style.display = ""; $("bNext").textContent = "つぎの まちへ ▶ " + nextTh.name; popup("🎉 つぎの まちへ いけるよ！", "mile"); }
     drawMap();
   }
