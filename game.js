@@ -1364,13 +1364,15 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   // 浮かぶ数字（崩れた量を 0.5 秒ためて 1 回出す）と得点
   let hitStop = 0, score = 0, combo = 0, comboT = 0, comboP = null, lastPctStep = 0, lastDustT = -1;
   // 画面の閃光（崩れた瞬間に白く光る。10-25 改善ループ 2「派手さ」）
-  function flash(a, warm) { const f = $("flash"); f.classList.toggle("warm", !!warm); f.style.transition = "none"; f.style.opacity = a; void f.offsetWidth; f.style.transition = "opacity .25s ease-out"; f.style.opacity = 0; }
+  // 光らせ直しは animate で（offsetWidth を読むと、出ている字・コインの分まで画面の組み直しが起きて 1 コマ 20ms を超えた・11-24 改善ループ 17）
+  const reAnim = (el, kf, ms, ease = "ease-out") => { try { if (el._an) el._an.cancel(); el._an = el.animate(kf, { duration: ms, easing: ease }); } catch (e) {} };
+  function flash(a, warm) { const f = $("flash"); if (f.classList.contains("warm") !== !!warm) f.classList.toggle("warm", !!warm); reAnim(f, [{ opacity: a }, { opacity: 0 }], 250); }
   // コンボの札: 続けて壊している間「N こわし」を出し、10・25・60 を越えるたびに音が上がる
   let comboTier = 0, maxCombo = 0;
   function showCombo() {
     const el = $("combo"); if (combo < 3) return;
     el.querySelector("b").textContent = combo; el.style.display = "";
-    if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; el.classList.remove("bump"); void el.offsetWidth; el.classList.add("bump"); }   // 毎コマ組み直すと重いので間引く
+    if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; reAnim(el, [{ transform: "translateX(-50%) scale(1.25)" }, { transform: "translateX(-50%) scale(1)" }], 180); }   // 毎コマ組み直すと重いので間引く
     const tier = combo >= 60 ? 3 : combo >= 25 ? 2 : combo >= 10 ? 1 : 0;
     if (tier > comboTier) { comboTier = tier; chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
   }
@@ -2294,8 +2296,9 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     f.addSizeGradient(0, 1.6, 2.6); f.addSizeGradient(1, 0.4, 0.9); f.minLifeTime = 0.35; f.maxLifeTime = 0.8; f.emitRate = 70;
     f.blendMode = B.ParticleSystem.BLENDMODE_ADD; f.gravity = new B.Vector3(0, 5, 0); f.minEmitBox = new B.Vector3(-0.7, 0, -0.7); f.maxEmitBox = new B.Vector3(0.7, 0.4, 0.7);
     f.direction1 = new B.Vector3(-0.4, 1, -0.4); f.direction2 = new B.Vector3(0.4, 2, 0.4); f.minEmitPower = 0.5; f.maxEmitPower = 1.5;
+    // 煙は薄めの灰色で、粒を回す（黒くて回らないと、真上から見て四角い黒い帯に見えた・11-24 改善ループ 17）
     const s = new B.ParticleSystem("smoke", 50, scene); s.particleTexture = fxTex; s.emitter = f.emitter;
-    s.color1 = new B.Color4(0.12, 0.11, 0.1, 0.5); s.color2 = new B.Color4(0.25, 0.23, 0.22, 0.4); s.colorDead = new B.Color4(0.3, 0.3, 0.3, 0);
+    s.color1 = new B.Color4(0.28, 0.26, 0.24, 0.34); s.color2 = new B.Color4(0.4, 0.38, 0.36, 0.28); s.minInitialRotation = 0; s.maxInitialRotation = 6.28; s.minAngularSpeed = -0.5; s.maxAngularSpeed = 0.5; s.colorDead = new B.Color4(0.3, 0.3, 0.3, 0);
     s.addSizeGradient(0, 2, 3); s.addSizeGradient(1, 7, 11); s.minLifeTime = 2.2; s.maxLifeTime = 3.8; s.emitRate = 14;
     s.blendMode = B.ParticleSystem.BLENDMODE_STANDARD; s.gravity = new B.Vector3(0.6, 2.5, 0.3); s.minEmitPower = 0.5; s.maxEmitPower = 1.5; s.direction1 = new B.Vector3(-0.3, 1, -0.3); s.direction2 = new B.Vector3(0.3, 1, 0.3);
     f.renderingGroupId = s.renderingGroupId = 1; f.emitRate = s.emitRate = 0; f.start(); s.start();
@@ -2546,8 +2549,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   const nearDrop = () => { let best = drops[0], bd = 1e9; for (const d of drops) { const dd = Math.hypot(d.x - ex.pos.x, d.z - ex.pos.z); if (dd < bd) { bd = dd; best = d; } } return best; };
   function updateYard(dt) {
     const at = dropAt(), here = !!at;
-    if (here && !inYardPrev) { setShop(true); }
-    if (!here && inYardPrev) setShop(false);
+    if (here && !inYardPrev) PF("y.shop", () => setShop(true));
+    if (!here && inYardPrev) PF("y.close", () => setShop(false));
     inYardPrev = here;
     ringM.alpha = 0.25 + 0.2 * Math.sin(playT * 4) + (bed.load >= upV("cap") * 0.6 ? 0.25 : 0);
     if (here && !dump && bed.load > 0 && !flyers.length) { dump = { t: 0, money: bed.money, load: bed.load, shown: 0, chunks: 0, d: at }; playS("rubble_dump", 0.7); }
@@ -2556,17 +2559,19 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     bedTilt.rotation.x = -Math.min(1, dump.t / 0.35) * 0.9 * (dump.t < D ? 1 : Math.max(0, 1 - (dump.t - D) / 0.4));
     bed.load = dump.load * Math.max(0, 1 - dump.t / D); showBed();
     // 荷台から穴へ がれきが飛ぶ（見た目だけ）
+    PF("y.fly", () => {
     while (dump.chunks < Math.min(24, dump.t / D * 24)) {
       dump.chunks++; const m = debrisSrc.createInstance("dumpd"); const s = 0.6 + Math.random() * 0.6; m.scaling.set(s, s * 0.7, s); m.instancedBuffers.color = new B.Color4(0.8, 0.77, 0.72, 1);
       m.position.copyFrom(bedPos()); const tg = dump.d.pile.position.add(new B.Vector3((Math.random() - 0.5) * 6, 1, (Math.random() - 0.5) * 6));
       flyers.push({ node: m, from: m.position.clone(), t: 0, dur: 0.5, s0: m.scaling.clone(), val: 0, toP: tg, done: () => { m.dispose(); dust(tg, 6); } });
     }
+    });
     const shown = Math.round(dump.money * Math.min(1, dump.t / D));
-    if (shown > dump.shown) { if (Math.floor(shown / Math.max(1, dump.money / 12)) !== Math.floor(dump.shown / Math.max(1, dump.money / 12))) playS("coin", 0.25, 1.2 + Math.random() * 0.3), coinFly(); dump.shown = shown; $("money").textContent = fmtY(sv.money + shown); }
+    if (shown > dump.shown) { if (Math.floor(shown / Math.max(1, dump.money / 12)) !== Math.floor(dump.shown / Math.max(1, dump.money / 12))) playS("coin", 0.25, 1.2 + Math.random() * 0.3), PF("y.coin", coinFly); dump.shown = shown; $("money").textContent = fmtY(sv.money + shown); }
     if (dump.t >= D + 0.4) {
-      sv.money += dump.money; sv.delivered += dump.load; bed.load = 0; bed.money = 0; showBed(); pileSize(); save();
-      popup("+" + fmtY(dump.money), "huge"); playS("coin", 0.6); playS("firework", 0.35, 1, 0.1); if (dump.money >= 500) playS("levelup", 0.4);
-      flash(0.25, true); dump = null; renderShop();
+      PF("y.end", () => { sv.money += dump.money; sv.delivered += dump.load; bed.load = 0; bed.money = 0; showBed(); pileSize(); save(); });
+      PF("y.pop", () => popup("+" + fmtY(dump.money), "huge")); playS("coin", 0.6); playS("firework", 0.35, 1, 0.1); if (dump.money >= 500) playS("levelup", 0.4);
+      flash(0.25, true); dump = null; PF("y.shop2", renderShop);
     }
   }
 
@@ -2650,11 +2655,12 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   // 売っている間、コインが画面のまん中からお金の字へ飛んで入る（もらえた感じを目に見えるように・11-24 改善ループ 16）
   // お金の字の位置は 1 回だけ測る（毎回測ると画面の組み直しが起きて 1 コマ 38ms になった）。向きが変わったら測り直す
   addEventListener("resize", () => { coinFly.r = null; setTimeout(() => { coinFly.r = $("money").getBoundingClientRect(); }, 300); }); setTimeout(() => { coinFly.r = $("money").getBoundingClientRect(); }, 500);
+  // 着く所はお金の字の左はし（数字の上に着くと桁が隠れた）で、着く時に消える（11-24 改善ループ 17）
   function coinFly() {
     const el = document.createElement("div"), m = coinFly.r || (coinFly.r = $("money").getBoundingClientRect()), x0 = innerWidth / 2 + (Math.random() - 0.5) * 60, y0 = innerHeight * 0.5;
     el.className = "coinfly"; el.textContent = "¥"; el.style.left = x0 + "px"; el.style.top = y0 + "px"; document.body.appendChild(el);
-    requestAnimationFrame(() => { el.style.transform = `translate(${m.left + 20 - x0}px, ${m.top + m.height / 2 - y0}px) scale(0.6)`; el.style.opacity = "0.9"; });
-    setTimeout(() => { el.remove(); const mo = $("money"); mo.classList.remove("got"); void mo.offsetWidth; mo.classList.add("got"); }, 520);
+    requestAnimationFrame(() => { el.style.transform = `translate(${m.left - 2 - x0}px, ${m.top + m.height / 2 - y0}px) scale(0.5)`; el.style.opacity = "0"; });
+    setTimeout(() => { el.remove(); reAnim($("money"), [{ transform: "scale(1.25)" }, { transform: "scale(1)" }], 250); }, 520);
   }
   let hudT = 0;
   function updateHud(dt) {
