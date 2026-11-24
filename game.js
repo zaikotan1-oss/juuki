@@ -2636,8 +2636,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     for (const m of [pole, cloth]) { m.isVisible = false; m.isPickable = false; m.renderingGroupId = 1; }   // 地面の重ね貼りより後に描く（組 0 だと地面に塗られて見えなかった）
     return [pole, cloth];
   })();
-  // 真上寄りのカメラから見えるよう、布はカメラの方を向けて手前へ 0.5 傾ける（縦のままだと細い線にしか見えなかった）
-  function putFlag(L) { for (const s of flagSrc) { const f = s.createInstance("flag"); f.position.set(L.cx, 2.5, L.cz); f.rotation.x = 0.6; f.isPickable = false; } }
+  // 真上寄りのカメラから見えるよう、布はカメラの方へ傾ける（縦のままだと細い線にしか見えなかった）。場所は区画の手前の角（中心だとショベルに重なった）
+  function putFlag(L) { for (const s of flagSrc) { const f = s.createInstance("flag"); f.position.set(L.cx - (L.w || 16) / 2 + 1.5, 2.5, L.cz - (L.d || 16) / 2 + 1.5); f.rotation.x = 0.6; f.isPickable = false; } }
   for (const L of lots) if (L.gone) putFlag(L);
   let goneT = 0;
   function checkGone(dt) {
@@ -2881,6 +2881,10 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
       return cand;
     };
   }
+  // 粒（火・煙・紙吹雪など）の絵の準備を始めに済ませる: 地面の下で 1 粒ずつ出す（初めて火が出たコマで描く時間が 36ms になった・11-24 改善ループ 22）
+  if (!Q.has("nowarm")) { const t = scene.activeCamera.target; for (const ps of scene.particleSystems) if (!ps.emitRate) { ps.emitter = new B.Vector3(t.x, -6, t.z); ps.manualEmitCount = 1; } }
+  // がれきの絵も同じく（始まって 2 秒、初めて壊した時に描く時間が 49ms になった）。1 つ地面の下に置いて 1 秒で消す
+  if (!Q.has("nowarm")) { const t = scene.activeCamera.target, w = debrisSrc.createInstance("warm"); w.position.set(t.x, -6, t.z); setTimeout(() => w.dispose(), 1500); }
   engine.runRenderLoop(() => scene.render());
   addEventListener("resize", () => engine.resize());
   $("startB").textContent = "さわって スタート";   // 用意ができるまでは「じゅんびちゅう…」（触っても始まらない時に見分ける）
