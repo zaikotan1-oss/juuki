@@ -77,6 +77,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 #start small{display:block;font-size:15px;font-weight:900;margin-bottom:2px}
 #start h1{margin:0;font-size:34px;letter-spacing:2px}
 #start p{margin:8px 0 0;font-size:14px;line-height:1.6}
+/* 始まりの説明は字 3 行をやめ、大きい絵文字＋短い言葉の 3 段に（6 歳には字が多かった・呼び名もおろしばにそろえた・11-24 改善ループ 51） */
+#start p.steps{display:flex;flex-direction:column;gap:4px;font-size:16px;text-align:left}#start p.steps i{font-style:normal;font-size:26px;margin-right:8px;vertical-align:middle}
 #start b{display:inline-block;margin-top:10px;background:#3a1d00;color:#ffd23f;border-radius:999px;padding:6px 18px;font-size:16px;animation:blink .7s infinite alternate}
 </style>
 </head>
@@ -91,7 +93,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#1b2838;font-family:"H
 <div id="shop" style="display:none"><h3>🏗 きょうか<button id="shopClose">✕</button></h3><div id="shopList"></div></div>
 <div id="pops"></div>
 <div id="rage"></div><div id="flash"></div>
-<div id="start"><div><small id="stageT"></small><h1>まち こわし</h1><p>ショベルを うごかして まちを こわそう<br>がれきは うしろの にだいに すいこむ<br>いっぱいになったら 🟨ひきとりじょ で お金に！</p><b id="startB">じゅんびちゅう…</b></div></div>
+<div id="start"><div><small id="stageT"></small><h1>まち こわし</h1><p class="steps"><span><i>👆</i>さわって うごかす</span><span><i>💥</i>ぶつけて こわす</span><span><i>💰</i>おろしばで お金に！</span></p><b id="startB">じゅんびちゅう…</b></div></div>
 <div id="msg">読み込み中…</div>
 <script>
 // 止まった時は、理由を画面に出す（スマホでは中が見えないので・10-31）

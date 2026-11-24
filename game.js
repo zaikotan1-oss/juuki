@@ -2878,7 +2878,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
 
   // ---- 始める画面 ----
   let started = false;
-  function hideStart() { if (started) return; started = true; $("start").style.display = "none"; $("joyHint").style.display = "none"; }
+  function hideStart() { if (started) return; started = true; $("start").style.display = "none"; setTimeout(() => { $("joyHint").style.display = "none"; }, 8000); }   // 指の案内は始めの 8 秒は残す（幕と一緒に消えて、どこを触るか分からなかった・11-24 改善ループ 51）
 
   poof(new B.Vector3(0, -50, 0)); glassBurst(new B.Vector3(0, -50, 0), 0);   // 粒の仕組みを最初に作っておく
 
