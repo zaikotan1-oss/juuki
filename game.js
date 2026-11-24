@@ -1410,7 +1410,8 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
     el.querySelector("b").textContent = combo; el.style.display = "";
     if (playT - (showCombo.t || -1) > 0.12) { showCombo.t = playT; reCss(el); }   // 毎コマ組み直すと重いので間引く
     const tier = combo >= 60 ? 3 : combo >= 25 ? 2 : combo >= 10 ? 1 : 0;
-    if (tier > comboTier) { comboTier = tier; if (tier >= 2) camKick = Math.max(camKick, tier === 3 ? 0.22 : 0.14); chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
+    if (tier > comboTier) { comboTier = tier; $("rage").style.opacity = [0, 0.35, 0.6, 0.9][tier];   // 連続が大きいほど画面のふちが暖かい色に（「ノってきた」・11-24 改善ループ 33）
+      if (tier >= 2) camKick = Math.max(camKick, tier === 3 ? 0.22 : 0.14); chime([tier * 4, tier * 4 + 7], 0.07, 0.12); if (tier === 3) { playS("coin", 0.5, 0.95 + Math.random() * 0.15); playS("firework", 0.3, 0.95 + Math.random() * 0.15, 0.1); popup("ごくじょう！", "mile"); } else if (tier === 2) playS("popup", 0.35, 0.95 + Math.random() * 0.15); else playS("coin", 0.25, 1.25 + Math.random() * 0.15); el.dataset.tier = tier; }
   }
   const popRows = new Map();
   function popup(text, cls) {
@@ -1448,7 +1449,7 @@ const PF = (k, f) => { if (!G.prof) return f(); const t = performance.now(), r =
   function updateCombo(dt) {
     if (comboT <= 0) return;
     comboT -= dt; if (comboT > 0) return;
-    $("combo").style.display = "none"; comboTier = 0; $("combo").dataset.tier = 0;
+    $("combo").style.display = "none"; comboTier = 0; $("combo").dataset.tier = 0; $("rage").style.opacity = 0;
     if (combo >= 6) popup((combo >= 60 ? "ドドーン!! " : combo >= 25 ? "ガラガラ！ " : "ゴロッ ") + "+" + combo, combo >= 60 ? "big" : combo >= 25 ? "mid" : "");
     if (combo > maxCombo && combo >= 25 && maxCombo >= 10) { popup("さいこう れんぞく！", "mile"); playS("popup", 0.5); }
     maxCombo = Math.max(maxCombo, combo); combo = 0;
